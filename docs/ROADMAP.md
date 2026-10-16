@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M0 version validation, M1, M2 and M3 done (verified 2026-10-16); M4 in progress (pairing done). See `PROGRESS.md`.  
+**Status:** M2 and M3 done; M0 and M1 each have one open item; M4 in progress (2 of 10: pairing, sync clock/changelog); M5 and M6 not started (verified 2026-10-16). See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -68,7 +68,7 @@ flowchart LR
 
 - [x] Design/implement extension-compatible pairing with explicit trusted origins and revocable device credentials. (Device flow + rotating hashed credentials, one host permission for the configured server; SECURITY_PRIVACY.md 5a.)
 - [ ] Implement local account scope and durable operation outbox.
-- [ ] Add server per-user sync clock and atomic ordered changelog.
+- [x] Add server per-user sync clock and atomic ordered changelog. (Since M3: `user_sync_clocks` locked first, gap-free `sync_changes` for every session and workspace write; DB-tested including concurrency. `sync/push` will reuse it.)
 - [ ] Implement versioned `/api/v1/sync/push` with idempotency receipts.
 - [ ] Implement paginated `/api/v1/sync/pull` with safe cursors.
 - [ ] Add offline backoff, worker restart continuation, pull echo reconciliation.

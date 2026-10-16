@@ -12,12 +12,12 @@
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces and devices |
+| Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). `check` job **passed** on PR #1 (after `3ec6bfc`). The `docker` job (PR #2) and the Mailpit service in `check` (PR #3) are verified locally; their GitHub runs are listed in the latest session entry |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked branches: `feature/m1-monorepo-local-slice` (PR #1 into `main`, ends at `3ec6bfc`), `feature/m3-web-docker` (PR #2, `4dc907e`), `feature/m3-email-auth` (email `4083b69` + workspace/device API) |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails only on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order: #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + this status update). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -507,16 +507,16 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Review and merge the stacked PRs: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices); confirm CI (`check` with Mailpit, `docker`) passes on each.
+1. Review and merge the stacked PRs in order: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices) -> #4 (pairing). CI passes on all four. The full done/left list for the user is GitHub issue "Project status and roadmap" (see the newest session entry).
 2. Production email: create a Resend API key and verify the sending domain, then set `MAIL_TRANSPORT=resend`, `MAIL_FROM`, `RESEND_API_KEY` and send one real reset email (not yet tested against the live service).
-3. Review the pairing slice (PR stacked on #3). Then M4 continues: local account scope + durable outbox in the extension, `POST /api/v1/sync/push` with `sync_operation_receipts` reusing the session mutation service (Bearer auth, confirmed email), `GET /api/v1/sync/pull` with cursors, worker backoff, conflict copies, sync status UX and the two-profile test. Sync stays opt-in with an upload preview (AGENTS.md).
+3. M4 continues (next slice: local account scope + durable outbox, its own PR because it changes how local data is stored): local account scope + durable outbox in the extension, `POST /api/v1/sync/push` with `sync_operation_receipts` reusing the session mutation service (Bearer auth, confirmed email), `GET /api/v1/sync/pull` with cursors, worker backoff, conflict copies, sync status UX and the two-profile test. Sync stays opt-in with an upload preview (AGENTS.md).
 
 ## Open questions / architecture validations
 
-- Confirm extension auth implementation that satisfies current Better Auth and Chrome policies.
 - Recovery retention is 50 checkpoints / 7 days for now; revisit after quota benchmarks.
 - Decide use of browser-to-extension external messaging only after threat review.
 - Should a manual save/import be allowed to delete old recovery checkpoints when storage is full (currently: no, it only reports)?
+- Resolved: extension auth = own device flow with SessionHub device credentials (user's choice, 2026-10-16; SECURITY_PRIVACY.md 5a).
 - Resolved this session: URL classification policy is now in code and tests (`packages/core/src/url-classification.ts`); WXT entrypoint names are `background`, `popup`, `manager` (builds `manager.html`).
 
 ## Session handoff template — update after every coding session
