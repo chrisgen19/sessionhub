@@ -218,13 +218,18 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
       case "session.capture":
         return { ok: true, data: await capture(command, deps) };
       case "session.rename": {
-        const updated = await updateSession(deps.db, command.sessionId, command.expectedVersion, (session) =>
-          renameSession(session, command.name, deps.now()),
+        const now = deps.now();
+        const updated = await updateSession(
+          deps.db,
+          command.sessionId,
+          command.expectedVersion,
+          (session) => renameSession(session, command.name, now),
+          { now, createId: deps.createId },
         );
         return { ok: true, data: { version: updated.version } };
       }
       case "session.delete":
-        await deleteSession(deps.db, command.sessionId);
+        await deleteSession(deps.db, command.sessionId, { now: deps.now(), createId: deps.createId });
         return { ok: true, data: {} };
       case "session.import":
         return { ok: true, data: await importSession(command, deps) };

@@ -70,7 +70,13 @@ export const deviceCredentialsSchema = z.object({
 });
 export type DeviceCredentials = z.infer<typeof deviceCredentialsSchema>;
 
-export const pairedAccountSchema = z.object({ name: z.string(), email: z.string() });
+/**
+ * Stable account id (Better Auth user id: 32 letters and digits). The extension keys its cached
+ * account data and outbox by it; the email can't serve because it can change.
+ */
+export const accountIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/, "Invalid account id");
+
+export const pairedAccountSchema = z.object({ id: accountIdSchema, name: z.string(), email: z.string() });
 
 export const pairingTokenResponseSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("pending"), interval: z.int().positive() }),

@@ -48,7 +48,7 @@ describe("pairing", () => {
     expect(device).toMatchObject({ displayName: "Chrome on Windows", browser: "Chrome", platform: "Windows", revokedAt: null });
     expect(await findPendingPairing(prisma, userCode, at(now, 4))).toBeNull();
     const redeemed = await redeemPairing(prisma, started.deviceCode, at(now, 7));
-    expect(redeemed).toMatchObject({ status: "approved", device: { id: device?.id }, account: { name: "Pat", email: user.email } });
+    expect(redeemed).toMatchObject({ status: "approved", device: { id: device?.id }, account: { id: user.id, name: "Pat", email: user.email } });
     expect(await code(redeemPairing(prisma, started.deviceCode, at(now, 13)))).toBe("PAIRING_EXPIRED");
   });
 

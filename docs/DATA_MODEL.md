@@ -168,19 +168,33 @@ LocalSessionStore (scope = 'local' or userAccountId):
 
 Use transactional writes when editing a synced entity: **update local entity + add outbox operation atomically**. Pull application similarly commits remote entity updates, cursor and conflict states in a single transaction per page.
 
-### Implemented local schema (Dexie versions 1 and 2, verified 2026-10-16)
+### Implemented local schema (Dexie versions 1 to 4, verified 2026-10-16)
 
 Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 
 | Table | Primary key / indexes | Record |
 |---|---|---|
-| `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope: "local"`; windows/groups/tabs are nested in the record |
+| `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope` (`"local"` or `"account:<account id>"`) and, for account-scoped records only, `sync: { serverVersion, state }`; windows/groups/tabs are nested in the record |
 | `device` | `key` (`"this-device"`) | `installationId` (UUID), `friendlyName` (default "This browser"), `createdAt` |
 | `recoverySnapshots` (v2) | `id`, `capturedAt`, `[capturedAt+tabCount]` | Immutable checkpoint: `capturedAt`, `reason` (`automatic`/`manual`), `fingerprint`, counts, and `session` (a `SavedSession` whose id equals the snapshot id). Local only, never synced |
 | `recoveryState` (v2) | `key` (`"state"`) | `dirty`, `lastChangeAt`, `lastSnapshotAt`, `lastFingerprint`, `lastError` |
 | `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, append-only per-tab outcomes across attempts, `attempts` (absent on older records = 1), optional `interruptedAt`, status `running` / `completed` / `partial` / `failed` |
+| `account` (v3) | `key` (`"pairing"`, `"connection"`, `"notice"`) | Pending pairing (device code), the connection (API origin, device id, `account: { id, name, email }`, access and refresh tokens) and the last involuntary disconnect reason. `account.id` is absent on connections saved before v4 until the next account check fills it in |
+| `outbox` (v4) | `++seq`, `&id`, `[scope+seq]`, `entityId` | One pending change of an account-scoped session: `id` (clientOperationId), `scope`, `entityType: "savedSession"`, `entityId`, `action` (`upsert` with the full session as `payload`, or `delete` with `null`), `expectedVersion`, `status` (`queued` / `sending`), `attempts`, `nextAttemptAt`, `lastError`, timestamps. `seq` is the upload order |
+| `sessionTombstones` (v4) | `id`, `scope` | Deleted account-scoped session (`id`, `scope`, `deletedAt`) the server may still list |
+| `syncState` (v4) | `scope` | Per-account `cursor`, `lastSyncAt`, `lastError`; created empty, written by the push and pull slices |
 
-Not yet created: `sessionVersions`, `workspaces`, `outbox`, `syncState`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit version 1.
+Not yet created: `sessionVersions`, `workspaces`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit an existing version.
+
+**Account scope and outbox (implemented, v4):**
+
+- **Visibility.** `local` records are always visible. A record scoped `account:<id>` is visible only while the stored connection has that account id; another account's cached sessions read as missing for list, get, rename, delete and restore (a hidden record is never edited or deleted). A connection without an id (saved before v4) shows only `local` data. Disconnecting hides the account's cached sessions and queued operations without deleting them; reconnecting the same account shows them again.
+- **What is account-scoped.** Nothing yet: captures and imports stay `local`, and existing sessions are never moved. Records enter an account scope only through the later upload-preview and pull slices.
+- **Atomic changes.** Renaming or deleting an account-scoped session writes the session, its outbox operation and (for a delete) its tombstone in one IndexedDB transaction; a failure leaves all of them unchanged (tested by failing the last write). Local sessions never get operations, and a local delete is still a hard delete.
+- **Versions.** The local `version` keeps guarding edits between extension pages. `sync.serverVersion` (null until the first accepted upload) is what uploads build on: an entity's first pending operation has `expectedVersion = serverVersion ?? 0`, and each later one `previous + 1`, because every accepted server write adds exactly 1 (create -> 1, update and delete -> +1).
+- **Merging.** While an entity's latest operation is still `queued` (never handed to the network), a new edit replaces its payload under the same id and base version, and a delete turns it into a delete. Deleting a session whose create was never sent drops the create and leaves no tombstone, so nothing about it is ever uploaded. Once `sending`, an operation is immutable and never returns to `queued`; later changes append new operations. The uploader must commit `sending` before the request leaves.
+- **Tombstones** are kept until the server's delete has been pulled back (purged by the pull slice), so a pull can't resurrect a session before its delete is uploaded. They hold no tabs or URLs.
+- **Not yet:** the uploader (`sync/push`), pull, conflict drafts and any UI for these states. Every session still shows "Local only".
 
 Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are pruned on every worker start (`RESTORE_JOB_RETENTION`: newest 50 within 30 days; the newest job and any `running` job are never pruned).
 

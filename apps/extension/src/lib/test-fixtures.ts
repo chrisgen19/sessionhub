@@ -1,6 +1,7 @@
 import { buildSavedSession, type CaptureWindowInput } from "@sessionhub/core/capture";
 import type { SavedSession } from "@sessionhub/contracts/session";
-import { createDb, type SessionHubDb } from "./db";
+import { accountScope } from "./account-scope";
+import { createDb, type ConnectionRecord, type SessionHubDb, type SessionSyncRecord } from "./db";
 
 let dbCounter = 0;
 
@@ -26,6 +27,28 @@ export const sampleWindows = (): CaptureWindowInput[] => [
     groups: [],
   },
 ];
+
+/** Stores a connection to `accountId` (or a pre-v4 connection without an id when null). */
+export const connectAs = async (db: SessionHubDb, accountId: string | null): Promise<void> => {
+  const connection: ConnectionRecord = {
+    key: "connection",
+    apiOrigin: "https://sessionhub.example",
+    deviceId: "6f1c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    deviceName: "Chrome on Windows",
+    account: { ...(accountId ? { id: accountId } : {}), name: "Pat", email: "pat@example.test" },
+    connectedAt: "2026-10-16T08:00:00.000Z",
+    accessToken: "shd_at_test",
+    refreshToken: "shd_rt_test",
+    accessExpiresAt: "2026-10-16T08:15:00.000Z",
+    refreshExpiresAt: "2026-11-15T08:00:00.000Z",
+  };
+  await db.account.put(connection);
+};
+
+/** Writes a session straight into an account's cache, as a pull would (no outbox operation). */
+export const seedAccountSession = async (db: SessionHubDb, accountId: string, session: SavedSession, sync: SessionSyncRecord): Promise<void> => {
+  await db.sessions.put({ ...session, scope: accountScope(accountId), sync });
+};
 
 export const sampleSession = (overrides: Partial<SavedSession> = {}, prefix = 1): SavedSession => ({
   ...buildSavedSession(sampleWindows(), {

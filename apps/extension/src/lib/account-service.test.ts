@@ -5,6 +5,7 @@ import { putSession, listSessions } from "./session-repository";
 import { freshDb, idFactory, sampleSession } from "./test-fixtures";
 
 const ORIGIN = "https://sessionhub.example";
+const PAT = { id: "Xk3yT9qLm2Pz8RvWc4Nd7Hs1Bf6Gj0Qa", name: "Pat", email: "pat@example.test" };
 const T0 = new Date("2026-10-16T10:00:00.000Z");
 const token = (kind: "dc" | "at" | "rt", fill: string) => `shd_${kind}_${fill.repeat(43).slice(0, 43)}`;
 const device = { id: "6f1c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f", displayName: "Chrome on Windows", browser: "Chrome", platform: "Windows", createdAt: T0.toISOString(), lastSeenAt: null, revokedAt: null };
@@ -43,7 +44,7 @@ const pairingResponse = { deviceCode: token("dc", "D"), userCode: "BCDF-GHJK", v
 const connect = async (routes: Record<string, Response[]> = {}) => {
   const ctx = setup({
     "/api/v1/pairing": [reply(201, pairingResponse)],
-    "/api/v1/pairing/token": [reply(200, { status: "approved", credentials: credentials("A"), device, account: { name: "Pat", email: "pat@example.test" } })],
+    "/api/v1/pairing/token": [reply(200, { status: "approved", credentials: credentials("A"), device, account: PAT })],
     ...routes,
   });
   await startPairing(ctx.deps);
@@ -71,7 +72,7 @@ describe("pairing", () => {
       "/api/v1/pairing/token": [
         reply(202, { status: "pending", interval: 5 }),
         apiError(429, "RATE_LIMITED"),
-        reply(200, { status: "approved", credentials: credentials("A"), device, account: { name: "Pat", email: "pat@example.test" } }),
+        reply(200, { status: "approved", credentials: credentials("A"), device, account: PAT }),
       ],
     });
     await startPairing(deps);
@@ -81,7 +82,7 @@ describe("pairing", () => {
     expect(done).toMatchObject({ outcome: "connected", status: { kind: "connected", account: { email: "pat@example.test" }, deviceName: "Chrome on Windows", apiOrigin: ORIGIN } });
     expect(server.calls.filter((call) => call.path === "/api/v1/pairing/token").every((call) => (call.body as { deviceCode: string }).deviceCode === pairingResponse.deviceCode)).toBe(true);
     expect(await deps.db.account.get("pairing")).toBeUndefined();
-    expect(await connection(deps)).toMatchObject({ deviceId: device.id, accessToken: token("at", "A") });
+    expect(await connection(deps)).toMatchObject({ deviceId: device.id, account: PAT, accessToken: token("at", "A") });
   });
 
   it.each([
@@ -140,6 +141,20 @@ describe("credentials", () => {
     expect(await checkConnection(deps)).toEqual({ kind: "disconnected", notice: "revoked" });
     expect(await connection(deps)).toBeUndefined();
     expect(await listSessions(deps.db)).toHaveLength(1);
+  });
+
+  it("fills in the account id on a connection saved before ids existed", async () => {
+    const { deps } = await connect({ "/api/v1/devices/me": [reply(200, { device, account: PAT })] });
+    const stored = (await connection(deps))!;
+    await deps.db.account.put({ ...stored, account: { name: "Pat", email: "pat@example.test" } });
+    expect(await checkConnection(deps)).toMatchObject({ kind: "connected", account: { name: "Pat", email: "pat@example.test" } });
+    expect((await connection(deps))?.account).toEqual(PAT);
+  });
+
+  it("disconnects instead of switching accounts if the server reports a different account id", async () => {
+    const { deps } = await connect({ "/api/v1/devices/me": [reply(200, { device, account: { ...PAT, id: "SomeoneElse0000000000000000000000" } })] });
+    expect(await checkConnection(deps)).toEqual({ kind: "disconnected", notice: "expired" });
+    expect(await connection(deps)).toBeUndefined();
   });
 
   it("keeps the connection when the server is unreachable", async () => {

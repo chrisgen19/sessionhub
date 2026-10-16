@@ -301,10 +301,22 @@ Contracts: `packages/contracts/src/api-pairing.ts`. Server: `apps/web/src/server
 | `POST /api/v1/pairing/decision` `{ userCode, decision: "approve" \| "deny" }` | web cookie + same origin | 200 `{ status: "approved", device }` or `{ status: "denied" }` | 403 `EMAIL_NOT_CONFIRMED`, 404 (unknown, expired or already decided) |
 | `POST /api/v1/pairing/token` `{ deviceCode }` | none (per-IP limit) | **202** `{ status: "pending", interval }`; **200** `{ status: "approved", credentials, device, account }` once | 403 `PAIRING_DENIED`, 410 `PAIRING_EXPIRED` (expired, redeemed or unknown), 429 (polled faster than the interval) |
 | `POST /api/v1/devices/token` `{ refreshToken }` | none (per-IP limit) | 200 new `{ accessToken, refreshToken, accessExpiresAt, refreshExpiresAt }` | 401 `INVALID_TOKEN`, 401 `DEVICE_REVOKED` (revoked, or reuse detected: the device is revoked by this call) |
-| `GET /api/v1/devices/me` | Bearer | 200 `{ device, account: { name, email } }` | 401 |
+| `GET /api/v1/devices/me` | Bearer | 200 `{ device, account: { id, name, email } }` | 401 |
 | `POST /api/v1/devices/me/disconnect` | Bearer | 200 `ApiDevice` (revoked) | 401, 429 |
 
 Bearer = `Authorization: Bearer shd_at_...`, validated against the database on every request (see 5a). The sync endpoints (next M4 slices) will use the same `authenticateDevice` gate and require a confirmed email.
+
+`account` (pairing token and `/devices/me`) is `{ id, name, email }`. `id` is the stable account id (Better Auth user id, `^[A-Za-z0-9_-]{1,128}$`) the extension scopes its cached account data by (13e); the email can't serve because it can change. Added 2026-10-16 (M4 local outbox slice); connections stored before then get the id at their next account check.
+
+## 13e. Implemented: local account scope and outbox (2026-10-16)
+
+Extension only; nothing is uploaded yet (`sync/push` is the next slice). Code: `apps/extension/src/lib/account-scope.ts`, `outbox-repository.ts`, `session-repository.ts`; schema and rules: `DATA_MODEL.md` section 4 "Account scope and outbox".
+
+- Invariant 2 (section 3) holds locally: an account-scoped session edit and its operation commit in one IndexedDB transaction, and so does a delete with its tombstone.
+- Invariant 10 holds locally: records and operations are scoped `account:<id>`, and only the connected account's are readable or editable. Queued operations of a disconnected account stay stored and hidden, never sent under another account.
+- Operation fields map to section 5: `id` = `clientOperationId`, `entityType` (`savedSession`), `entityId`, `action` (`upsert` / `delete`), `expectedVersion` (0 = create), `payload` (the full local session for an upsert, null for a delete). `deviceId` is not stored: the uploader sends the connection's device id, which the server checks against the credential.
+- **Contract for the uploader (push slice):** commit `status: "sending"` (and `attempts + 1`) before a request leaves; never change a `sending` operation's payload or return it to `queued`; send a scope's operations in `seq` order and only for the connected account; on acceptance remove the operation and set the session's `sync.serverVersion` to the returned version (`state: "synced"` when no operations remain); on a conflict keep the payload (conflict drafts). Later operations of the same entity already chain on the expected result (`expectedVersion + 1`), so after a conflict they conflict too and are kept the same way.
+- **Contract for pull:** don't overwrite an entity with pending operations or a tombstone; purge a tombstone once the pulled change log has passed its delete.
 
 ## 14. References
 

@@ -29,7 +29,7 @@ const OS_NAMES: Record<string, string> = { win: "Windows", mac: "macOS", linux: 
 
 const toStatus = (record: ConnectionRecord): AccountStatus => ({
   kind: "connected",
-  account: record.account,
+  account: { name: record.account.name, email: record.account.email },
   deviceName: record.deviceName,
   connectedAt: record.connectedAt,
   apiOrigin: record.apiOrigin,
@@ -112,7 +112,7 @@ const saveConnection = (
   apiOrigin: string,
   deviceId: string,
   deviceName: string,
-  account: { name: string; email: string },
+  account: { id: string; name: string; email: string },
   credentials: DeviceCredentials,
 ) =>
   deps.db.transaction("rw", deps.db.account, async () => {
@@ -170,11 +170,19 @@ export const withAccessToken = async <T>(deps: AccountDeps, call: (accessToken: 
   }
 };
 
-/** Confirms the connection with the server and refreshes the shown account details. */
+/**
+ * Confirms the connection with the server and refreshes the shown account details. Fills in the
+ * account id on connections saved before ids existed. The id never changes afterwards: if the
+ * server ever reports another account, this browser disconnects instead of mixing cached data.
+ */
 export const checkConnection = async (deps: AccountDeps): Promise<AccountStatus> => {
   try {
     const me = await withAccessToken(deps, (token, origin) => fetchMe(deps.fetch, origin, token));
     const connection = (await deps.db.account.get("connection")) as ConnectionRecord | undefined;
+    if (connection?.account.id && connection.account.id !== me.account.id) {
+      await markDisconnected(deps, "expired");
+      return getAccountStatus(deps);
+    }
     if (connection) await deps.db.account.put({ ...connection, account: me.account, deviceName: me.device.displayName });
   } catch (error) {
     // Offline or server trouble: keep showing the stored connection.

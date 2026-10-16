@@ -2,13 +2,28 @@ import { Dexie, type EntityTable, type Table } from "dexie";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import type { RestorePlan } from "@sessionhub/core/restore-plan";
 
-/**
- * Local data scope. Everything is `local` until cloud accounts exist (M4); records are
- * scoped from day one so account isolation won't need a destructive migration.
- */
-export type LocalScope = "local";
+/** Cached data of one SessionHub account (`account:<account id>`). */
+export type AccountScope = `account:${string}`;
 
-export type LocalSessionRecord = SavedSession & { scope: LocalScope };
+/**
+ * Local data scope. `local` belongs to this browser profile, is always visible and is never
+ * uploaded without the user choosing it. An account scope is visible only while this browser
+ * is connected to that account (docs/DATA_MODEL.md "Account/profile isolation").
+ */
+export type LocalScope = "local" | AccountScope;
+
+/**
+ * Sync bookkeeping for an account-scoped session. Kept beside the session, never inside it:
+ * the local `version` guards edits between extension pages, while `serverVersion` is what the
+ * next upload's `expectedVersion` builds on. The two drift apart when edits are merged.
+ */
+export interface SessionSyncRecord {
+  /** Last version the server confirmed; null until the first upload is accepted. */
+  serverVersion: number | null;
+  state: "pending" | "synced" | "conflict";
+}
+
+export type LocalSessionRecord = SavedSession & { scope: LocalScope; sync?: SessionSyncRecord };
 
 export interface DeviceRecord {
   key: "this-device";
@@ -85,7 +100,11 @@ export interface ConnectionRecord {
   apiOrigin: string;
   deviceId: string;
   deviceName: string;
-  account: { name: string; email: string };
+  /**
+   * `id` is missing on connections saved before v4 until the next account check fills it in;
+   * until then no account scope is visible (only `local` data).
+   */
+  account: { id?: string; name: string; email: string };
   connectedAt: string;
   accessToken: string;
   refreshToken: string;
@@ -102,6 +121,49 @@ export interface ConnectionNoticeRecord {
 
 export type AccountRecord = PendingPairingRecord | ConnectionRecord | ConnectionNoticeRecord;
 
+/**
+ * One durable local change waiting for upload (docs/SYNC_PROTOCOL.md section 3), written in the
+ * same transaction as the change. A `queued` operation has never been handed to the network and
+ * may still be merged with a later change. The uploader must commit `sending` before the request
+ * leaves; from then on the operation is immutable and never returns to `queued`, so a retry with
+ * the same id always carries the same content.
+ */
+export type OutboxRecord = {
+  /** Auto-incremented on insert: upload order. */
+  seq?: number;
+  /** clientOperationId, stable across retries. */
+  id: string;
+  scope: AccountScope;
+  entityType: "savedSession";
+  entityId: string;
+  /** Server version this operation applies to (0 = create). Each accepted operation adds 1. */
+  expectedVersion: number;
+  status: "queued" | "sending";
+  createdAt: string;
+  updatedAt: string;
+  attempts: number;
+  nextAttemptAt: string | null;
+  lastError: string | null;
+} & ({ action: "upsert"; payload: SavedSession } | { action: "delete"; payload: null });
+
+/**
+ * A deleted account-scoped session the server may still list. Kept until the server's delete has
+ * been pulled back, so a pull can't bring the session back before the delete is uploaded.
+ */
+export interface SessionTombstoneRecord {
+  id: string;
+  scope: AccountScope;
+  deletedAt: string;
+}
+
+/** Per-account sync progress; written by the push and pull slices. */
+export interface SyncStateRecord {
+  scope: AccountScope;
+  cursor: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
 export type SessionHubDb = Dexie & {
   sessions: EntityTable<LocalSessionRecord, "id">;
   device: EntityTable<DeviceRecord, "key">;
@@ -109,6 +171,9 @@ export type SessionHubDb = Dexie & {
   recoverySnapshots: EntityTable<RecoverySnapshotRecord, "id">;
   recoveryState: EntityTable<RecoveryStateRecord, "key">;
   account: Table<AccountRecord, AccountRecord["key"]>;
+  outbox: Table<OutboxRecord, number>;
+  sessionTombstones: EntityTable<SessionTombstoneRecord, "id">;
+  syncState: EntityTable<SyncStateRecord, "scope">;
 };
 
 export const DB_NAME = "sessionhub";
@@ -128,6 +193,12 @@ export const createDb = (name: string = DB_NAME): SessionHubDb => {
   });
   // v3: account connection (pairing, device credentials). Additive only.
   db.version(3).stores({ account: "key" });
+  // v4: account scope + sync outbox. Additive only; existing sessions stay `local`.
+  db.version(4).stores({
+    outbox: "++seq, &id, [scope+seq], entityId",
+    sessionTombstones: "id, scope",
+    syncState: "scope",
+  });
   return db;
 };
 

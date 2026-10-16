@@ -2,22 +2,22 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) in progress: **extension pairing and device credentials done**; outbox, push and pull next. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) in progress: **extension pairing, device credentials, local account scope and outbox done**; push and pull next. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
 | Area | State |
 |---|---|
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
-| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
+| Chrome extension | **Working local slice** plus **account scope and outbox** (storage only, nothing uploads yet). Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
-| Sync | Not implemented (`packages/sync` intentionally not created yet) |
+| Sync | **Local half only:** account-scoped records (`account:<id>`), durable outbox, tombstones (Dexie v4), atomic with each edit; no account-scoped data is created yet and nothing is uploaded. No push/pull endpoints (`packages/sync` intentionally not created yet) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails only on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order: #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + this status update). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order: #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). **`feature/m4-local-outbox`** (off #4, not pushed, uncommitted at the end of the 2026-10-16 macOS session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -97,6 +97,34 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M4 local account scope + outbox slice) / Claude Code (Opus 5.5) / `feature/m4-local-outbox` (macOS laptop)
+
+**Goal:** local account scope + durable outbox in the extension, its own PR (user's scope). Four decisions approved by the user before coding, recorded in SYSTEM_DESIGN.md 14: (1) add `account.id` to the pairing and `/devices/me` responses and scope by it; (2) existing and new local sessions stay `local`, upload preview later; (3) sync bookkeeping beside the session, not in `savedSessionSchema`; (4) account-scoped deletes leave a tombstone until the server's delete is pulled back.
+
+**Implemented:**
+
+- Contracts: `accountIdSchema`; `pairedAccountSchema` now `{ id, name, email }` (`packages/contracts/src/api-pairing.ts`, new `api-pairing.test.ts`).
+- Web: `redeemPairing` and `getDeviceWithAccount` return the account id (`apps/web/src/server/devices/pairing.ts`, `service.ts`).
+- Extension `db.ts`: `LocalScope = "local" | account:<id>`, `sync: { serverVersion, state }` on account-scoped records, Dexie **v4** (`outbox` `++seq, &id, [scope+seq], entityId`; `sessionTombstones`; `syncState`, empty for now).
+- `account-scope.ts` (pure `visibleScopes`), `outbox-repository.ts` (`listOutbox`, `enqueueSessionUpsert`, `enqueueSessionDelete`: chained `expectedVersion`, in-place merge while `queued`, a never-sent create is dropped on delete), `session-repository.ts` (reads limited to visible scopes; rename and delete write session + operation (+ tombstone) in one transaction; hidden records are never edited or deleted), `command-handlers.ts` passes time and ids.
+- `account-service.ts`: stores the id at pairing, `checkConnection` fills it in for older connections and disconnects (notice "expired") if the server ever reports a different id; `AccountStatus` exposes only name and email.
+- Docs: DATA_MODEL 4 (v1 to v4 tables, rules; it still said "versions 1 and 2"), SYNC_PROTOCOL 13d (account id) and new 13e (uploader and pull contracts), SECURITY_PRIVACY 5a item 8, SYSTEM_DESIGN 14 (six rows), ROADMAP.
+
+**Bug found and fixed during verification:** the first `listSessions` read the connection through nested async helpers (and `Promise.all`), which made Dexie's `liveQuery` stop tracking the session queries: lists stopped updating after a save. Caught by the existing import UI test; fixed by direct Dexie awaits (comments in `session-repository.ts`, `account-scope.ts`) and a regression test.
+
+**Validated commands and results (macOS, Node 24.18.1, pnpm 11.17.0):**
+
+- `pnpm check --force`: **pass** (14 tasks). Contracts **36** (+6), core 84, extension **116** (+19: 15 in `outbox.test.ts`, v3 -> v4 upgrade, live-list regression, 2 account-id tests), web 60.
+- `pnpm build`: **pass** (extension 712 kB).
+- `pnpm --filter @sessionhub/web test:db`: **35/35** (pairing now asserts `account.id`).
+- Web E2E (`pnpm --filter @sessionhub/web test:e2e`): **34/35**. `pairing.spec.ts` **3/3**, including the new check that the extension stores `{ id, name, email }` after real pairing. Failing: `email.spec.ts` "password reset ..." (no status after "Send reset link"); **also fails on the original code** (stashed, rebuilt) and without `apps/web/.env.local`, so it is pre-existing on this Mac; CI passed it on #3/#4.
+- Extension E2E: **8/9**. Failing: `local-slice.spec.ts` "a real mid-restore failure can be retried from the summary": the retried tabs report `url` and `pendingUrl` both `""` when read; **also fails on the original code** (6/6 and 2/2 repeats), so it is pre-existing on this Mac; CI passed it.
+- Not run: `pnpm test:docker` and root `pnpm test:db` (no Docker Compose on this laptop; see below).
+
+**Environment notes (macOS laptop):** Docker is the Homebrew CLI + Colima (`colima start`), **without the Compose plugin**, so `pnpm db:up` fails ("unknown shorthand flag: 'f'"). This session ran the same PostgreSQL 18 and Mailpit containers with `docker run` (names `sessionhub-verify-*`, volume `sessionhub-verify-pg`) and removed them afterwards. Env files were created from the examples (git-ignored).
+
+**Known gaps:** no account-scoped data is created yet (upload preview and pull slices); every session still shows "Local only"; no uploader, conflict drafts or sync status UI; `syncState` is unused; the two macOS-only E2E failures above.
 
 ### 2026-10-16 (M4 pairing slice) / Claude Code (Opus 5.5) / `feature/m4-device-pairing`
 
@@ -524,9 +552,10 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Review and merge the stacked PRs in order: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices) -> #4 (pairing). CI passes on all four. The full done/left list for the user is GitHub issue "Project status and roadmap" (see the newest session entry).
-2. Production email: create a Resend API key and verify the sending domain, then set `MAIL_TRANSPORT=resend`, `MAIL_FROM`, `RESEND_API_KEY` and send one real reset email (not yet tested against the live service).
-3. M4 continues (next slice: local account scope + durable outbox, its own PR because it changes how local data is stored): local account scope + durable outbox in the extension, `POST /api/v1/sync/push` with `sync_operation_receipts` reusing the session mutation service (Bearer auth, confirmed email), `GET /api/v1/sync/pull` with cursors, worker backoff, conflict copies, sync status UX and the two-profile test. Sync stays opt-in with an upload preview (AGENTS.md).
+1. Review and merge the stacked PRs #1 -> #2 -> #3 -> #4 (merge or rebase-merge, not squash), then open this branch's PR. GitGuardian: mark the findings on #1 and #2 as false positives or move the placeholders to CI variables.
+2. M4 next slice: `POST /api/v1/sync/push` (Bearer via `authenticateDevice`, confirmed email, `authorizeDeviceWrite` limits) writing `sync_operation_receipts` in the same transaction as the reused session mutation (`apps/web/src/server/sessions/mutations.ts`, `WriteSource` with the device), plus the extension uploader following the contract in SYNC_PROTOCOL.md 13e (commit `sending` before the request, `seq` order, connected account only, set `serverVersion` on acceptance, keep conflicts).
+3. Laptop: install Docker Compose (`brew install docker-compose` + `cliPluginsExtraDirs`, or Docker Desktop) so `pnpm db:up` and `pnpm test:docker` work; investigate the two macOS-only E2E failures.
+4. Production email (Resend key + verified domain) is still untested against the live service.
 
 ## Open questions / architecture validations
 

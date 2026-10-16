@@ -75,6 +75,23 @@ test("pair, see the device on the web, revoke from the web, pair again, disconne
     const user = await prisma.user.findUniqueOrThrow({ where: { email }, include: { devices: true, deviceCredentials: true } });
     expect(user.devices).toHaveLength(1);
     expect(user.deviceCredentials[0]?.accessTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    // The extension keys its cached account data by the account id it received at pairing.
+    const storedAccount = await manager.evaluate(
+      () =>
+        new Promise<unknown>((resolve, reject) => {
+          const open = indexedDB.open("sessionhub");
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const read = open.result.transaction("account").objectStore("account").get("connection");
+            read.onerror = () => reject(read.error);
+            read.onsuccess = () => {
+              open.result.close();
+              resolve((read.result as { account: unknown }).account);
+            };
+          };
+        }),
+    );
+    expect(storedAccount).toEqual({ id: user.id, name: "Pat Pairing", email });
     await tab.goto(`${BASE_URL}/app/devices`);
     const row = tab.getByRole("list", { name: "Devices" }).getByRole("listitem");
     await expect(row).toContainText(user.devices[0]!.displayName);

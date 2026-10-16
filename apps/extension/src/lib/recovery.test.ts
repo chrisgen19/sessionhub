@@ -5,7 +5,7 @@ import { handleCommand, type HandlerDeps } from "./command-handlers";
 import { createDb, type RecoverySnapshotRecord, type RestoreTabOutcome } from "./db";
 import { runCheckpoint } from "./recovery-checkpoint";
 import { commitCheckpoint, getRecoveryState, listSnapshots, markRecoveryDirty } from "./recovery-repository";
-import { getSession } from "./session-repository";
+import { getSession, listSessions } from "./session-repository";
 import { freshDb, idFactory, sampleSession, sampleWindows } from "./test-fixtures";
 
 let clock = Date.parse("2026-10-16T08:00:00.000Z");
@@ -36,12 +36,35 @@ describe("database migration", () => {
 
     const db = createDb(name);
     expect(await getSession(db, session.id)).toEqual(session);
-    expect(db.verno).toBe(3);
+    expect(db.verno).toBe(4);
     expect(await db.recoverySnapshots.count()).toBe(0);
     expect(await db.account.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(0);
   });
 
-  it("upgrades a version 2 database (with checkpoints) to version 3, adding an empty account table", async () => {
+  it("upgrades a version 3 database (connected, before account ids) to version 4 with an empty outbox", async () => {
+    const name = `migration-v3-${Date.now()}`;
+    const v3 = new Dexie(name);
+    v3.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
+    v3.version(2).stores({ recoverySnapshots: "id, capturedAt, [capturedAt+tabCount]", recoveryState: "key" });
+    v3.version(3).stores({ account: "key" });
+    const session = sampleSession();
+    await v3.table("sessions").put({ ...session, scope: "local" });
+    const connection = { key: "connection", apiOrigin: "https://sessionhub.example", deviceId: "6f1c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f", deviceName: "Chrome on Windows", account: { name: "Pat", email: "pat@example.test" }, connectedAt: "2026-10-16T08:00:00.000Z", accessToken: "shd_at_x", refreshToken: "shd_rt_x", accessExpiresAt: "2026-10-16T08:15:00.000Z", refreshExpiresAt: "2026-11-15T08:00:00.000Z" };
+    await v3.table("account").put(connection);
+    v3.close();
+
+    const db = createDb(name);
+    expect(db.verno).toBe(4);
+    expect(await db.account.get("connection")).toEqual(connection);
+    // No account id yet, so only this browser's sessions are visible (the next account check adds it).
+    expect(await listSessions(db)).toEqual([session]);
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.sessionTombstones.count()).toBe(0);
+    expect(await db.syncState.count()).toBe(0);
+  });
+
+  it("upgrades a version 2 database (with checkpoints) to the current version, adding an empty account table", async () => {
     const name = `migration-v2-${Date.now()}`;
     const v2 = new Dexie(name);
     v2.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
@@ -52,7 +75,7 @@ describe("database migration", () => {
     v2.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(3);
+    expect(db.verno).toBe(4);
     expect(await getSession(db, session.id)).toEqual(session);
     expect(await db.recoveryState.get("state")).toMatchObject({ dirty: true });
     expect(await db.account.count()).toBe(0);
