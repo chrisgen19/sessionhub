@@ -31,6 +31,12 @@ export const commandSchema = z.discriminatedUnion("type", [
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
   }),
   z.object({ type: z.literal("restore.retry"), jobId: z.uuid() }),
+  z.object({
+    type: z.literal("recovery.restore"),
+    snapshotId: z.uuid(),
+    tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
+  }),
+  z.object({ type: z.literal("recovery.checkpointNow") }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -41,6 +47,8 @@ export interface CommandResults {
   "session.import": { sessionId: string; report: ImportReport };
   "restore.start": { job: RestoreJobRecord };
   "restore.retry": { job: RestoreJobRecord };
+  "recovery.restore": { job: RestoreJobRecord };
+  "recovery.checkpointNow": { status: "created" | "unchanged" | "empty" | "clean"; snapshotId: string | null };
 }
 
 export type ErrorCode = "invalid-command" | "not-found" | "conflict" | "invalid-input" | "browser-error" | "storage-error";

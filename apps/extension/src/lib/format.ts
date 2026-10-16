@@ -36,3 +36,19 @@ export const sessionSourceLabel = (session: { sourceDeviceId: string | null; sou
 /** Provenance sentence fragment for detail views: "From This browser" or "Imported from Windows Desktop". */
 export const sessionOrigin = (session: { sourceDeviceId: string | null; sourceDeviceName: string }): string =>
   session.sourceDeviceId !== null ? `From ${session.sourceDeviceName}` : sessionSourceLabel(session);
+
+export type DateBucket = "Today" | "Yesterday" | "Previous 7 days" | "Older";
+
+/** Timeline grouping for recovery checkpoints (docs/UI_UX_DESIGN.md section 7). */
+export const dateBucket = (iso: string, now: Date = new Date()): DateBucket => {
+  const date = new Date(iso);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  if (date.getTime() >= startOfToday) return "Today";
+  if (date.getTime() >= startOfToday - day) return "Yesterday";
+  if (date.getTime() >= startOfToday - 7 * day) return "Previous 7 days";
+  return "Older";
+};
+
+export const formatTime = (iso: string, locale?: string): string =>
+  new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });

@@ -81,9 +81,9 @@ Permissions must be justified by features that are **actually shipped**. Propose
 | `host_permissions` limited to API origin | Send HTTPS requests to your own backend |
 | `identity` (conditional) | Only if selected auth implementation needs Chrome identity flows |
 
-**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`. No host permissions, no `storage`, `alarms`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
+**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints). No host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
 
-Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
+Recovery checkpoints contain only tab URLs, titles, pinned state and groups of normal windows; they stay in local IndexedDB and are never uploaded. Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
 
 `chrome.windows` is an API namespace, not necessarily an extra manifest permission. Do not request `history`, `<all_urls>` host access, `cookies`, `webRequest`, or `scripting` without a feature-specific justification and privacy review. Chrome policy requires the narrowest necessary permissions.
 

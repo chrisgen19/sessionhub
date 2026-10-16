@@ -7,6 +7,7 @@
   "exports": {
     "./capture": "./src/capture.ts",
     "./naming": "./src/naming.ts",
+    "./recovery": "./src/recovery.ts",
     "./restore-plan": "./src/restore-plan.ts",
     "./search": "./src/search.ts",
     "./session-edit": "./src/session-edit.ts",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatListDate, plural } from "./format";
+import { dateBucket, formatListDate, plural } from "./format";
 
 describe("formatListDate", () => {
   const now = new Date(2026, 9, 16, 15, 0);
@@ -22,3 +22,14 @@ describe("plural", () => {
     expect(plural(1284, "tab")).toBe("1,284 tabs");
   });
 });
+
+describe("dateBucket", () => {
+  const now = new Date(2026, 9, 16, 15, 0);
+  it("groups by local day", () => {
+    expect(dateBucket(new Date(2026, 9, 16, 0, 5).toISOString(), now)).toBe("Today");
+    expect(dateBucket(new Date(2026, 9, 15, 23, 59).toISOString(), now)).toBe("Yesterday");
+    expect(dateBucket(new Date(2026, 9, 10).toISOString(), now)).toBe("Previous 7 days");
+    expect(dateBucket(new Date(2026, 9, 1).toISOString(), now)).toBe("Older");
+  });
+});
+

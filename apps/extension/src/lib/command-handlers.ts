@@ -3,8 +3,11 @@ import { defaultSessionName } from "@sessionhub/core/naming";
 import { planRestore, planRetry, type RestorePlan } from "@sessionhub/core/restore-plan";
 import { InvalidSessionNameError, renameSession } from "@sessionhub/core/session-edit";
 import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
+import type { SavedSession } from "@sessionhub/contracts/session";
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
+import { runCheckpoint } from "./recovery-checkpoint";
+import { getSnapshot } from "./recovery-repository";
 import { commandSchema, type Command, type CommandResponse, type ErrorCode } from "./messages";
 import {
   appendRestoreOutcomes,
@@ -98,12 +101,23 @@ const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps
   return job;
 };
 
+const restoreFrom = async (session: SavedSession, tabIds: string[] | undefined, deps: HandlerDeps) => {
+  const plan = planRestore(session, tabIds ? { tabIds: new Set(tabIds) } : {});
+  const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now() });
+  return { job: await runRestoreJob(job.id, plan, deps) };
+};
+
 const restore = async (command: Extract<Command, { type: "restore.start" }>, deps: HandlerDeps) => {
   const session = await getSession(deps.db, command.sessionId);
   if (!session) throw new SessionNotFoundError("Session no longer exists");
-  const plan = planRestore(session, command.tabIds ? { tabIds: new Set(command.tabIds) } : {});
-  const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now() });
-  return { job: await runRestoreJob(job.id, plan, deps) };
+  return restoreFrom(session, command.tabIds, deps);
+};
+
+/** Recovery checkpoints restore through the same planner, job and retry flow as sessions. */
+const restoreCheckpoint = async (command: Extract<Command, { type: "recovery.restore" }>, deps: HandlerDeps) => {
+  const snapshot = await getSnapshot(deps.db, command.snapshotId);
+  if (!snapshot) throw new SessionNotFoundError("This checkpoint was removed by retention");
+  return restoreFrom(snapshot.session, command.tabIds, deps);
 };
 
 /** Re-runs only tabs that never opened, in new windows. Works from the stored plan, not the session. */
@@ -136,6 +150,13 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         return { ok: true, data: await restore(command, deps) };
       case "restore.retry":
         return { ok: true, data: await retry(command, deps) };
+      case "recovery.restore":
+        return { ok: true, data: await restoreCheckpoint(command, deps) };
+      case "recovery.checkpointNow": {
+        const result = await runCheckpoint(deps, { force: true, reason: "manual" });
+        if (result.status === "error") return fail("browser-error", result.message);
+        return { ok: true, data: { status: result.status, snapshotId: "snapshotId" in result ? result.snapshotId : null } };
+      }
     }
   } catch (error) {
     return toErrorResponse(error);

@@ -155,7 +155,7 @@ LocalSessionStore (scope = 'local' or userAccountId):
 
 Use transactional writes when editing a synced entity: **update local entity + add outbox operation atomically**. Pull application similarly commits remote entity updates, cursor and conflict states in a single transaction per page.
 
-### Implemented local schema (Dexie version 1, verified 2026-10-16)
+### Implemented local schema (Dexie versions 1 and 2, verified 2026-10-16)
 
 Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 
@@ -163,11 +163,15 @@ Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 |---|---|---|
 | `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope: "local"`; windows/groups/tabs are nested in the record |
 | `device` | `key` (`"this-device"`) | `installationId` (UUID), `friendlyName` (default "This browser"), `createdAt` |
+| `recoverySnapshots` (v2) | `id`, `capturedAt`, `[capturedAt+tabCount]` | Immutable checkpoint: `capturedAt`, `reason` (`automatic`/`manual`), `fingerprint`, counts, and `session` (a `SavedSession` whose id equals the snapshot id). Local only, never synced |
+| `recoveryState` (v2) | `key` (`"state"`) | `dirty`, `lastChangeAt`, `lastSnapshotAt`, `lastFingerprint`, `lastError` |
 | `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, append-only per-tab outcomes across attempts, `attempts` (absent on older records = 1), status `running` / `completed` / `partial` / `failed` |
 
-Not yet created: `sessionVersions`, `recoverySnapshots`, `workspaces`, `outbox`, `syncState`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit version 1.
+Not yet created: `sessionVersions`, `workspaces`, `outbox`, `syncState`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit version 1.
 
 Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are not yet pruned (retention pending).
+
+**Recovery checkpoints (implemented):** every material browser change (tab created/removed/moved/attached/detached/replaced, URL/pinned/group change, window created/removed, group changes, browser startup/install) writes `dirty: true` and `lastChangeAt`. The clean-to-dirty transition arms a one-shot `recovery-debounce` alarm (30 s; Chrome before 120 rounds up to 1 min); a `recovery-periodic` alarm (30 min) is the safety net. A run reads all normal windows (incognito and SessionHub's own pages excluded), fingerprints URLs/order/pinned/groups (titles ignored), skips the insert if the fingerprint matches the last one, and stores nothing when there are no tabs. Insert + retention + state update happen in one transaction; the dirty flag is cleared only if no change arrived after the capture started. Retention (`RECOVERY_RETENTION`): newest 50 within 7 days, always keeping the newest checkpoint and the largest recent one. The v1 -> v2 upgrade is covered by a test.
 
 **Restore job lifecycle (implemented):** created as `running` with `attempts: 1` before any tab opens -> outcomes appended per window -> status settled from outcomes (`completed` when every planned tab has an `opened` outcome, `failed` when none has, otherwise `partial`), also when a step throws. `restore.retry` claims a `partial`/`failed` job by switching it to `running` and incrementing `attempts` in one transaction (a `running` or `completed` job is refused), then runs `planRetry`: only planned tabs with no `opened` outcome in any attempt, re-classified, in new windows. A tab therefore never opens twice for the same job. Known gap: a job whose worker was killed mid-run stays `running` and can't be retried.
 

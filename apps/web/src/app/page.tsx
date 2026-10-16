@@ -24,10 +24,10 @@ const WORKS_TODAY = [
   "Search saved sessions by name, tab title or URL",
   "Restore into new windows with a preview, a per-tab result summary and retry for tabs that failed",
   "Rename, delete with confirmation, and export or import sessions as JSON",
+  "Automatic local recovery checkpoints you can inspect and restore",
 ];
 
 const COMING_NEXT = [
-  "Automatic recovery snapshots",
   "Side panel for navigating open tabs",
   "Account sign-in and opt-in sync between computers",
 ];

@@ -254,3 +254,68 @@ test("a real mid-restore failure can be retried from the summary", async ({ cont
   expect(reopened.every((url) => [`${SITE}/red`, `${SITE}/green`, `${SITE}/blue`].includes(url))).toBe(true);
 });
 
+/** Reads a whole object store from the extension's IndexedDB (runs in the page; pass the name as the evaluate argument). */
+const readStore = async (store: "recoverySnapshots" | "recoveryState") => {
+  const db = await new Promise<IDBDatabase>((resolve) => {
+    const request = indexedDB.open("sessionhub");
+    request.onsuccess = () => resolve(request.result);
+  });
+  return new Promise<unknown[]>((resolve) => {
+    const get = db.transaction(store).objectStore(store).getAll();
+    get.onsuccess = () => resolve(get.result);
+  });
+};
+
+test("browser changes trigger an automatic checkpoint via a real alarm, restorable from Recovery", async ({ context, worker, extensionId }) => {
+  test.setTimeout(150_000);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#view=recovery`);
+  await expect(manager.getByText(/automatic checkpoints appear as you browse/i)).toBeVisible();
+
+  const page = await context.newPage();
+  await page.goto(`${SITE}/checkpoint-me`);
+  // The change is recorded durably and a debounce alarm is armed.
+  await expect
+    .poll(async () => ((await manager.evaluate(readStore, "recoveryState" as const)) as { dirty: boolean }[])[0]?.dirty)
+    .toBe(true);
+  expect(await worker.evaluate(() => chrome.alarms.get("recovery-debounce").then((alarm) => Boolean(alarm)))).toBe(true);
+  expect(await worker.evaluate(() => chrome.alarms.get("recovery-periodic").then((alarm) => alarm?.periodInMinutes))).toBe(30);
+
+  // Chrome fires the 30s debounce alarm; the open Recovery view updates live.
+  const today = manager.getByRole("region", { name: "Today" });
+  await expect(today.getByRole("button")).toHaveCount(1, { timeout: 100_000 });
+  const snapshots = (await manager.evaluate(readStore, "recoverySnapshots" as const)) as {
+    reason: string;
+    session: { windows: { tabs: { url: string }[] }[] };
+  }[];
+  expect(snapshots[0]!.reason).toBe("automatic");
+  const urls = snapshots[0]!.session.windows.flatMap((w) => w.tabs.map((t) => t.url));
+  expect(urls).toContain(`${SITE}/checkpoint-me`);
+  // SessionHub's own manager page is never captured.
+  expect(urls.some((url) => url.startsWith(`chrome-extension://${extensionId}`))).toBe(false);
+  expect(((await manager.evaluate(readStore, "recoveryState" as const)) as { dirty: boolean }[])[0]?.dirty).toBe(false);
+
+  // Restore it into a new window from the Recovery inspector.
+  await page.close();
+  const before = await snapshotWindows(worker);
+  await today.getByRole("button").click();
+  await manager.getByRole("article", { name: /checkpoint details/i }).getByRole("button", { name: /restore/i }).click();
+  const dialog = manager.getByRole("dialog");
+  await dialog.getByRole("button", { name: /^restore 1 tab$/i }).click();
+  await expect(dialog.getByText(/opened 1 of 1 tab/i)).toBeVisible();
+  await expect
+    .poll(async () => (await snapshotWindows(worker)).windows.find((w) => !before.windows.some((old) => old.id === w.id))?.urls)
+    .toEqual([`${SITE}/checkpoint-me`]);
+});
+
+test("Checkpoint now skips unchanged state", async ({ context, extensionId }) => {
+  await (await context.newPage()).goto(`${SITE}/steady`);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#view=recovery`);
+  await manager.getByRole("button", { name: "Checkpoint now" }).click();
+  await expect(manager.getByText("Checkpoint saved.")).toBeVisible();
+  await manager.getByRole("button", { name: "Checkpoint now" }).click();
+  await expect(manager.getByText(/nothing changed since the last checkpoint/i)).toBeVisible();
+  await expect(manager.getByRole("region", { name: "Today" }).getByRole("button")).toHaveCount(1);
+});
+

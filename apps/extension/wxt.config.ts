@@ -12,8 +12,9 @@ export default defineConfig({
     description: "Save, search and safely restore your browser windows. Local-first.",
     // Each permission maps to a shipped feature (docs/SECURITY_PRIVACY.md section 6):
     // tabs: read tab titles/URLs to save sessions; tabGroups: save/restore groups;
-    // favicon: show cached favicons without fetching third-party icon URLs.
-    permissions: ["tabs", "tabGroups", "favicon"],
+    // favicon: show cached favicons without fetching third-party icon URLs;
+    // alarms: schedule debounced, bounded recovery checkpoints (MV3 workers can't keep timers).
+    permissions: ["tabs", "tabGroups", "favicon", "alarms"],
     // The _favicon endpoint used for icons needs Chrome 104+.
     minimum_chrome_version: "104",
   },

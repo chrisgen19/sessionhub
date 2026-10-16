@@ -18,7 +18,14 @@ type Phase =
  * Safety-critical restore preview (docs/UI_UX_DESIGN.md section 12): new windows only,
  * per-window selection, skipped tabs listed before anything opens.
  */
-export function RestoreDialog({ session, onClose }: { session: SavedSession; onClose: () => void }) {
+interface RestoreDialogProps {
+  session: SavedSession;
+  /** A recovery checkpoint carries its snapshot in `session` (same id). */
+  kind?: "session" | "snapshot";
+  onClose: () => void;
+}
+
+export function RestoreDialog({ session, kind = "session", onClose }: RestoreDialogProps) {
   const [phase, setPhase] = useState<Phase>({ name: "preview" });
   const [selectedWindows, setSelectedWindows] = useState(() => new Set(session.windows.map((window) => window.id)));
 
@@ -39,11 +46,12 @@ export function RestoreDialog({ session, onClose }: { session: SavedSession; onC
 
   const start = async () => {
     setPhase({ name: "running" });
-    const response = await sendCommand({
-      type: "restore.start",
-      sessionId: session.id,
-      ...(allSelected ? {} : { tabIds: [...selectedTabIds] }),
-    });
+    const tabIds = allSelected ? {} : { tabIds: [...selectedTabIds] };
+    const response = await sendCommand(
+      kind === "snapshot"
+        ? { type: "recovery.restore", snapshotId: session.id, ...tabIds }
+        : { type: "restore.start", sessionId: session.id, ...tabIds },
+    );
     setPhase(
       response.ok
         ? { name: "done", job: response.data.job, retrying: false, retryError: null }

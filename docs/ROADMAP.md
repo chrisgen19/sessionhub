@@ -45,7 +45,7 @@ flowchart LR
 - [x] Manager list/search, rename/delete local saved sessions.
 - [x] Restore full session in **new windows by default** with preview.
 - [x] Show unsupported/failed tabs; partial restore retry.
-- [ ] Automatic snapshots with bounded retention and MV3 alarms.
+- [x] Automatic snapshots with bounded retention and MV3 alarms.
 - [x] Versioned JSON export/import validation.
 - [ ] Tests for restart, quota failure, large tab count, service-worker interruption. (browser restart and worker stop in real Chromium, 500-tab capture as a unit test: done; quota failure and large live-browser restore: pending)
 
