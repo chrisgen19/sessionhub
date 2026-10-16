@@ -30,7 +30,7 @@ export interface DeviceListItem {
   revokedAt: Date | null;
 }
 
-const liveSessions = (userId: string) => ({ userId, deletedAt: null, isArchived: false });
+const liveSessions = (userId: string, archived = false) => ({ userId, deletedAt: null, isArchived: archived });
 
 const sessionFields = { id: true, name: true, sourceDeviceName: true, tabCount: true, windowCount: true, updatedAt: true } as const;
 
@@ -45,15 +45,15 @@ export const getOverviewStats = async (prisma: PrismaClient, userId: string): Pr
 
 export const SESSION_LIST_LIMIT = 100;
 
-/** Newest first; optional case-insensitive name search. */
+/** Newest first; optional case-insensitive name search. Active sessions unless `archived`. */
 export const listSessions = (
   prisma: PrismaClient,
   userId: string,
-  options: { query?: string; take?: number } = {},
+  options: { query?: string; take?: number; archived?: boolean } = {},
 ): Promise<SessionListItem[]> => {
   const query = options.query?.trim();
   return prisma.savedSession.findMany({
-    where: { ...liveSessions(userId), ...(query ? { name: { contains: query, mode: "insensitive" as const } } : {}) },
+    where: { ...liveSessions(userId, options.archived), ...(query ? { name: { contains: query, mode: "insensitive" as const } } : {}) },
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
     take: Math.min(options.take ?? SESSION_LIST_LIMIT, SESSION_LIST_LIMIT),
     select: sessionFields,

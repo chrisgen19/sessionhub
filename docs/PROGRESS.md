@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell and saved-session API done. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API and session detail page done. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -11,15 +11,38 @@
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
-| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** CRUD with versions, tombstones and change log; `GET /api/health`. No session detail page yet |
+| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** CRUD with versions, tombstones and change log; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth, `8781777` dashboard. The sessions API slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth, `8781777` dashboard, `37adf2f` sessions API. The session detail slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (M3 session detail slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** `/app/sessions/[id]` with the window/group/tab tree, rename/archive/delete via `/api/v1/sessions` with version conflicts surfaced, export JSON, safe open links; list rows link to it.
+
+**Implemented:**
+
+- `src/app/app/sessions/[id]/page.tsx` + `not-found.tsx`; list rows are links; Active/Archived views (`listSessions` `archived` option).
+- `src/components/sessions/`: `session-actions.tsx`, `rename-form.tsx`, `use-session-mutation.ts` (conflict/not-found/error notices, Load latest), `confirm-dialog.tsx` (native modal), `window-tree.tsx` (server component, render-time URL classification).
+- `src/lib/api-client.ts` (typed same-origin calls), `src/lib/session-files.ts` (`buildSessionExport`, `downloadSessionExport`, `openableUrls`, `openLinks`).
+- `next.config.ts`: `Referrer-Policy: no-referrer` for `/app/*`.
+
+**Validated commands and results:**
+
+- `pnpm check --force`: **pass** (14 tasks); web unit tests 29 (+2: the export is accepted by the extension's own `parseSessionExport` + `prepareImportedSession`, and a mislabelled `javascript:` tab is re-flagged unsafe; `openableUrls` returns only web pages).
+- `pnpm build --force`: **pass**. `pnpm --filter @sessionhub/web test:db`: **18/18**.
+- `pnpm test:e2e`: **pass** (extension 9, web 21). Web E2E **84/84** over 2 x `--repeat-each 2`. New: row link -> detail; tree links only for http(s) with noopener/noreferrer, HTML title as text, `javascript:`/`chrome:` not links, `Referrer-Policy` header; rename then a real conflict (API edit behind the page) -> "now version 3" -> Load latest -> reapply -> version 4; archive/unarchive across views; delete needs confirmation, then not found (also malformed id and another user's id); export download validates against the schema; Open 2 links opens exactly the two web pages with `window.opener === null`; 375 px without overflow.
+- Root `pnpm test:db` not run (database package unchanged; its reset needs fresh consent).
+
+**Manual verification:** screenshots at 1440 (conflict notice, delete dialog, dark) and 390 px.
+
+**Known gaps:** the pop-up-blocked path of "Open links" isn't covered by E2E (Playwright doesn't block pop-ups); no version history view; no description editing or pin toggle in the UI (API supports them).
+
 
 ### 2026-10-16 (M3 sessions API slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -313,9 +336,12 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the sessions API slice (needs the user's go-ahead); push a remote so CI runs for the first time.
-2. Continue M3: **session detail page** in the dashboard (`/app/sessions/[id]`: window/group/tab tree with safe URL display, rename/archive/delete through the new API with version conflicts surfaced, export JSON, "open links" with a multi-tab warning; rows in the list become links).
-3. Then: rate limiting for `/api/v1` writes; workspace and device endpoints; web app Dockerfile/compose service with healthcheck; email delivery for verification and password reset.
+1. Commit the session detail slice (needs the user's go-ahead); push a remote so CI runs for the first time.
+2. Finish M3:
+   1. Rate limiting for `/api/v1` writes (per user, in memory for one instance; documented limits, 429 + `Retry-After`).
+   2. Web app Dockerfile and a `web` service in compose with `/api/health` healthcheck and an explicit `prisma migrate deploy` step.
+   3. Email delivery for verification and password reset (choose a provider with the user first).
+3. Then M4 (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
 
 ## Open questions / architecture validations
 

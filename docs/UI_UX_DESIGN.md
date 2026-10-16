@@ -525,6 +525,16 @@ Built under `/app` with a shared signed-in layout: 240 px sidebar (Overview, Sav
 - Empty states say plainly that sync isn't available yet and where sessions live meanwhile. A skeleton (`loading.tsx`) and a generic error boundary with Try again (`error.tsx`) cover slow and failed loads.
 - Verified at 1440, 900 and 390 px and in dark mode.
 
+## 18d. Web session detail (2026-10-16)
+
+`/app/sessions/[id]` (list rows link to it; the list has Active / Archived views). Layout: breadcrumb, name with Pinned/Archived badges, "From <source> · N windows · N tabs · updated ... · version N", an action row, a restore note, and the window tree (groups as labelled runs in saved order, pinned icon, "Won't open" badge with a screen-reader reason).
+
+- **Rename / Archive / Unarchive / Delete** go through `/api/v1/sessions` with the version the page loaded. A 409 shows "This session was changed somewhere else (now version N). Load the latest version, then make your change again." with **Load latest version**; the rename form stays open with the user's text so the edit isn't lost. Delete uses a confirmation dialog that states scope (account library and, later, other devices; never open tabs or extension copies) and returns to the list.
+- **Export JSON** downloads the same `sessionhub.session-export` file the extension's Import accepts. This is the website's honest restore path: the restore note says to export here and import in the extension, and that the website can't open or change browser windows (no web-to-extension bridge exists).
+- **Open N links** opens only http(s) pages, asks for confirmation when there is more than one, and reports how many the browser's pop-up blocker stopped. Individual tab titles are links with `target="_blank" rel="noopener noreferrer"`.
+- Missing, deleted, malformed or another user's ids show "Session not found".
+- Verified at 1440 and 390 px and in dark mode.
+
 ## 19. Reference materials
 
 - [W3C WAI-ARIA combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/)

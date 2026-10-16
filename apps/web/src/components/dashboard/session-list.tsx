@@ -1,4 +1,5 @@
 import { Layers } from "lucide-react";
+import Link from "next/link";
 import { formatRelative, plural } from "@/lib/format";
 import type { SessionListItem } from "@/server/queries/dashboard";
 
@@ -14,7 +15,11 @@ export function SessionList({ sessions, now = new Date() }: { sessions: SessionL
       </div>
       <ul aria-label="Saved sessions" className="divide-y divide-line">
         {sessions.map((session) => (
-          <li key={session.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_160px_80px_100px]">
+          <li key={session.id}>
+            <Link
+              href={`/app/sessions/${session.id}`}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 hover:bg-surface-muted md:grid-cols-[minmax(0,1fr)_160px_80px_100px]"
+            >
             <div className="flex min-w-0 items-center gap-3">
               <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
                 <Layers aria-hidden="true" className="size-4" />
@@ -31,6 +36,7 @@ export function SessionList({ sessions, now = new Date() }: { sessions: SessionL
             <span className="hidden truncate text-xs text-fg-muted md:block">{session.sourceDeviceName || "Unknown device"}</span>
             <span className="text-right text-xs tabular-nums text-fg-muted">{plural(session.tabCount, "tab")}</span>
             <span className="hidden text-right text-xs tabular-nums text-fg-muted md:block">{formatRelative(session.updatedAt, now)}</span>
+            </Link>
           </li>
         ))}
       </ul>
