@@ -319,3 +319,89 @@ test("Checkpoint now skips unchanged state", async ({ context, extensionId }) =>
   await expect(manager.getByRole("region", { name: "Today" }).getByRole("button")).toHaveCount(1);
 });
 
+test("a new worker settles a cut-off restore and prunes old jobs; the summary reopens and retries", async ({ context, worker, extensionId }) => {
+  for (const name of ["north", "south", "east"]) await (await context.newPage()).goto(`${SITE}/${name}`);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html`);
+  const saved = await manager.evaluate(() => chrome.runtime.sendMessage({ type: "session.capture", scope: { kind: "all-windows" } }));
+  const sessionId = (saved as { data: { sessionId: string } }).data.sessionId;
+
+  // Seed what a dead worker leaves behind: a "running" job that only reached its first tab,
+  // plus a completed job from 60 days ago.
+  const ids = await manager.evaluate(async (id) => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open("sessionhub");
+      request.onsuccess = () => resolve(request.result);
+    });
+    const session = await new Promise<{ windows: { tabs: { id: string; url: string }[] }[] }>((resolve) => {
+      const get = db.transaction("sessions").objectStore("sessions").get(id);
+      get.onsuccess = () => resolve(get.result);
+    });
+    const tabs = session.windows.flatMap((w) => w.tabs).filter((t) => t.url.startsWith("https://"));
+    const plan = {
+      sessionId: id,
+      windows: [{ sourceWindowId: crypto.randomUUID(), groups: [], tabs: tabs.map((t) => ({ sourceTabId: t.id, url: t.url, pinned: false, groupId: null })) }],
+      skipped: [],
+      tabCount: tabs.length,
+    };
+    const old = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    const cutOff = {
+      id: crypto.randomUUID(),
+      sessionId: id,
+      createdAt: minuteAgo,
+      updatedAt: minuteAgo,
+      status: "running",
+      plan,
+      outcomes: [{ sourceTabId: tabs[0]!.id, status: "opened" }],
+      attempts: 1,
+    };
+    const ancient = { ...cutOff, id: crypto.randomUUID(), createdAt: old, updatedAt: old, status: "completed" };
+    const store = db.transaction("restoreJobs", "readwrite").objectStore("restoreJobs");
+    store.put(cutOff);
+    store.put(ancient);
+    await new Promise((resolve) => (store.transaction.oncomplete = resolve));
+    return { cutOff: cutOff.id, ancient: ancient.id };
+  }, sessionId);
+
+  // Kill the worker, then wake a fresh one with any message.
+  const cdp = await context.newCDPSession(manager);
+  const statuses: string[] = [];
+  cdp.on("ServiceWorker.workerVersionUpdated", (event) => statuses.push(...event.versions.map((v) => v.runningStatus)));
+  await cdp.send("ServiceWorker.enable");
+  await cdp.send("ServiceWorker.stopAllWorkers");
+  await expect.poll(() => statuses.at(-1)).toBe("stopped");
+  await manager.evaluate(() => chrome.runtime.sendMessage({ type: "noop" }));
+
+  const readJobs = () =>
+    manager.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve) => {
+        const request = indexedDB.open("sessionhub");
+        request.onsuccess = () => resolve(request.result);
+      });
+      return new Promise<{ id: string; status: string; interruptedAt?: string }[]>((resolve) => {
+        const get = db.transaction("restoreJobs").objectStore("restoreJobs").getAll();
+        get.onsuccess = () => resolve(get.result);
+      });
+    });
+  await expect.poll(async () => (await readJobs()).find((j) => j.id === ids.cutOff)?.status).toBe("partial");
+  const jobs = await readJobs();
+  expect(jobs.find((j) => j.id === ids.cutOff)?.interruptedAt).toBeTruthy();
+  expect(jobs.some((j) => j.id === ids.ancient)).toBe(false);
+
+  // The inspector shows the interrupted job; its summary reopens and retries the rest.
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#session=${sessionId}`);
+  const inspector = manager.getByRole("article", { name: /session details/i });
+  await expect(inspector.getByText(/opened 1 of 3, interrupted/i)).toBeVisible();
+  await inspector.getByRole("button", { name: "View summary" }).click();
+  const dialog = manager.getByRole("dialog");
+  await expect(dialog.getByText(/this restore was cut off/i)).toBeVisible();
+  const restoreWorker = context.serviceWorkers()[0] ?? worker;
+  const before = await snapshotWindows(restoreWorker);
+  await dialog.getByRole("button", { name: "Retry 2 tabs" }).click();
+  await expect(dialog.getByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeVisible();
+  await expect
+    .poll(async () => (await snapshotWindows(restoreWorker)).windows.find((w) => !before.windows.some((old) => old.id === w.id))?.urls)
+    .toEqual([`${SITE}/south`, `${SITE}/east`]);
+});
+

@@ -35,16 +35,30 @@ export function RestoreSummary({ session, job, retrying, retryError, onRetry, on
   const { openedCount, failed, notAttemptedCount } = summarizeRestoreJob(job);
   const remaining = failed.length + notAttemptedCount;
   const ok = job.status === "completed";
+  const running = job.status === "running";
   const attempts = job.attempts ?? 1;
 
   return (
     <>
-      <p role="status" className={`mt-5 flex items-center gap-2 text-[13px] font-semibold ${ok ? "text-brand" : "text-danger"}`}>
-        {ok ? <CheckCircle2 aria-hidden="true" className="size-4" /> : <XCircle aria-hidden="true" className="size-4" />}
-        Opened {openedCount} of {plural(job.plan.tabCount, "tab")}
+      <p role="status" className={`mt-5 flex items-center gap-2 text-[13px] font-semibold ${ok ? "text-brand" : running ? "" : "text-danger"}`}>
+        {running ? (
+          <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+        ) : ok ? (
+          <CheckCircle2 aria-hidden="true" className="size-4" />
+        ) : (
+          <XCircle aria-hidden="true" className="size-4" />
+        )}
+        {running ? "Still restoring: opened " : "Opened "}
+        {openedCount} of {plural(job.plan.tabCount, "tab")}
         {attempts > 1 ? ` after ${plural(attempts, "attempt")}` : ` in ${plural(job.plan.windows.length, "new window")}`}.
       </p>
-      {remaining > 0 && (
+      {job.interruptedAt && (
+        <p className="mt-2 text-xs text-fg-muted">
+          This restore was cut off (the browser or SessionHub stopped) and was finished up afterwards. Tabs it didn't reach
+          can be retried.
+        </p>
+      )}
+      {remaining > 0 && !running && (
         <div className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
           <p className="font-semibold">{plural(remaining, "tab")} didn't open</p>
           <ul className="mt-1 max-h-28 space-y-0.5 overflow-y-auto">

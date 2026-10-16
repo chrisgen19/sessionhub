@@ -5,6 +5,7 @@ import { buttonClass } from "../../components/modal";
 import type { RecoverySnapshotRecord } from "../../lib/db";
 import { downloadSessionExport } from "../../lib/export-download";
 import { formatFullDate, plural } from "../../lib/format";
+import { LastRestore } from "../manager/last-restore";
 import { RestoreDialog } from "../manager/restore-dialog";
 import { WindowTree } from "../manager/window-tree";
 
@@ -38,6 +39,7 @@ export function CheckpointInspector({ snapshot, onBack }: { snapshot: RecoverySn
           Export JSON
         </button>
       </div>
+      <LastRestore session={snapshot.session} />
       <p className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-fg-muted">
         Checkpoints are replaced over time. To keep this one, export it and import the file as a saved session.
       </p>

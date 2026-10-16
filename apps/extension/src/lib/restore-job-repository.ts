@@ -89,14 +89,81 @@ export const claimRestoreJobForRetry = async (db: SessionHubDb, jobId: string, n
     return claimed;
   });
 
+const settledStatus = (job: RestoreJobRecord): RestoreJobRecord["status"] => {
+  const { openedCount } = summarizeRestoreJob(job);
+  return openedCount === job.plan.tabCount ? "completed" : openedCount === 0 ? "failed" : "partial";
+};
+
 export const finishRestoreJob = async (db: SessionHubDb, jobId: string, now: Date): Promise<RestoreJobRecord> =>
   db.transaction("rw", db.restoreJobs, async () => {
     const job = await db.restoreJobs.get(jobId);
     if (!job) throw new RestoreJobNotFoundError(`Restore job ${jobId} not found`);
-    const { openedCount } = summarizeRestoreJob(job);
-    const status: RestoreJobRecord["status"] =
-      openedCount === job.plan.tabCount ? "completed" : openedCount === 0 ? "failed" : "partial";
-    const finished = { ...job, status, updatedAt: now.toISOString() };
+    const finished = { ...job, status: settledStatus(job), updatedAt: now.toISOString() };
     await db.restoreJobs.put(finished);
     return finished;
   });
+
+/**
+ * Restores only run inside the background worker, so a job still `running` that was
+ * last updated before this worker started was cut off (worker killed, browser closed).
+ * Settles each from its recorded outcomes so it can be inspected and retried. Jobs
+ * updated after `workerStartedAt` belong to this worker and are left alone.
+ */
+export const settleInterruptedJobs = (db: SessionHubDb, workerStartedAt: Date, now: Date): Promise<number> =>
+  db.transaction("rw", db.restoreJobs, async () => {
+    const cutoff = workerStartedAt.toISOString();
+    const stale = await db.restoreJobs.filter((job) => job.status === "running" && job.updatedAt < cutoff).toArray();
+    const timestamp = now.toISOString();
+    await db.restoreJobs.bulkPut(
+      stale.map((job) => ({ ...job, status: settledStatus(job), interruptedAt: timestamp, updatedAt: timestamp })),
+    );
+    return stale.length;
+  });
+
+export const RESTORE_JOB_RETENTION = { maxCount: 50, maxAgeDays: 30 } as const;
+
+/** Ids to prune: beyond the newest `maxCount` or older than `maxAgeDays`; the newest job is always kept. */
+export const selectJobsToPrune = (
+  jobs: readonly { id: string; createdAt: string }[],
+  now: Date,
+  policy: { maxCount: number; maxAgeDays: number } = RESTORE_JOB_RETENTION,
+): string[] => {
+  const cutoff = new Date(now.getTime() - policy.maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
+  return [...jobs]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .filter((job, index) => index > 0 && (index >= policy.maxCount || job.createdAt < cutoff))
+    .map((job) => job.id);
+};
+
+/** Prunes old jobs using index keys only (job bodies hold whole plans). Never prunes running jobs. */
+export const pruneRestoreJobs = (db: SessionHubDb, now: Date, policy = RESTORE_JOB_RETENTION): Promise<number> =>
+  db.transaction("rw", db.restoreJobs, async () => {
+    const metas: { id: string; createdAt: string }[] = [];
+    await db.restoreJobs.orderBy("createdAt").eachKey((createdAt, cursor) => {
+      metas.push({ id: String(cursor.primaryKey), createdAt: String(createdAt) });
+    });
+    const candidates = selectJobsToPrune(metas, now, policy);
+    const running = new Set(
+      (await db.restoreJobs.bulkGet(candidates)).flatMap((job) => (job?.status === "running" ? [job.id] : [])),
+    );
+    const prune = candidates.filter((id) => !running.has(id));
+    await db.restoreJobs.bulkDelete(prune);
+    return prune.length;
+  });
+
+/** Most recent restore job for a saved session or recovery checkpoint (the plan's source id). */
+export const getLatestRestoreJob = async (db: SessionHubDb, sourceId: string): Promise<RestoreJobRecord | undefined> => {
+  const jobs = await db.restoreJobs.where("sessionId").equals(sourceId).toArray();
+  return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+};
+
+/** Worker-start housekeeping. Never throws: housekeeping must not block commands. */
+export const runRestoreHousekeeping = async (
+  db: SessionHubDb,
+  workerStartedAt: Date,
+  now: Date,
+): Promise<{ settled: number; pruned: number }> => {
+  const settled = await settleInterruptedJobs(db, workerStartedAt, now).catch(() => 0);
+  const pruned = await pruneRestoreJobs(db, now).catch(() => 0);
+  return { settled, pruned };
+};

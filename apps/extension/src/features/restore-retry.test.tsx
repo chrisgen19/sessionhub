@@ -28,7 +28,7 @@ vi.mock("../lib/message-client", async () => {
         db: db(),
         readWindows: async () => [],
         restoreWindow: (window) => fakeRestoreWindow(window),
-        now: () => new Date("2026-10-17T00:00:00.000Z"),
+        now: () => new Date(),
         createId: () => crypto.randomUUID(),
       }),
   };
@@ -81,4 +81,59 @@ describe("restore retry", () => {
     expect((await within(dialog).findByRole("alert")).textContent).toMatch(/already opened/);
     expect(within(dialog).getByText(/opened 2 of 3 tabs/i)).toBeTruthy();
   });
+
+  it("reopens the last restore's summary from the inspector and retries from there", async () => {
+    const session = sampleSession();
+    await putSession(getDb(), session);
+    window.history.replaceState(null, "", `/manager.html#session=${session.id}`);
+    render(<ManagerApp />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /restore/i }));
+    let dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Restore 3 tabs" }));
+    await within(dialog).findByText(/opened 2 of 3 tabs/i);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    const inspector = screen.getByRole("article", { name: /session details/i });
+    expect(await within(inspector).findByText(/last restore today, .*: opened 2 of 3/i)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: "View summary" }));
+    dialog = screen.getByRole("dialog", { name: `Last restore of "${session.name}"` });
+    expect(within(dialog).getByText(/React docs: No window with id: 7/)).toBeTruthy();
+
+    failAfterFirstTab = false;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Retry 1 tab" }));
+    expect(await within(dialog).findByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeTruthy();
+    expect(await within(inspector).findByText(/last restore today, .*: opened all 3/i)).toBeTruthy();
+  });
+
+  it("explains an interrupted restore that a later worker settled", async () => {
+    const session = sampleSession();
+    await putSession(getDb(), session);
+    const { planRestore } = await import("@sessionhub/core/restore-plan");
+    const { settleInterruptedJobs } = await import("../lib/restore-job-repository");
+    const plan = planRestore(session);
+    await getDb().restoreJobs.add({
+      id: crypto.randomUUID(),
+      sessionId: session.id,
+      createdAt: "2026-10-16T08:00:00.000Z",
+      updatedAt: "2026-10-16T08:00:00.000Z",
+      status: "running",
+      plan,
+      outcomes: [{ sourceTabId: plan.windows[0]!.tabs[0]!.sourceTabId, status: "opened" }],
+      attempts: 1,
+    });
+    await settleInterruptedJobs(getDb(), new Date("2026-10-16T09:00:00.000Z"), new Date("2026-10-16T09:00:00.000Z"));
+
+    window.history.replaceState(null, "", `/manager.html#session=${session.id}`);
+    render(<ManagerApp />);
+    const inspector = await screen.findByRole("article", { name: /session details/i });
+    expect(await within(inspector).findByText(/opened 1 of 3, interrupted/i)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: "View summary" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/this restore was cut off/i)).toBeTruthy();
+    expect(within(dialog).getByText(/2 tabs weren't reached/i)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Retry 2 tabs" })).toBeTruthy();
+  });
 });
+

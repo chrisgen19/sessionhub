@@ -6,12 +6,13 @@ import { DialogActions, Modal, buttonClass } from "../../components/modal";
 import type { RestoreJobRecord } from "../../lib/db";
 import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import { sendCommand } from "../../lib/message-client";
-import { RestoreSummary, SkippedList } from "./restore-summary";
+import { RestoreResult } from "./restore-result";
+import { SkippedList } from "./restore-summary";
 
 type Phase =
   | { name: "preview" }
   | { name: "running" }
-  | { name: "done"; job: RestoreJobRecord; retrying: boolean; retryError: string | null }
+  | { name: "done"; job: RestoreJobRecord }
   | { name: "error"; message: string };
 
 /**
@@ -27,6 +28,7 @@ interface RestoreDialogProps {
 
 export function RestoreDialog({ session, kind = "session", onClose }: RestoreDialogProps) {
   const [phase, setPhase] = useState<Phase>({ name: "preview" });
+  const [retrying, setRetrying] = useState(false);
   const [selectedWindows, setSelectedWindows] = useState(() => new Set(session.windows.map((window) => window.id)));
 
   const selectedTabIds = useMemo(
@@ -52,24 +54,10 @@ export function RestoreDialog({ session, kind = "session", onClose }: RestoreDia
         ? { type: "recovery.restore", snapshotId: session.id, ...tabIds }
         : { type: "restore.start", sessionId: session.id, ...tabIds },
     );
-    setPhase(
-      response.ok
-        ? { name: "done", job: response.data.job, retrying: false, retryError: null }
-        : { name: "error", message: response.error.message },
-    );
+    setPhase(response.ok ? { name: "done", job: response.data.job } : { name: "error", message: response.error.message });
   };
 
-  const retry = async (job: RestoreJobRecord) => {
-    setPhase({ name: "done", job, retrying: true, retryError: null });
-    const response = await sendCommand({ type: "restore.retry", jobId: job.id });
-    setPhase(
-      response.ok
-        ? { name: "done", job: response.data.job, retrying: false, retryError: null }
-        : { name: "done", job, retrying: false, retryError: response.error.message },
-    );
-  };
-
-  const busy = phase.name === "running" || (phase.name === "done" && phase.retrying);
+  const busy = phase.name === "running" || retrying;
 
   return (
     <Modal title={`Restore "${session.name}"`} onClose={onClose} dismissible={!busy}>
@@ -122,12 +110,11 @@ export function RestoreDialog({ session, kind = "session", onClose }: RestoreDia
       )}
 
       {phase.name === "done" && (
-        <RestoreSummary
+        <RestoreResult
           session={session}
           job={phase.job}
-          retrying={phase.retrying}
-          retryError={phase.retryError}
-          onRetry={() => void retry(phase.job)}
+          onJobUpdated={(job) => setPhase({ name: "done", job })}
+          onBusyChange={setRetrying}
           onClose={onClose}
         />
       )}

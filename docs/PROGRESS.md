@@ -9,16 +9,38 @@
 | Area | State |
 |---|---|
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
-| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs**; **automatic recovery checkpoints** with a Recovery view |
+| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
 | Web app | Static landing page + `GET /api/health` only. No auth, DB or dashboard |
 | Database / auth / sync | Not implemented (`packages/database`, `packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry. The recovery slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery. The housekeeping slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (fifth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** M2 restore-job housekeeping (settle stale running jobs on worker start, prune old jobs, reopen the last job's summary).
+
+**Implemented:**
+
+- `apps/extension/src/lib/restore-job-repository.ts`: `settleInterruptedJobs` (running + `updatedAt` before the worker start -> settled from outcomes, `interruptedAt`), `selectJobsToPrune` / `pruneRestoreJobs` (`RESTORE_JOB_RETENTION` 50 / 30 days, keys only, never prunes running or the newest job), `getLatestRestoreJob`, `runRestoreHousekeeping` (never throws).
+- `apps/extension/src/entrypoints/background.ts`: captures `workerStartedAt` synchronously and runs housekeeping on every worker start.
+- `db.ts`: optional `interruptedAt` on restore jobs (no schema version change; not indexed).
+- UI: `restore-result.tsx` (summary + retry, shared), `last-restore.tsx` + `hooks/use-latest-restore-job.ts` in both inspectors; `restore-summary.tsx` shows "Still restoring" and the cut-off explanation; `restore-dialog.tsx` now delegates retry to `RestoreResult`.
+
+**Validated commands and results (final run after last code change):**
+
+- `pnpm check --force`: **pass** (12 tasks). Tests: contracts 8, core 81, extension 62 (+7 housekeeping, +2 Last restore UI), web 1.
+- `pnpm build --force`: **pass**.
+- E2E `--repeat-each 2`: **18/18 pass** (9 tests; the new one also 3/3 alone). New: seed a `running` job that only reached its first tab plus a 60-day-old job, force-stop the worker via CDP, wake it with a message -> the cut-off job becomes `partial` with `interruptedAt`, the old job is pruned; the inspector shows "opened 1 of 3, interrupted"; View summary -> Retry 2 tabs opens exactly the two unreached URLs in a new window.
+
+**Manual verification:** inspector screenshots at 1440 and 390 px after a real partial failure (red line), and the reopened summary after retry (neutral "opened all 3").
+
+**Known gaps:** a restore cut off while the browser stays open is only settled when the worker next starts (Chrome stops idle workers within about 30 s, so in practice soon); `getLatestRestoreJob` loads all jobs for one source (bounded by pruning).
+
 
 ### 2026-10-16 (fourth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -69,7 +91,7 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Manual verification:** screenshots of the failed summary (1440, 390) and the post-retry summary.
 
-**Known gaps:** a job left `running` by a killed worker can't be retried (needs stale-job recovery); `restoreJobs` still not pruned; no retry entry point outside the restore dialog (closing the dialog loses easy access to the job).
+**Known gaps:** a job left `running` by a killed worker can't be retried (needs stale-job recovery); `restoreJobs` still not pruned; no retry entry point outside the restore dialog (closing the dialog loses easy access to the job). *(All three resolved in the fifth slice.)*
 
 
 ### 2026-10-16 (second slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
@@ -140,11 +162,10 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the recovery slice (needs the user's go-ahead); push a remote so CI runs for the first time.
+1. Commit the housekeeping slice (needs the user's go-ahead); push a remote so CI runs for the first time.
 2. Finish M2:
-   1. Restore-job housekeeping: settle stale `running` jobs on worker start (older than a few minutes, from recorded outcomes), prune old jobs, reopen the last job's summary.
-   2. Quota-failure handling: catch `QuotaExceededError` on save/import/checkpoint, show a specific message, and for checkpoints evict extra old snapshots and retry once while still protecting the newest.
-   3. Large live-browser test (100+ tabs) for capture, checkpoint and restore timing; record numbers.
+   1. Quota-failure handling: catch `QuotaExceededError` on save/import/checkpoint, show a specific message, and for checkpoints evict extra old snapshots and retry once while still protecting the newest.
+   2. Large live-browser test (100+ tabs) for capture, checkpoint and restore timing; record numbers in this file.
 3. Then M3 (PostgreSQL, Prisma 7.x stable, Better Auth).
 
 ## Open questions / architecture validations

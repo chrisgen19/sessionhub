@@ -5,6 +5,7 @@ import { restoreBrowserWindow } from "../lib/browser-restore";
 import { handleCommand, type HandlerDeps } from "../lib/command-handlers";
 import { getDb } from "../lib/db";
 import { runCheckpoint } from "../lib/recovery-checkpoint";
+import { runRestoreHousekeeping } from "../lib/restore-job-repository";
 import {
   ensurePeriodicAlarm,
   onBrowserChange,
@@ -24,6 +25,10 @@ const deps = (): HandlerDeps => ({
 const changed = () => void onBrowserChange(getDb(), new Date()).catch(() => undefined);
 
 export default defineBackground(() => {
+  // Captured synchronously at worker start: any restore job still "running" that was last
+  // updated before this moment belongs to a previous, now-dead worker.
+  const workerStartedAt = new Date();
+
   // Listeners are registered synchronously at startup (MV3 requirement). No state is
   // kept in worker globals: every command and checkpoint reads and writes IndexedDB.
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -69,4 +74,5 @@ export default defineBackground(() => {
   browser.runtime.onStartup.addListener(changed);
   browser.runtime.onInstalled.addListener(changed);
   void ensurePeriodicAlarm().catch(() => undefined);
+  void runRestoreHousekeeping(getDb(), workerStartedAt, new Date());
 });

@@ -33,6 +33,8 @@ export interface RestoreJobRecord {
   outcomes: RestoreTabOutcome[];
   /** Number of runs (1 = first restore). Absent on records written before retry existed. */
   attempts?: number;
+  /** Set when a later worker found this job still `running` and settled it (the run was cut off). */
+  interruptedAt?: string;
 }
 
 /**

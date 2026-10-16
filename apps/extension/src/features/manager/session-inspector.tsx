@@ -7,6 +7,7 @@ import { buttonClass } from "../../components/modal";
 import { downloadSessionExport } from "../../lib/export-download";
 import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import { DeleteDialog } from "./delete-dialog";
+import { LastRestore } from "./last-restore";
 import { RenameTitle } from "./rename-title";
 import { RestoreDialog } from "./restore-dialog";
 import { WindowTree } from "./window-tree";
@@ -61,6 +62,8 @@ export function SessionInspector({ session, onBack, onDeleted }: SessionInspecto
           Delete
         </button>
       </div>
+
+      <LastRestore session={session} />
 
       {notRestorable > 0 && (
         <p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
