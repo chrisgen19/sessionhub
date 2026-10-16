@@ -135,6 +135,7 @@ export const apiErrorCodeSchema = z.enum([
   "INVALID_WORKSPACE",
   "VERSION_CONFLICT",
   "ID_IN_USE",
+  "RATE_LIMITED",
   "INTERNAL_ERROR",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
@@ -149,6 +150,8 @@ export const apiErrorResponseSchema = z.object({
     expectedVersion: z.int().optional(),
     serverVersion: z.int().optional(),
     serverState: apiSessionDetailSchema.nullable().optional(),
+    /** RATE_LIMITED only: same value as the Retry-After header. */
+    retryAfterSeconds: z.int().positive().optional(),
   }),
 });
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;

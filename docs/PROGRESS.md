@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API and session detail page done. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API (rate-limited writes) and session detail page done. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -15,11 +15,33 @@
 | Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth, `8781777` dashboard, `37adf2f` sessions API. The session detail slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth, `8781777` dashboard, `37adf2f` sessions API, `20b56a4` session detail. The rate-limit slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (M3 rate-limit slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** per-user rate limiting for `/api/v1` writes (in memory, 429 with Retry-After, documented limits) with tests.
+
+**Implemented:**
+
+- `apps/web/src/server/api/rate-limit.ts`: `TokenBucketLimiter` (injectable clock, bounded key count: fully refilled buckets dropped first, then least recently used), `API_WRITE_LIMIT` = 30 burst + 1/s, process-wide `getWriteLimiter()`.
+- `apps/web/src/server/api/http.ts`: `authorizeWrite()` = same-origin check -> authentication -> limiter; 429 responses carry `Retry-After`. All three write routes use it.
+- `packages/contracts`: `RATE_LIMITED` code and optional `retryAfterSeconds` in the error envelope.
+- Dashboard: `src/components/sessions/notices.ts` (`noticeForError`) shows "You're making changes too quickly. Try again in N seconds. Nothing was changed."
+- Limits documented in `SYNC_PROTOCOL.md` 13a.
+
+**Validated commands and results:**
+
+- `pnpm check --force` / `pnpm check`: **pass** (14 tasks); web unit tests 37 (+5 limiter: burst then whole-second Retry-After, refill without exceeding capacity, denied attempts don't extend the wait, independent users, bounded memory; +3 notices).
+- `pnpm build --force`: **pass**. `pnpm --filter @sessionhub/web test:db`: **18/18**.
+- `pnpm test:e2e`: **pass** (4 tasks). Web E2E **132/132** over 3 x `--repeat-each 2`; the new rate-limit test also **10/10** alone. It covers: 5 anonymous (401) and 5 cross-origin (403) writes don't consume the budget; a 35-request mixed DELETE/POST burst lets 30 to 33 through and answers the rest with 429 + `Retry-After` + `retryAfterSeconds`; reads still 200; another user still 201; after `Retry-After` a write succeeds again.
+- **Flake found and fixed (test only):** the first version asserted 429 on a request sent *after* the burst; on a loaded run the burst took over a second, a token refilled and that request was correctly allowed. The test now reads `Retry-After` from a 429 inside the burst.
+
+**Known gaps:** no read rate limits; limiter is per process.
+
 
 ### 2026-10-16 (M3 session detail slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 

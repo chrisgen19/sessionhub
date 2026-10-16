@@ -129,3 +129,42 @@ test("retrying the same create is idempotent, and API data appears in the dashbo
   await expect(row).toContainText("Web");
   await expect(row).toContainText("2 tabs");
 });
+
+test("writes are rate-limited per user with 429 and Retry-After; reads and other users are not", async ({ playwright }) => {
+  const alice = await newApiUser(playwright.request);
+  const bob = await newApiUser(playwright.request);
+
+  // Rejected-before-auth requests must not consume Alice's budget.
+  const anonymous = await playwright.request.newContext({ baseURL: BASE_URL, extraHTTPHeaders: { origin: BASE_URL } });
+  for (let i = 0; i < 5; i += 1) expect((await anonymous.post("/api/v1/sessions", { data: sessionBody() })).status()).toBe(401);
+  for (let i = 0; i < 5; i += 1) {
+    expect((await alice.post("/api/v1/sessions", { headers: { origin: "https://evil.test" }, data: sessionBody() })).status()).toBe(403);
+  }
+
+  // A burst of 35 writes mixing methods (deletes of unknown ids and creates with an invalid
+  // body, so nothing changes): the limiter runs before the body is read, so all share one budget.
+  const responses = await Promise.all(
+    Array.from({ length: 35 }, (_, index) =>
+      index % 5 === 0
+        ? alice.post("/api/v1/sessions", { data: {} })
+        : alice.delete(`/api/v1/sessions/${randomUUID()}?expectedVersion=1`),
+    ),
+  );
+  const statuses = responses.map((response) => response.status());
+  const allowed = statuses.filter((status) => status === 404 || status === 400).length;
+  expect(allowed).toBeGreaterThanOrEqual(30);
+  expect(allowed).toBeLessThanOrEqual(33); // tokens refill at 1/s while the burst is in flight
+  expect(statuses.filter((status) => status === 429).length).toBe(35 - allowed);
+
+  // Read Retry-After from a 429 inside the burst (a later request may already be allowed again).
+  const limited = responses.find((response) => response.status() === 429)!;
+  const retryAfter = Number(limited.headers()["retry-after"]);
+  expect(retryAfter).toBeGreaterThanOrEqual(1);
+  expect(await limited.json()).toMatchObject({ error: { code: "RATE_LIMITED", retryAfterSeconds: retryAfter } });
+
+  expect((await alice.get("/api/v1/sessions")).status()).toBe(200);
+  expect((await bob.post("/api/v1/sessions", { data: sessionBody() })).status()).toBe(201);
+
+  await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000 + 200));
+  expect((await alice.post("/api/v1/sessions", { data: sessionBody() })).status()).toBe(201);
+});

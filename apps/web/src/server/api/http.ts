@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuth } from "@/server/auth";
 import { getServerEnv } from "@/server/env";
 import { SessionServiceError } from "@/server/sessions/errors";
+import { getWriteLimiter } from "./rate-limit";
 
 /** Error the HTTP layer turns into an `{ error }` JSON response. */
 export class HttpError extends Error {
@@ -31,7 +32,10 @@ const SERVICE_STATUS: Partial<Record<ApiErrorCode, number>> = {
 };
 
 const toResponse = (error: unknown): Response => {
-  if (error instanceof HttpError) return json({ error: { code: error.code, message: error.message, ...error.extra } }, error.status);
+  if (error instanceof HttpError) {
+    const retryAfter = error.extra.retryAfterSeconds;
+    return json({ error: { code: error.code, message: error.message, ...error.extra } }, error.status, retryAfter ? { "retry-after": String(retryAfter) } : {});
+  }
   if (error instanceof SessionServiceError) {
     return json({ error: { code: error.code, message: error.message, ...error.conflict } }, SERVICE_STATUS[error.code] ?? 400);
   }
@@ -67,6 +71,22 @@ export const assertSameOrigin = (request: Request): void => {
   if (!origin || origin !== new URL(getServerEnv().BETTER_AUTH_URL).origin) {
     throw new HttpError(403, "FORBIDDEN_ORIGIN", "This request must come from the SessionHub web app.");
   }
+};
+
+/**
+ * Gate for every /api/v1 write, in this order: same-origin check, authentication, then the
+ * per-user write limit (so anonymous or cross-site requests never consume a user's budget).
+ */
+export const authorizeWrite = async (request: Request): Promise<{ userId: string }> => {
+  assertSameOrigin(request);
+  const { userId } = await authenticate(request);
+  const decision = getWriteLimiter().take(userId);
+  if (!decision.allowed) {
+    throw new HttpError(429, "RATE_LIMITED", `Too many changes in a short time. Try again in ${decision.retryAfterSeconds} seconds.`, {
+      retryAfterSeconds: decision.retryAfterSeconds,
+    });
+  }
+  return { userId };
 };
 
 /** Reads a bounded JSON body and validates it. Size is checked before parsing. */

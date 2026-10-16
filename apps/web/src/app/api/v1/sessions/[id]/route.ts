@@ -1,6 +1,6 @@
 import { deleteSessionQuerySchema, updateSessionRequestSchema } from "@sessionhub/contracts/api-sessions";
 import { getPrisma } from "@sessionhub/database/client";
-import { assertSameOrigin, authenticate, handle, HttpError, json, parseOrThrow, readJson, sessionIdOrNotFound } from "@/server/api/http";
+import { authenticate, authorizeWrite, handle, HttpError, json, parseOrThrow, readJson, sessionIdOrNotFound } from "@/server/api/http";
 import { deleteSession, updateSession } from "@/server/sessions/mutations";
 import { getSessionDetail } from "@/server/sessions/queries";
 
@@ -17,8 +17,7 @@ export const GET = handle(async (request: Request, context: Context) => {
 
 /** PATCH: partial update guarded by `expectedVersion`; 409 with the server state when stale. */
 export const PATCH = handle(async (request: Request, context: Context) => {
-  assertSameOrigin(request);
-  const { userId } = await authenticate(request);
+  const { userId } = await authorizeWrite(request);
   const id = sessionIdOrNotFound((await context.params).id);
   const body = await readJson(request, updateSessionRequestSchema);
   return json((await updateSession(getPrisma(), userId, id, body)).detail);
@@ -26,8 +25,7 @@ export const PATCH = handle(async (request: Request, context: Context) => {
 
 /** DELETE ?expectedVersion=N: tombstone. Repeating it returns the same tombstone. */
 export const DELETE = handle(async (request: Request, context: Context) => {
-  assertSameOrigin(request);
-  const { userId } = await authenticate(request);
+  const { userId } = await authorizeWrite(request);
   const id = sessionIdOrNotFound((await context.params).id);
   const { expectedVersion } = parseOrThrow(deleteSessionQuerySchema, Object.fromEntries(new URL(request.url).searchParams));
   const { sequence: _sequence, ...result } = await deleteSession(getPrisma(), userId, id, expectedVersion);

@@ -249,6 +249,8 @@ The web dashboard's API and the shared mutation service that `sync/push` will re
 
 All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-Control: no-store`; errors are `{ error: { code, message, issues?, expectedVersion?, serverVersion?, serverState? } }`. Writes also require `Origin` equal to the app origin (403 `FORBIDDEN_ORIGIN`), `Content-Type: application/json` (415) and a body of at most 2 MB checked before parsing (413); unknown fields are rejected (400 with field `issues`). Limits: 200 windows, 2,000 tabs per window, 5,000 tabs per session.
 
+**Rate limit (writes):** POST, PATCH and DELETE share one per-user token bucket: **30 back to back, then 1 per second (60 per minute sustained)**. Over the limit: `429 RATE_LIMITED`, `Retry-After: <seconds>` and `retryAfterSeconds` in the body; nothing is changed. The check runs after the same-origin check and authentication (anonymous or cross-site requests never use a user's budget) and before the body is read. Reads are not limited yet. Buckets live in process memory (one web instance; at most 10,000 tracked users, fully refilled buckets dropped first).
+
 **Transaction rules (one PostgreSQL transaction per write):**
 
 1. Lock the caller's `user_sync_clocks` row **first** (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING`) and take the next sequence. This serializes one user's writes in commit order (pull can't skip a sequence), makes the version check race-free and gives every write the same lock order (no deadlocks).
@@ -258,7 +260,7 @@ All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-C
 5. Insert an immutable `session_versions` row (payload = detail DTO, checksum = SHA-256 of id-independent content) and a `sync_changes` row with the sequence.
 6. Replays (exact create retry, repeated delete) and conflicts roll back, so they consume **no** sequence: the change log stays gap-free.
 
-**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. **Not yet:** `sync_operation_receipts` (needs device credentials, M4), per-endpoint rate limiting, workspace and device endpoints, `/versions` history.
+**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. **Not yet:** `sync_operation_receipts` (needs device credentials, M4), read rate limits and shared (multi-instance) limiter storage, workspace and device endpoints, `/versions` history.
 
 ## 14. References
 
