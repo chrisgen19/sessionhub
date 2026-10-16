@@ -10,6 +10,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "src", "test", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "*.config.ts"],
+  "include": ["next-env.d.ts", "src", "test", "e2e-docker", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "*.config.ts"],
   "exclude": ["node_modules"]
 }

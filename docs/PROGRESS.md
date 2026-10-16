@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API (rate-limited writes) and session detail page done. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API (rate-limited writes), session detail page and production Docker image + compose stack done. Email delivery pending. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -14,8 +14,9 @@
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** CRUD with versions, tombstones and change log; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
-| CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth, `8781777` dashboard, `37adf2f` sessions API, `20b56a4` session detail. The rate-limit slice is **not committed yet** |
+| Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`, PR #1). `check` job **passes** on PR #1 (after `3ec6bfc`). New `docker` job (`pnpm test:docker`) added on `feature/m3-web-docker`, **not yet run on GitHub** |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. `feature/m1-monorepo-local-slice` (PR #1 into `main`) ends at `3ec6bfc` (CI env fix) after `d79126a` rate limit. `feature/m3-web-docker` branches from `3ec6bfc`; the Docker slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -40,6 +41,32 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M3 web Docker slice) / Claude Code (Opus 5.5) / `feature/m3-web-docker`
+
+**Goal:** production Dockerfile for `apps/web` and a `web` service in compose with the `/api/health` healthcheck and an explicit `prisma migrate deploy` step, with tests.
+
+**Implemented:**
+
+- `apps/web/next.config.ts`: `output: "standalone"`, `outputFileTracingRoot` = monorepo root (workspace packages and Prisma's generated client are traced in).
+- `infra/docker/web.Dockerfile` (context = repo root): `build` stage installs only `@sessionhub/web...` and builds; `runner` stage copies `.next/standalone` + `.next/static` into `node:24-alpine`, runs as `node` (uid 1000) with root-owned app files, `HEALTHCHECK` with `wget` on `/api/health`; `migrate` stage installs only `@sessionhub/database` and runs `prisma migrate deploy` (never resets). No secrets at build time.
+- `infra/docker/compose.yaml`: `postgres` (not published to the host, `pg_isready` healthcheck) -> `migrate` (`service_healthy`, `restart: "no"`) -> `web` (`service_completed_successfully`, healthcheck, `read_only` root fs with tmpfs `/tmp` and `.next/cache` owned by uid 1000, `no-new-privileges`, published on `127.0.0.1:${WEB_PORT:-3030}`). `POSTGRES_PASSWORD` and `BETTER_AUTH_SECRET` are required (`${VAR:?}`). `infra/docker/.env.example` documents them.
+- `.dockerignore`: excludes `node_modules`, build output, `.git`, generated Prisma client and every `.env*` except `.env.example`.
+- `apps/web/scripts/start-standalone.mjs` + `pnpm start`: runs the standalone server locally (`next start` does not support standalone output). The web E2E (`playwright.config.ts`) now runs this server, so E2E tests the same server the image runs.
+- Container tests: `apps/web/e2e-docker/*` + `playwright.docker.config.ts`, `pnpm test:docker` (root and web). Global setup builds and starts the stack under project `sessionhub-smoke` (port 3939, random secrets) with `up --wait`; teardown runs `down -v`.
+- CI: new `docker` job running `pnpm test:docker` (prints compose logs on failure).
+
+**Validated commands and results:**
+
+- `pnpm test:docker`: **5/5** (about 2 to 3.5 minutes with a warm Docker cache). Covers: postgres and web `healthy`, migrate `exited 0`, one applied row in `_prisma_migrations`; `/api/health` 200 `{"status":"ok"}` + `no-store`; sign-up -> `POST /api/v1/sessions` 201 -> GET -> `/app/sessions` HTML lists it, and a `sync_changes` row exists; re-running `migrate` prints "No pending migrations to apply"; web runs as uid 1000, contains no `.env*` file, can't write `server.js`, can write `.next/cache`; postgres has no published port; `docker compose config` fails without `POSTGRES_PASSWORD` or `BETTER_AUTH_SECRET`. No containers or volumes left behind afterwards (checked).
+- Failures found and fixed during this slice: tmpfs `.next/cache` was root-owned (fixed with `uid=1000,gid=1000`); `docker compose port` on an unpublished port prints `invalid IP:0` instead of nothing (test now reads `Publishers` from `compose ps --format json`).
+- Manual: standalone server against `sessionhub_test`: health 200, sign-up 200, create 201, CSS 200.
+- `pnpm check`: **pass** (14 tasks). `pnpm test:e2e`: **pass** (4 tasks; web 22/22 on the standalone server, no `next start` warning). `pnpm --filter @sessionhub/web test:db`: **18/18**.
+- Image sizes: `runner` 312 MB, `migrate` 1.55 GB (full Prisma CLI + workspace devDependencies; only used as a one-shot job).
+
+**Earlier this session (PR #1 CI):** first GitHub run failed in `test:db` with "TEST_DATABASE_URL is not set": Turborepo strict env mode stripped the variable. Fixed in `3ec6bfc` (`passThroughEnv` for `test:db` and `test:e2e`), reproduced and verified locally, then the PR's `check` job **passed**. GitGuardian flags the dev placeholder password `sessionhub_dev` in `ci.yml` and `compose.dev.yaml` (`fe880c7`): local-only placeholder, not a real secret; mark as false positive or move to a variable (user's call).
+
+**Known gaps:** `/api/health` is liveness only (no PostgreSQL readiness check); `migrate` image is large; no Coolify deployment or TLS/proxy config yet; the `docker` CI job has not run on GitHub yet.
 
 ### 2026-10-16 (M3 rate-limit slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -378,11 +405,8 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the session detail slice (needs the user's go-ahead); push a remote so CI runs for the first time.
-2. Finish M3:
-   1. Rate limiting for `/api/v1` writes (per user, in memory for one instance; documented limits, 429 + `Retry-After`).
-   2. Web app Dockerfile and a `web` service in compose with `/api/health` healthcheck and an explicit `prisma migrate deploy` step.
-   3. Email delivery for verification and password reset (choose a provider with the user first).
+1. Commit the Docker slice on `feature/m3-web-docker` (needs the user's go-ahead), push, open a PR (base `feature/m1-monorepo-local-slice` until PR #1 merges) and confirm the new `docker` CI job passes.
+2. Finish M3: email delivery for verification and password reset (choose a provider with the user first). Optional: readiness check (PostgreSQL) in `/api/health`.
 3. Then M4 (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
 
 ## Open questions / architecture validations

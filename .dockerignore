@@ -1,0 +1,18 @@
+# Build context for infra/docker/web.Dockerfile (context = repo root).
+**/node_modules
+.git
+**/.next
+**/.output
+**/.wxt
+**/.turbo
+**/test-results
+**/playwright-report
+**/coverage
+**/*.tsbuildinfo
+packages/database/src/generated
+# Never send secrets into an image layer.
+**/.env
+**/.env.*
+!**/.env.example
+*:Zone.Identifier
+*.zip

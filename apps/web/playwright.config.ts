@@ -9,7 +9,7 @@ const PORT = 3917;
 export const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 /**
- * Runs the production build (`next start`) against TEST_DATABASE_URL. Needs `pnpm db:up`
+ * Runs the production standalone build against TEST_DATABASE_URL. Needs `pnpm db:up`
  * and `pnpm build`. Better Auth's URL must equal the browser origin for its origin check.
  */
 export default defineConfig({
@@ -20,11 +20,14 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   use: { baseURL: BASE_URL, trace: "retain-on-failure" },
   webServer: {
-    command: `pnpm exec next start --port ${PORT} --hostname 127.0.0.1`,
+    // The standalone server, as in the Docker image (see scripts/start-standalone.mjs).
+    command: "node scripts/start-standalone.mjs",
     url: `${BASE_URL}/api/health`,
     reuseExistingServer: false,
     timeout: 60_000,
     env: {
+      PORT: String(PORT),
+      HOSTNAME: "127.0.0.1",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
       BETTER_AUTH_URL: BASE_URL,
       BETTER_AUTH_SECRET: "e2e-only-secret-not-used-anywhere-else-0123456789",
