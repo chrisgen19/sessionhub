@@ -36,6 +36,12 @@
     },
     "test:db": {
       "cache": false
+    },
+    "@sessionhub/web#test:db": {
+      "dependsOn": [
+        "@sessionhub/database#test:db"
+      ],
+      "cache": false
     }
   }
 }

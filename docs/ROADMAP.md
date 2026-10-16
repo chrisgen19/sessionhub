@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M0 version validation, M1 and M2 done; M3 in progress (database package verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M0 version validation, M1 and M2 done; M3 in progress (database package and email/password auth verified 2026-10-16). See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -54,8 +54,8 @@ flowchart LR
 ## M3 — Web app, authentication and cloud data APIs
 
 - [x] Add PostgreSQL, Prisma schema and safe migrations. (Initial migration; integration tests run it from scratch.)
-- [ ] Integrate Better Auth with correct current adapter/version.
-- [ ] Implement signup/sign-in/password reset/account security.
+- [x] Integrate Better Auth with correct current adapter/version. (1.7.9, Prisma adapter, auth models regenerated from the real config: no changes.)
+- [ ] Implement signup/sign-in/password reset/account security. (Sign-up, sign-in, sign-out, rate limiting, safe redirects: done; password reset and email verification: pending email delivery.)
 - [ ] Build web dashboard shell from UI/UX specification.
 - [ ] Add session/workspace/device list/detail/read/write API with ownership checks.
 - [ ] Emit server sync changes for all web mutations.

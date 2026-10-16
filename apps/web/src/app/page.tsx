@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock3, HardDrive, Info, Layers, RotateCcw, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 const FEATURES = [
@@ -58,10 +59,18 @@ export default function HomePage() {
           </span>
           <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-fg-muted">
-          <HardDrive aria-hidden="true" className="size-3.5" />
-          Early preview
-        </span>
+        <nav aria-label="Account" className="flex items-center gap-2">
+          <span className="hidden items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-fg-muted sm:inline-flex">
+            <HardDrive aria-hidden="true" className="size-3.5" />
+            Early preview
+          </span>
+          <Link href="/login" className="rounded-lg px-3 py-2 text-[13px] font-semibold hover:bg-surface-muted">
+            Sign in
+          </Link>
+          <Link href="/signup" className="rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-on-brand hover:bg-brand-hover">
+            Create account
+          </Link>
+        </nav>
       </header>
 
       <main className="flex-1 py-10 sm:py-16">

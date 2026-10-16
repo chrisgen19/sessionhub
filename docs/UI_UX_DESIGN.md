@@ -509,6 +509,10 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 - Storage full: popup save shows "Not saved: Storage for SessionHub is full, so this wasn't saved. Delete or export sessions you no longer need, then try again." with Retry; import and rename show the same pattern; restore errors now read "Restore stopped:" (a restore can stop after opening some tabs). "Checkpoint now" reports "Storage was full, so N older checkpoints were removed to make room." The Recovery view's persisted error line reads "Last checkpoint failed" and is hidden while the same error is shown as the action's notice.
 - Import lives in the manager header (Import button -> file picker -> preview dialog). The preview shows name, origin, export date, window/tab counts, tabs that will be reference-only and how many file statuses were re-checked, and states that the import is added as a new session. Invalid files get a "Can't import this file" dialog with a specific reason. No drag-and-drop yet, and the popup has no import entry.
 
+## 18b. Web auth pages (2026-10-16)
+
+`/signup` and `/login` use a centered card (brand mark, title, one-line purpose, fields with labels, inline per-field errors linked with `aria-describedby`, a form-level `role="alert"` message, `autocomplete` hints) and a note that an account is optional for the extension. Signed-in visitors are redirected to `/app` (a minimal "Signed in" page with sign-out until the dashboard shell exists). The landing header has Sign in and Create account. Verified at 1280 and 375 px and in dark mode.
+
 ## 19. Reference materials
 
 - [W3C WAI-ARIA combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/)

@@ -67,6 +67,15 @@ The app must display which items were skipped during capture/restore and allow m
 - Account/device revocation enforced on every authenticated device request, not inferred solely from a client-sent ID.
 - Signing out removes/revokes cloud credentials but does not erase user-created local data without explicit consent.
 
+### Implemented web auth (verified 2026-10-16)
+
+- Better Auth 1.7.9 email/password. Passwords are stored hashed by Better Auth (verified: the `account.password` value never contains the plaintext; algorithm is Better Auth's default and was not separately audited).
+- Session cookie is `HttpOnly`, `SameSite=Lax` (verified in E2E). `Secure` is expected when served over HTTPS in production: **not verified yet** (no HTTPS deployment).
+- Sign-in/sign-up go through Better Auth's HTTP endpoints, so its rate limiter and origin checks apply: 3 attempts per window per client IP, then 429 and "Too many attempts" (verified). Server-side `auth.api.*` calls skip the rate limiter and must not be used for credential checks.
+- **Deployment requirement (M6):** the limiter keys on the client IP from `X-Forwarded-For`. Without a proxy setting that header, all clients share one bucket (a handful of bad attempts would briefly block sign-in for everyone); with a proxy, it must overwrite (not trust) client-supplied values, or attackers can rotate the header. Rate-limit storage is in memory: fine for one container, not for several.
+- Post-login redirects only accept same-site relative paths. Server logs record only the error class for failed sign-in/up, never emails, passwords or bodies.
+- Known trade-offs: sign-up says when an email is already registered (account enumeration; accepted for MVP); no email verification or password reset yet; `BETTER_AUTH_SECRET` must be at least 32 characters and is validated at first use.
+
 ## 6. Extension permissions (minimum viable proposal)
 
 Permissions must be justified by features that are **actually shipped**. Proposed candidates:

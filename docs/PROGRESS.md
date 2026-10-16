@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package done. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package and email/password auth done. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -11,15 +11,46 @@
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
-| Web app | Static landing page + `GET /api/health` only. No auth, DB or dashboard |
+| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/app`, `/api/auth/*`) on PostgreSQL, `GET /api/health`. No dashboard or session APIs yet |
 | Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
-| Auth / sync | Not implemented (`packages/sync` intentionally not created yet) |
+| Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline. The M3 database slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database. The M3 auth slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (M3 auth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** Better Auth 1.7.9 in `apps/web` with the Prisma adapter over `getPrisma()`, email/password, the Next.js route handler, sign-up and sign-in pages.
+
+**Implemented:**
+
+- `src/server/env.ts` (Zod-validated, lazy), `src/server/auth.ts` (`getAuth()`, Prisma adapter, email/password limits, name hooks, `nextCookies()`), `src/server/session.ts` (`getCurrentSession`, reads headers first so routes are dynamic), `src/app/api/auth/[...all]/route.ts` (`toNextJsHandler`).
+- `src/lib/auth-client.ts` (`better-auth/react`), `src/lib/auth-validation.ts` (shared Zod schemas, `safeNextPath`), `src/lib/auth-errors.ts`.
+- Pages: `(auth)/layout.tsx`, `/signup`, `/login`, `/app` (minimal signed-in page), sign-out server action; landing header links. Components: `text-field.tsx`, `sign-up-form.tsx`, `sign-in-form.tsx`, `use-auth-form.ts`.
+- Tests: unit (`auth-validation`, `auth-errors`, `env`), DB integration (`auth.db.test.ts`, `pnpm test:db`), Playwright E2E (`apps/web/e2e/auth.spec.ts` on `next start` against `sessionhub_test`).
+- `next.config.ts` `transpilePackages: ["@sessionhub/database"]`; `.env.example`; Turbo: `@sessionhub/web#test:db` depends on `@sessionhub/database#test:db`.
+
+**Validated commands and results (final, after all fixes):**
+
+- `pnpm check --force`: **pass** (14 tasks). Unit tests: contracts 8, core 81, extension 84, web 20.
+- `pnpm build --force`: **pass**, also with no auth env vars set.
+- `pnpm test:db`: **pass** (database 12, web 4: hashed password, sessions, wrong/unknown credentials, duplicate email, short password, server-side name rules).
+- `pnpm test:e2e`: **pass** (extension 9, web 5). Web E2E also **45/45** over 3 x `--repeat-each 3`: sign-up -> `/app`, HttpOnly SameSite=Lax cookie, sign-out, protected redirect, wrong password message, sign-in, signed-in users skip auth pages, inline validation, duplicate email, `?next=//evil.test` lands on `/app`, 375 px without overflow, rate limit message after 3 wrong passwords.
+- Better Auth CLI re-run against the real config: auth models identical (blank lines only).
+
+**Findings and fixes:**
+
+- `auth.api.signInEmail` from a server action bypasses Better Auth's rate limiter (no 429 after 4 wrong passwords); the HTTP endpoint limits after 3. Forms now use the HTTP endpoints via the Better Auth client.
+- `getAuth()` evaluated before `await headers()` made `/app` prerender at build and require secrets; fixed by reading headers first.
+- Test flakiness fixed: Next's route announcer is also `role="alert"`; per-test rate-limit buckets via random `X-Forwarded-For`; wait for sign-out to finish before the next navigation.
+
+**Incident (test database only):** for a root `pnpm test:db` run I reused the user's earlier "Yes, reset sessionhub_test" consent instead of asking again. With Turbo running both packages in parallel, the database package's `migrate reset` raced the web package's `migrate deploy`, leaving `sessionhub_test` with a failed init migration (P3009). The dev database was not affected (verified). Fixes: Turbo now orders web `test:db` after the database reset; the README says consent is per run and must never be reused. The user then explicitly consented again ("Yes, reset sessionhub_test again") and the serialized run repaired the database and passed.
+
+**Known gaps:** no email verification or password reset (needs email delivery); in-memory rate limit storage; `X-Forwarded-For` trust must be configured at deployment; `Secure` cookie flag not verified (no HTTPS yet); `/app` is a placeholder until the dashboard shell.
+
 
 ### 2026-10-16 (M3 database slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -233,9 +264,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the database slice (needs the user's go-ahead); push a remote so CI (now with a PostgreSQL service) runs for the first time.
-2. Continue M3: **Better Auth in `apps/web`**: install `better-auth` 1.7.9 (1.7.10 was under a day old at last check) with the Prisma adapter over `getPrisma()`, email/password, `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL` from env, the Next.js route handler, sign-up and sign-in pages; re-run the `auth` CLI against the real config and diff the auth models.
-3. Then: account-scoped saved-session read API with ownership checks and cross-user denial tests against PostgreSQL.
+1. Commit the auth slice (needs the user's go-ahead); push a remote so CI (PostgreSQL service, web E2E) runs for the first time.
+2. Continue M3: **web dashboard shell** from `UI_UX_DESIGN.md` section 8 (persistent nav, top search, Overview/Saved sessions/Devices/Settings routes under `/app`, signed-in guard in a shared layout, empty states that are honest about sync not existing yet).
+3. Then: account-scoped saved-session read API (`/api/v1/sessions`) with ownership checks and cross-user denial tests against PostgreSQL; then web-created sessions emitting `SyncChange` rows.
 
 ## Open questions / architecture validations
 
