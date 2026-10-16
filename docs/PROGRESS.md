@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M2 (local extension MVP) in progress. M0 version validation and M1 skeleton are done.
+> **Current milestone:** M2 (local extension MVP) complete. Next: M3 (backend, web account).
 
 ## Current truth (verified 2026-10-16)
 
@@ -14,11 +14,35 @@
 | Web app | Static landing page + `GET /api/health` only. No auth, DB or dashboard |
 | Database / auth / sync | Not implemented (`packages/database`, `packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping. The quota slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota. The performance baseline slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (seventh slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** last M2 item: large live-browser E2E (100+ tabs across several windows) timing capture, checkpoint and restore, with baselines recorded.
+
+**Implemented:**
+
+- `apps/extension/e2e/perf.spec.ts` (tag `@perf`): 4 x 30 tabs in 12 groups via a local Node HTTP server; times capture (median of 3), checkpoint (created and unchanged), inspector render, popup open-to-interactive, full restore; asserts correctness (all 120 opened, 4 new windows, groups recreated) and regression guards; writes `test-results/perf.json`.
+- `e2e/fixtures.ts`: `launchWithExtension` accepts extra Chromium args.
+- Scripts: extension `test:e2e` now excludes `@perf`; new extension and root `test:perf` (Turbo task depends on `build`, not cached). Not added to CI.
+
+**Validated commands and results:**
+
+- `pnpm test:perf` (root, via Turbo): **pass**; three full 120-tab runs total, all passing. Baselines (median, range): capture 39 ms (34 to 56), checkpoint written 28 ms (20 to 61), unchanged 15 ms, inspector render 186 ms, popup interactive 269 ms, **restore 15.7 s for 120 tabs (11.1 to 25.9 s, 92 to 215 ms per tab)**, IndexedDB 1.2 MB, peak memory increase about 2 to 3 GB. Full table and environment: `TEST_PLAN.md` 5.1.
+- `pnpm check --force`: **pass** (12 tasks). `pnpm test:e2e`: **pass** (9 tests, perf excluded).
+- Memory safety: every full run used a watchdog that kills Chromium above 7.8 GB used (this WSL2 machine has crashed on memory commit before); it never triggered. Peak 4.8 to 5.9 GB used of 9 GB.
+
+**Findings:**
+
+- Playwright route interception made restore about 2.5x slower (195 vs 80 ms per tab at 30 tabs), so perf pages come from a real local server.
+- Restore is the slow path and is bound by browser tab creation on this machine. A 60-tab experiment: sequential `tabs.create` 2.7 s, one `windows.create({ url: [...] })` 1.5 s, parallel `tabs.create` 3.1 s. **Proposed follow-up (needs a decision):** create each restored window with all its URLs in one call, then apply pinning and groups, falling back to per-tab creation if the batch call fails. That would trade per-tab failure detail for roughly 1.8x speed.
+
+**Known gaps:** 500 tabs / 20 windows not run (memory); no search benchmark over 10,000 saved tabs; perf not in CI (machine-dependent).
+
 
 ### 2026-10-16 (sixth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -183,9 +207,12 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the quota slice (needs the user's go-ahead); push a remote so CI runs for the first time.
-2. Finish M2: large live-browser test (100+ tabs across several windows) for capture, checkpoint and restore timing; record the numbers here and set baselines in `TEST_PLAN.md`.
-3. Then M3 (PostgreSQL, Prisma 7.x stable, Better Auth).
+1. Commit the perf slice (needs the user's go-ahead); push a remote so CI runs for the first time (it has never run).
+2. Optional M2 follow-up, decide first: batched window creation for faster restores (see the seventh slice findings).
+3. Start **M3** (web app, auth and cloud data APIs), in this order:
+   1. Re-verify current Better Auth and Prisma versions (Prisma 7.x stable; Better Auth peers `prisma ^7`), then add `packages/database` with a Prisma schema for Better Auth tables + `Device`, `Workspace`, `SavedSession`, `SavedSessionWindow/Tab/Group`, `SessionVersion`, `UserSyncClock`, `SyncChange`, `SyncOperationReceipt` (DATA_MODEL.md section 3), and a local PostgreSQL via Docker Compose with a healthcheck.
+   2. Better Auth email/password in `apps/web` with sign-up/sign-in pages and session handling.
+   3. Account-scoped session read/write API with ownership checks and cross-user denial tests against a real PostgreSQL.
 
 ## Open questions / architecture validations
 

@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M0 version validation and M1 done; M2 in progress (first local slice verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M0 version validation, M1 and M2 done (verified 2026-10-16). Next: M3. See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -47,7 +47,7 @@ flowchart LR
 - [x] Show unsupported/failed tabs; partial restore retry.
 - [x] Automatic snapshots with bounded retention and MV3 alarms.
 - [x] Versioned JSON export/import validation.
-- [ ] Tests for restart, quota failure, large tab count, service-worker interruption. (browser restart and worker stop in real Chromium, 500-tab capture as a unit test, quota failure with injected Dexie errors: done; large live-browser restore: pending)
+- [x] Tests for restart, quota failure, large tab count, service-worker interruption. (Browser restart and worker stop in real Chromium; quota failure with injected Dexie errors only, a real quota could not be forced; 120 live tabs in real Chromium with baselines in `TEST_PLAN.md` 5.1; 500-tab capture as a unit test.)
 
 **Done when:** Local saving/recovery works without account/internet after restart and tests pass.
 

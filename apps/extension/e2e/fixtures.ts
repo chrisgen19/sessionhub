@@ -7,11 +7,11 @@ export const EXTENSION_PATH = path.resolve(import.meta.dirname, "../.output/chro
 export const SITE = "https://sessionhub.test";
 
 /** Launches Chromium with the unpacked extension and a throwaway profile directory. */
-export const launchWithExtension = async (userDataDir: string): Promise<BrowserContext> => {
+export const launchWithExtension = async (userDataDir: string, extraArgs: string[] = []): Promise<BrowserContext> => {
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
     headless: true,
-    args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`],
+    args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`, ...extraArgs],
   });
   // Serve fake pages for SITE so tests need no network access.
   await context.route(`${SITE}/**`, (route) => {

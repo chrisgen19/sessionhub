@@ -12,7 +12,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "check": "turbo run lint typecheck test"
+    "check": "turbo run lint typecheck test",
+    "test:perf": "turbo run test:perf"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

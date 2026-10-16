@@ -16,6 +16,7 @@ pnpm install                 # also runs `wxt prepare` for the extension
 pnpm check                   # lint + typecheck + unit tests (all packages, via Turborepo)
 pnpm build                   # extension -> apps/extension/.output/chrome-mv3, web -> apps/web/.next
 pnpm test:e2e                # builds, then runs the extension in real Chromium (Playwright)
+pnpm test:perf               # builds, then the 120-tab timing baseline (heavier: about 2-3 GB RAM)
 pnpm --filter @sessionhub/extension dev   # WXT dev mode with reload
 pnpm --filter @sessionhub/web dev         # Next.js on http://localhost:3000
 ```
