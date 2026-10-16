@@ -3,7 +3,13 @@ import type { PlannedWindow } from "@sessionhub/core/restore-plan";
 import type { RestoreTabOutcome } from "./db";
 import type { HandlerDeps } from "./command-handlers";
 
-const message = (error: unknown) => (error instanceof Error ? error.message : "Couldn't open tab");
+/** User-readable failure reason; Chrome's raw messages include runtime ids. */
+const message = (error: unknown): string => {
+  const raw = error instanceof Error ? error.message : "";
+  if (/no window with id/i.test(raw)) return "The window was closed before this tab could open";
+  if (/no tab with id/i.test(raw)) return "The tab was closed while it was being restored";
+  return raw || "Couldn't open this tab";
+};
 
 const applyGroups = async (window: PlannedWindow, windowId: number, createdIds: Map<string, number>) => {
   for (const group of window.groups) {

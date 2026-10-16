@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CaptureWindowInput } from "@sessionhub/core/capture";
 import { createSessionExport } from "@sessionhub/core/session-export";
 import { handleCommand, BrowserError, type HandlerDeps } from "./command-handlers";
+import type { RestoreJobRecord } from "./db";
 import type { RestoreTabOutcome } from "./db";
 import { getSession, listSessions } from "./session-repository";
 import { freshDb, idFactory, sampleWindows } from "./test-fixtures";
@@ -111,13 +112,13 @@ describe("handleCommand", () => {
     expect(deps.restoreWindow).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps an inspectable job record when a restore is interrupted", async () => {
+  it("settles the job as failed (and so retryable) when a restore step throws", async () => {
     const deps = makeDeps({ restoreWindow: vi.fn(async () => Promise.reject(new Error("worker stopped"))) });
     const { sessionId } = await capture(deps);
     expect(await handleCommand({ type: "restore.start", sessionId }, deps)).toMatchObject({ ok: false });
     const jobs = await deps.db.restoreJobs.toArray();
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toMatchObject({ status: "running", outcomes: [] });
+    expect(jobs[0]).toMatchObject({ status: "failed", outcomes: [] });
   });
 
   it("returns not-found when restoring a deleted session", async () => {
@@ -184,6 +185,100 @@ describe("handleCommand", () => {
       const response = await handleCommand({ type: "session.import", content }, colliding);
       expect(response).toMatchObject({ ok: false, error: { code: "conflict" } });
       expect(await listSessions(deps.db)).toEqual([original]);
+    });
+  });
+
+  describe("restore.retry", () => {
+    const openFirstTabOnly: HandlerDeps["restoreWindow"] = async (window) =>
+      window.tabs.map((tab, index): RestoreTabOutcome =>
+        index === 0 ? { sourceTabId: tab.sourceTabId, status: "opened" } : { sourceTabId: tab.sourceTabId, status: "failed", error: "No window with id: 9" },
+      );
+    const openAll: HandlerDeps["restoreWindow"] = async (window) =>
+      window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "opened" }));
+
+    /** Captures, then runs a first restore where only the first tab of each window opens. */
+    const partialRestore = async () => {
+      const deps = makeDeps({ restoreWindow: vi.fn(openFirstTabOnly) });
+      const { sessionId } = await capture(deps);
+      const response = await handleCommand({ type: "restore.start", sessionId }, deps);
+      if (!response.ok) throw new Error(response.error.message);
+      return { deps, sessionId, job: (response.data as { job: RestoreJobRecord }).job };
+    };
+
+    const tabsPassedTo = (fn: HandlerDeps["restoreWindow"]) =>
+      vi.mocked(fn).mock.calls.flatMap(([window]) => window.tabs.map((tab) => tab.sourceTabId));
+
+    it("reopens only tabs that failed and never ones that already opened", async () => {
+      const { deps, job } = await partialRestore();
+      expect(job.status).toBe("partial");
+      const alreadyOpened = job.outcomes.filter((o) => o.status === "opened").map((o) => o.sourceTabId);
+      const failed = job.outcomes.filter((o) => o.status === "failed").map((o) => o.sourceTabId);
+
+      deps.restoreWindow = vi.fn(openAll);
+      const response = await handleCommand({ type: "restore.retry", jobId: job.id }, deps);
+      expect(response).toMatchObject({ ok: true, data: { job: { status: "completed", attempts: 2 } } });
+      expect(tabsPassedTo(deps.restoreWindow)).toEqual(failed);
+      expect(tabsPassedTo(deps.restoreWindow).some((id) => alreadyOpened.includes(id))).toBe(false);
+      expect(await deps.db.restoreJobs.get(job.id)).toMatchObject({ status: "completed", attempts: 2 });
+    });
+
+    it("stays partial when the retry fails again and can be retried once more", async () => {
+      const { deps, job } = await partialRestore();
+      deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window) =>
+        window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "failed", error: "still closed" })),
+      );
+      expect(await handleCommand({ type: "restore.retry", jobId: job.id }, deps)).toMatchObject({
+        ok: true,
+        data: { job: { status: "partial", attempts: 2 } },
+      });
+      deps.restoreWindow = vi.fn(openAll);
+      expect(await handleCommand({ type: "restore.retry", jobId: job.id }, deps)).toMatchObject({
+        ok: true,
+        data: { job: { status: "completed", attempts: 3 } },
+      });
+    });
+
+    it("lets only one of two concurrent retries run", async () => {
+      const { deps, job } = await partialRestore();
+      deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return openAll(window);
+      });
+      const results = await Promise.all([
+        handleCommand({ type: "restore.retry", jobId: job.id }, deps),
+        handleCommand({ type: "restore.retry", jobId: job.id }, deps),
+      ]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(results.find((r) => !r.ok)).toMatchObject({ error: { code: "conflict" } });
+      const failedCount = job.outcomes.filter((o) => o.status === "failed").length;
+      expect(tabsPassedTo(deps.restoreWindow)).toHaveLength(failedCount);
+    });
+
+    it("refuses completed, unknown and malformed jobs", async () => {
+      const deps = makeDeps();
+      const { sessionId } = await capture(deps);
+      const done = await handleCommand({ type: "restore.start", sessionId }, deps);
+      const jobId = done.ok ? (done.data as { job: RestoreJobRecord }).job.id : "";
+      expect(await handleCommand({ type: "restore.retry", jobId }, deps)).toMatchObject({ ok: false, error: { code: "conflict" } });
+      expect(
+        await handleCommand({ type: "restore.retry", jobId: "00000000-0000-4000-8000-0000000000aa" }, deps),
+      ).toMatchObject({ ok: false, error: { code: "not-found" } });
+      expect(await handleCommand({ type: "restore.retry", jobId: "x" }, deps)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    });
+
+    it("retries every tab of a run that failed outright, even after the session is deleted", async () => {
+      const deps = makeDeps({ restoreWindow: vi.fn(async () => Promise.reject(new Error("worker stopped"))) });
+      const { sessionId } = await capture(deps);
+      await handleCommand({ type: "restore.start", sessionId }, deps);
+      const [job] = await deps.db.restoreJobs.toArray();
+      await handleCommand({ type: "session.delete", sessionId }, deps);
+
+      deps.restoreWindow = vi.fn(openAll);
+      expect(await handleCommand({ type: "restore.retry", jobId: job!.id }, deps)).toMatchObject({
+        ok: true,
+        data: { job: { status: "completed" } },
+      });
+      expect(tabsPassedTo(deps.restoreWindow)).toHaveLength(job!.plan.tabCount);
     });
   });
 });

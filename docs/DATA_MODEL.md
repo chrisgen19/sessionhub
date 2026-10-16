@@ -163,11 +163,13 @@ Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 |---|---|---|
 | `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope: "local"`; windows/groups/tabs are nested in the record |
 | `device` | `key` (`"this-device"`) | `installationId` (UUID), `friendlyName` (default "This browser"), `createdAt` |
-| `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, per-tab outcomes, status `running` / `completed` / `partial` / `failed` |
+| `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, append-only per-tab outcomes across attempts, `attempts` (absent on older records = 1), status `running` / `completed` / `partial` / `failed` |
 
 Not yet created: `sessionVersions`, `recoverySnapshots`, `workspaces`, `outbox`, `syncState`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit version 1.
 
 Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are not yet pruned (retention pending).
+
+**Restore job lifecycle (implemented):** created as `running` with `attempts: 1` before any tab opens -> outcomes appended per window -> status settled from outcomes (`completed` when every planned tab has an `opened` outcome, `failed` when none has, otherwise `partial`), also when a step throws. `restore.retry` claims a `partial`/`failed` job by switching it to `running` and incrementing `attempts` in one transaction (a `running` or `completed` job is refused), then runs `planRetry`: only planned tabs with no `opened` outcome in any attempt, re-classified, in new windows. A tab therefore never opens twice for the same job. Known gap: a job whose worker was killed mid-run stays `running` and can't be retried.
 
 **Implemented bounds** (`SESSION_LIMITS` in `packages/contracts/src/session.ts`): name 200 chars, tab title 1,024 chars (truncated on capture), URL 8,192 chars (longer URLs are stored truncated and classified `invalid`), group title 256, device name 120, 200 windows per session, 2,000 tabs and 500 groups per window (capture fails with a clear error above these).
 

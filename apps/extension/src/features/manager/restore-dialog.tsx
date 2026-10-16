@@ -8,7 +8,11 @@ import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import { sendCommand } from "../../lib/message-client";
 import { RestoreSummary, SkippedList } from "./restore-summary";
 
-type Phase = { name: "preview" } | { name: "running" } | { name: "done"; job: RestoreJobRecord } | { name: "error"; message: string };
+type Phase =
+  | { name: "preview" }
+  | { name: "running" }
+  | { name: "done"; job: RestoreJobRecord; retrying: boolean; retryError: string | null }
+  | { name: "error"; message: string };
 
 /**
  * Safety-critical restore preview (docs/UI_UX_DESIGN.md section 12): new windows only,
@@ -40,11 +44,27 @@ export function RestoreDialog({ session, onClose }: { session: SavedSession; onC
       sessionId: session.id,
       ...(allSelected ? {} : { tabIds: [...selectedTabIds] }),
     });
-    setPhase(response.ok ? { name: "done", job: response.data.job } : { name: "error", message: response.error.message });
+    setPhase(
+      response.ok
+        ? { name: "done", job: response.data.job, retrying: false, retryError: null }
+        : { name: "error", message: response.error.message },
+    );
   };
 
+  const retry = async (job: RestoreJobRecord) => {
+    setPhase({ name: "done", job, retrying: true, retryError: null });
+    const response = await sendCommand({ type: "restore.retry", jobId: job.id });
+    setPhase(
+      response.ok
+        ? { name: "done", job: response.data.job, retrying: false, retryError: null }
+        : { name: "done", job, retrying: false, retryError: response.error.message },
+    );
+  };
+
+  const busy = phase.name === "running" || (phase.name === "done" && phase.retrying);
+
   return (
-    <Modal title={`Restore "${session.name}"`} onClose={onClose} dismissible={phase.name !== "running"}>
+    <Modal title={`Restore "${session.name}"`} onClose={onClose} dismissible={!busy}>
       <p className="text-xs text-fg-muted">
         {sessionOrigin(session)} · {plural(session.windows.length, "window")} · saved {formatFullDate(session.updatedAt)}
       </p>
@@ -93,7 +113,16 @@ export function RestoreDialog({ session, onClose }: { session: SavedSession; onC
         </p>
       )}
 
-      {phase.name === "done" && <RestoreSummary session={session} job={phase.job} onClose={onClose} />}
+      {phase.name === "done" && (
+        <RestoreSummary
+          session={session}
+          job={phase.job}
+          retrying={phase.retrying}
+          retryError={phase.retryError}
+          onRetry={() => void retry(phase.job)}
+          onClose={onClose}
+        />
+      )}
 
       {phase.name === "error" && (
         <>

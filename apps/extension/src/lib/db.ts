@@ -29,7 +29,10 @@ export interface RestoreJobRecord {
   updatedAt: string;
   status: "running" | "completed" | "partial" | "failed";
   plan: RestorePlan;
+  /** Append-only across attempts; a tab can have a failed outcome followed by an opened one. */
   outcomes: RestoreTabOutcome[];
+  /** Number of runs (1 = first restore). Absent on records written before retry existed. */
+  attempts?: number;
 }
 
 export type SessionHubDb = Dexie & {

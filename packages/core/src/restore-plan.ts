@@ -91,3 +91,27 @@ export const planRestore = (session: SavedSession, selection: RestoreSelection =
     tabCount: windows.reduce((sum, window) => sum + window.tabs.length, 0),
   };
 };
+
+/**
+ * Plan for retrying a restore: the original plan minus every tab that already opened
+ * in an earlier attempt. Tabs that failed or were never attempted (interrupted run)
+ * remain. URLs are re-checked, groups are kept only where tabs remain, and skipped
+ * tabs are not retried (they were never restorable).
+ */
+export const planRetry = (plan: RestorePlan, openedTabIds: ReadonlySet<string>): RestorePlan => {
+  const windows = plan.windows
+    .map((window): PlannedWindow => {
+      const tabs = window.tabs.filter(
+        (tab) => !openedTabIds.has(tab.sourceTabId) && classifyUrl(tab.url).eligibility === "restorable",
+      );
+      const usedGroups = new Set(tabs.map((tab) => tab.groupId));
+      return { ...window, tabs, groups: window.groups.filter((group) => usedGroups.has(group.sourceGroupId)) };
+    })
+    .filter((window) => window.tabs.length > 0);
+  return {
+    sessionId: plan.sessionId,
+    windows,
+    skipped: [],
+    tabCount: windows.reduce((sum, window) => sum + window.tabs.length, 0),
+  };
+};

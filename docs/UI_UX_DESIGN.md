@@ -503,6 +503,7 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 - Manager nav shows only Saved sessions. Below 1280 px the inspector replaces the list with a Back link; below 1024 px the sidebar collapses to a top bar.
 - Sync status is always "Local only" because sync doesn't exist.
 - The window tree is not virtualized yet (fine at hundreds of tabs; M5 item).
+- Restore summary lists tabs that didn't open with a plain-language reason (Chrome's raw "No window with id" errors are mapped), notes tabs never reached, and offers **Retry N tabs**, explaining that only those tabs open, in a new window. After a retry the summary shows "Opened X of Y tabs after N attempts"; the Retry button disappears when nothing is left. A refused retry (for example another manager tab already finished it) keeps the summary and shows the reason.
 - Import lives in the manager header (Import button -> file picker -> preview dialog). The preview shows name, origin, export date, window/tab counts, tabs that will be reference-only and how many file statuses were re-checked, and states that the import is added as a new session. Invalid files get a "Can't import this file" dialog with a specific reason. No drag-and-drop yet, and the popup has no import entry.
 
 ## 19. Reference materials

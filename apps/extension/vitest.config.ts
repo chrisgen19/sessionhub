@@ -7,5 +7,7 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./vitest.setup.ts"],
+    // jsdom + IndexedDB UI tests are slow when Turbo runs every package in parallel.
+    testTimeout: 20_000,
   },
 });

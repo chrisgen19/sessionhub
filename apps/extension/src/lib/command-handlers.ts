@@ -1,12 +1,20 @@
 import { buildSavedSession, CaptureLimitError, type CaptureWindowInput } from "@sessionhub/core/capture";
 import { defaultSessionName } from "@sessionhub/core/naming";
-import { planRestore, type RestorePlan } from "@sessionhub/core/restore-plan";
+import { planRestore, planRetry, type RestorePlan } from "@sessionhub/core/restore-plan";
 import { InvalidSessionNameError, renameSession } from "@sessionhub/core/session-edit";
 import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { commandSchema, type Command, type CommandResponse, type ErrorCode } from "./messages";
-import { appendRestoreOutcomes, createRestoreJob, finishRestoreJob } from "./restore-job-repository";
+import {
+  appendRestoreOutcomes,
+  claimRestoreJobForRetry,
+  createRestoreJob,
+  finishRestoreJob,
+  openedTabIds,
+  RestoreJobNotFoundError,
+  RestoreJobNotRetryableError,
+} from "./restore-job-repository";
 import {
   addSession,
   deleteSession,
@@ -36,7 +44,8 @@ const fail = (code: ErrorCode, message: string): CommandResponse => ({ ok: false
 
 const toErrorResponse = (error: unknown): CommandResponse => {
   if (error instanceof VersionConflictError || error instanceof SessionExistsError) return fail("conflict", error.message);
-  if (error instanceof SessionNotFoundError) return fail("not-found", error.message);
+  if (error instanceof SessionNotFoundError || error instanceof RestoreJobNotFoundError) return fail("not-found", error.message);
+  if (error instanceof RestoreJobNotRetryableError) return fail("conflict", error.message);
   if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError || error instanceof SessionImportError) {
     return fail("invalid-input", error.message);
   }
@@ -69,16 +78,38 @@ const importSession = async (command: Extract<Command, { type: "session.import" 
   return { sessionId: session.id, report };
 };
 
+/**
+ * Opens each planned window and records outcomes. The job status is always settled
+ * from recorded outcomes, even if a step throws, so a job never stays "running" and
+ * blocks retry. (A worker killed mid-run can't settle it; see PROGRESS known gaps.)
+ */
+const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps) => {
+  let failure: unknown = null;
+  try {
+    for (const window of plan.windows) {
+      const outcomes = await deps.restoreWindow(window);
+      await appendRestoreOutcomes(deps.db, jobId, outcomes, deps.now());
+    }
+  } catch (error) {
+    failure = error;
+  }
+  const job = await finishRestoreJob(deps.db, jobId, deps.now());
+  if (failure) throw failure;
+  return job;
+};
+
 const restore = async (command: Extract<Command, { type: "restore.start" }>, deps: HandlerDeps) => {
   const session = await getSession(deps.db, command.sessionId);
   if (!session) throw new SessionNotFoundError("Session no longer exists");
   const plan = planRestore(session, command.tabIds ? { tabIds: new Set(command.tabIds) } : {});
   const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now() });
-  for (const window of plan.windows) {
-    const outcomes = await deps.restoreWindow(window);
-    await appendRestoreOutcomes(deps.db, job.id, outcomes, deps.now());
-  }
-  return { job: await finishRestoreJob(deps.db, job.id, deps.now()) };
+  return { job: await runRestoreJob(job.id, plan, deps) };
+};
+
+/** Re-runs only tabs that never opened, in new windows. Works from the stored plan, not the session. */
+const retry = async (command: Extract<Command, { type: "restore.retry" }>, deps: HandlerDeps) => {
+  const job = await claimRestoreJobForRetry(deps.db, command.jobId, deps.now());
+  return { job: await runRestoreJob(job.id, planRetry(job.plan, openedTabIds(job)), deps) };
 };
 
 /** Validates an untrusted message and runs the matching command. Never throws. */
@@ -103,6 +134,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         return { ok: true, data: await importSession(command, deps) };
       case "restore.start":
         return { ok: true, data: await restore(command, deps) };
+      case "restore.retry":
+        return { ok: true, data: await retry(command, deps) };
     }
   } catch (error) {
     return toErrorResponse(error);

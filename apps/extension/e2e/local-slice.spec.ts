@@ -169,3 +169,88 @@ test("export -> import round trip creates a separate session that restores", asy
     .toEqual([`${SITE}/gamma`]);
 });
 
+test("retry reopens only the failed tab, in a new window, and only once", async ({ context, worker, extensionId }) => {
+  for (const name of ["one", "two", "three"]) await (await context.newPage()).goto(`${SITE}/${name}`);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html`);
+  const saved = await manager.evaluate(() => chrome.runtime.sendMessage({ type: "session.capture", scope: { kind: "all-windows" } }));
+  const restored = await manager.evaluate(
+    (sessionId) => chrome.runtime.sendMessage({ type: "restore.start", sessionId }),
+    (saved as { data: { sessionId: string } }).data.sessionId,
+  );
+  const jobId = (restored as { data: { job: { id: string } } }).data.job.id;
+
+  // Simulate "two" having failed (e.g. its window was closed mid-restore).
+  await manager.evaluate(async (id) => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open("sessionhub");
+      request.onsuccess = () => resolve(request.result);
+    });
+    const store = db.transaction("restoreJobs", "readwrite").objectStore("restoreJobs");
+    const job = await new Promise<{ status: string; plan: { windows: { tabs: { sourceTabId: string; url: string }[] }[] }; outcomes: { sourceTabId: string; status: string; error?: string }[] }>(
+      (resolve) => {
+        const get = store.get(id);
+        get.onsuccess = () => resolve(get.result);
+      },
+    );
+    const two = job.plan.windows.flatMap((w) => w.tabs).find((tab) => tab.url.endsWith("/two"))!;
+    job.outcomes = job.outcomes.map((o) => (o.sourceTabId === two.sourceTabId ? { sourceTabId: o.sourceTabId, status: "failed", error: "closed" } : o));
+    job.status = "partial";
+    await new Promise((resolve) => (store.put(job).onsuccess = resolve));
+  }, jobId);
+
+  const countUrl = async (url: string) => (await snapshotWindows(worker)).windows.flatMap((w) => w.urls).filter((u) => u === url).length;
+  await expect.poll(() => countUrl(`${SITE}/one`)).toBe(2); // original tab + first restore
+  const before = await snapshotWindows(worker);
+
+  const retried = await manager.evaluate((id) => chrome.runtime.sendMessage({ type: "restore.retry", jobId: id }), jobId);
+  expect(retried).toMatchObject({ ok: true, data: { job: { status: "completed", attempts: 2 } } });
+  await expect
+    .poll(async () => (await snapshotWindows(worker)).windows.find((w) => !before.windows.some((old) => old.id === w.id))?.urls)
+    .toEqual([`${SITE}/two`]);
+  expect(await countUrl(`${SITE}/one`)).toBe(2);
+  expect(await countUrl(`${SITE}/three`)).toBe(2);
+
+  const again = await manager.evaluate((id) => chrome.runtime.sendMessage({ type: "restore.retry", jobId: id }), jobId);
+  expect(again).toMatchObject({ ok: false, error: { code: "conflict" } });
+});
+
+test("a real mid-restore failure can be retried from the summary", async ({ context, worker, extensionId }) => {
+  for (const name of ["red", "green", "blue"]) await (await context.newPage()).goto(`${SITE}/${name}`);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html`);
+  const saved = await manager.evaluate(() => chrome.runtime.sendMessage({ type: "session.capture", scope: { kind: "all-windows" } }));
+  const sessionId = (saved as { data: { sessionId: string } }).data.sessionId;
+
+  // Close every new window as soon as Chrome creates it: like a user closing the
+  // restored window mid-restore, later tabs.create calls fail for real.
+  await worker.evaluate(() => {
+    const closer = (window: { id?: number }) => void chrome.windows.remove(window.id!);
+    (globalThis as unknown as { closer: typeof closer }).closer = closer;
+    chrome.windows.onCreated.addListener(closer);
+  });
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#session=${sessionId}`);
+  await manager.getByRole("button", { name: /restore/i }).click();
+  const dialog = manager.getByRole("dialog");
+  await dialog.getByRole("button", { name: /^restore 3 tabs$/i }).click();
+  await expect(dialog.getByText(/the window was closed before this tab could open/i).first()).toBeVisible();
+  const retryButton = dialog.getByRole("button", { name: /^retry \d+ tabs?$/i });
+  await expect(retryButton).toBeVisible();
+  const failedCount = Number((await retryButton.textContent())?.match(/\d+/)?.[0]);
+
+  await worker.evaluate(() =>
+    chrome.windows.onCreated.removeListener((globalThis as unknown as { closer: (w: { id?: number }) => void }).closer),
+  );
+  const before = await snapshotWindows(worker);
+  await retryButton.click();
+  await expect(dialog.getByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /^retry/i })).toHaveCount(0);
+
+  // Only the tabs that failed were reopened, in one new window.
+  const created = (await snapshotWindows(worker)).windows.filter((w) => !before.windows.some((old) => old.id === w.id));
+  expect(created).toHaveLength(1);
+  const reopened = created[0]!.urls;
+  expect(reopened).toHaveLength(failedCount);
+  expect(reopened.every((url) => [`${SITE}/red`, `${SITE}/green`, `${SITE}/blue`].includes(url))).toBe(true);
+});
+

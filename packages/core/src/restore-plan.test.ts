@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSavedSession } from "./capture";
-import { planRestore } from "./restore-plan";
+import { planRestore, planRetry } from "./restore-plan";
 import { options, tab } from "./test-helpers";
 
 const sample = () =>
@@ -77,3 +77,38 @@ describe("planRestore", () => {
     expect(planRestore(session)).toEqual(planRestore(session));
   });
 });
+
+describe("planRetry", () => {
+  it("keeps only tabs that never opened, with their groups, in original order", () => {
+    const plan = planRestore(sample());
+    const [first, second] = plan.windows;
+    // a.test (grouped) and the second window's tab failed; pinned + b.test opened.
+    const opened = new Set([first!.tabs[0]!.sourceTabId, first!.tabs[2]!.sourceTabId]);
+    const retry = planRetry(plan, opened);
+
+    expect(retry.windows.map((w) => w.tabs.map((t) => t.url))).toEqual([["https://a.test"], ["https://c.test"]]);
+    expect(retry.windows[0]!.groups.map((g) => g.title)).toEqual(["Dev"]);
+    expect(retry.tabCount).toBe(2);
+    expect(retry.skipped).toEqual([]);
+    expect(retry.windows.flatMap((w) => w.tabs.map((t) => t.sourceTabId)).some((id) => opened.has(id))).toBe(false);
+    expect(second!.tabs).toHaveLength(1);
+  });
+
+  it("drops groups and windows with nothing left, and is empty when everything opened", () => {
+    const plan = planRestore(sample());
+    const all = new Set(plan.windows.flatMap((w) => w.tabs.map((t) => t.sourceTabId)));
+    expect(planRetry(plan, all)).toMatchObject({ windows: [], tabCount: 0 });
+
+    const firstWindowOpened = new Set(plan.windows[0]!.tabs.map((t) => t.sourceTabId));
+    const retry = planRetry(plan, firstWindowOpened);
+    expect(retry.windows).toHaveLength(1);
+    expect(retry.windows[0]!.sourceWindowId).toBe(plan.windows[1]!.sourceWindowId);
+  });
+
+  it("re-checks urls stored in the plan", () => {
+    const plan = planRestore(sample());
+    plan.windows[1]!.tabs[0]!.url = "javascript:alert(1)";
+    expect(planRetry(plan, new Set()).windows.flatMap((w) => w.tabs.map((t) => t.url))).not.toContain("javascript:alert(1)");
+  });
+});
+

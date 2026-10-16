@@ -30,6 +30,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     sessionId: z.uuid(),
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
   }),
+  z.object({ type: z.literal("restore.retry"), jobId: z.uuid() }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -39,6 +40,7 @@ export interface CommandResults {
   "session.delete": Record<string, never>;
   "session.import": { sessionId: string; report: ImportReport };
   "restore.start": { job: RestoreJobRecord };
+  "restore.retry": { job: RestoreJobRecord };
 }
 
 export type ErrorCode = "invalid-command" | "not-found" | "conflict" | "invalid-input" | "browser-error" | "storage-error";

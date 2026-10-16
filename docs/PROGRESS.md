@@ -9,16 +9,41 @@
 | Area | State |
 |---|---|
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
-| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary |
-| Recovery snapshots, retry of failed tabs, side panel, workspaces | Not implemented |
+| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** |
+| Recovery snapshots, side panel, workspaces | Not implemented |
 | Web app | Static landing page + `GET /api/health` only. No auth, DB or dashboard |
 | Database / auth / sync | Not implemented (`packages/database`, `packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`. `e491fc9` = skeleton + local slice. The import slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import. The retry slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (third slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** M2 retry of failed tabs from a restore job (`restore.retry`, never reopen tabs that opened, Retry button in the summary).
+
+**Implemented:**
+
+- `packages/core/src/restore-plan.ts`: `planRetry(plan, openedTabIds)`.
+- `apps/extension/src/lib/restore-job-repository.ts`: `attempts`, `openedTabIds`, `summarizeRestoreJob` (latest failure per tab, not-attempted count), `claimRestoreJobForRetry` (transactional compare-and-set), `finishRestoreJob` counts unique opened tabs.
+- `apps/extension/src/lib/command-handlers.ts`: `restore.retry`; shared `runRestoreJob` always settles status, even when a step throws (previously left `running`).
+- `apps/extension/src/lib/browser-restore.ts`: plain-language failure reasons.
+- `apps/extension/src/features/manager/restore-summary.tsx`, `restore-dialog.tsx`: Retry button, retrying state, refusal message.
+- `apps/extension/vitest.config.ts` / `vitest.setup.ts`: test timeout 20s and RTL `asyncUtilTimeout` 5s (two UI tests timed out only when Turbo ran every package in parallel; they passed in isolation).
+
+**Validated commands and results (final run after last code change):**
+
+- `pnpm check --force`: **pass**, twice in a row (12 tasks). Tests: contracts 8, core 68 (+3 `planRetry`), extension 37 (+5 retry handler, +2 retry UI), web 1.
+- Mutation check: removing the `already running` guard makes the concurrent-retry test fail (then restored).
+- `pnpm build --force`: **pass**.
+- E2E `--repeat-each 3`: **18/18 pass** (6 tests). New: (a) real failure: a worker listener closes each restored window on creation so later `tabs.create` calls fail for real; the UI shows the reason and Retry, and after retry exactly the failed count reopens in one new window (also 8/8 on its own); (b) retry through the real worker reopens only the one tab marked failed in IndexedDB, then a second retry is refused with `conflict`.
+
+**Manual verification:** screenshots of the failed summary (1440, 390) and the post-retry summary.
+
+**Known gaps:** a job left `running` by a killed worker can't be retried (needs stale-job recovery); `restoreJobs` still not pruned; no retry entry point outside the restore dialog (closing the dialog loses easy access to the job).
+
 
 ### 2026-10-16 (second slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -88,11 +113,11 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the import slice (needs the user's go-ahead), push a remote so CI runs for the first time.
+1. Commit the retry slice (needs the user's go-ahead); push a remote so CI runs for the first time.
 2. Continue M2:
-   1. **Retry failed tabs** from a restore job (`restore.retry` command reading `restoreJobs` outcomes; never reopen successful tabs; summary shows Retry when failures exist).
-   2. **Automatic recovery snapshots**: `alarms` permission, debounced dirty flag in IndexedDB, bounded retention that never evicts the last good snapshot, Recovery view in the manager.
-   3. Quota-failure handling and `restoreJobs` retention.
+   1. **Automatic recovery snapshots**: `alarms` permission, debounced dirty flag in IndexedDB, bounded retention that never evicts the last good snapshot, Recovery view in the manager (local-only, restore via the same preview/retry flow).
+   2. Restore-job housekeeping: recover stale `running` jobs (e.g. older than N minutes on worker startup -> settle from outcomes), prune old jobs, and a way to reopen the last job's summary.
+   3. Quota-failure handling.
 3. Then M3 (PostgreSQL, Prisma 7.x stable, Better Auth).
 
 ## Open questions / architecture validations
