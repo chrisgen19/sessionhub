@@ -31,7 +31,7 @@ pnpm test:db                 # resets sessionhub_test, applies all migrations, r
 pnpm db:down                 # stop (add -v to delete the data volume)
 ```
 
-Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
+Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
 
 AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when an agent runs it. Ask the user for explicit consent **for each run** and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never reuse earlier consent, invent it, or bypass the check.
 

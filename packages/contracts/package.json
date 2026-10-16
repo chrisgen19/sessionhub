@@ -6,7 +6,8 @@
   "sideEffects": false,
   "exports": {
     "./session": "./src/session.ts",
-    "./session-export": "./src/session-export.ts"
+    "./session-export": "./src/session-export.ts",
+    "./api-sessions": "./src/api-sessions.ts"
   },
   "scripts": {
     "lint": "eslint .",

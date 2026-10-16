@@ -146,6 +146,7 @@ Source: `packages/database/prisma/schema.prisma`, migration `20261016052129_init
 - Deleting a user cascades to all of their rows and nobody else's; deleting a saved session cascades to windows, groups, tabs and versions.
 - Unique keys: `(user_id, installation_id)` on devices, `(user_id, sequence)` on sync changes, primary key `(user_id, device_id, client_operation_id)` on receipts, `(session_id, version)` on versions, and `sort_order` per parent for windows, groups and tabs.
 - Naming reconciliations: group **`title`** (matches the contracts DTO; section 3 said `name`); **no `favicon_url` column** (clients use the browser's favicon cache); Postgres enum values use `_` where contracts use `-` (`browser_internal`), mapped in the service layer.
+- **Write semantics (API, 2026-10-16):** each accepted create/update writes a `session_versions` row whose `payload` is the full detail DTO and whose `checksum` is SHA-256 over id-independent content (name, description, workspace, pinned, archived, ordered groups and tabs with group positions). Deletes write a tombstone and a `sync_changes` delete row but no `session_versions` row. Web writes store `source_device_id = NULL`, `source_device_name = "Web"`. Child rows are deleted and recreated with new ids when the structure changes.
 - `AuditEvent.kind` is an enum: `sign_in`, `device_paired`, `device_revoked`, `account_deletion_requested`, `data_exported`.
 
 ## 4. Local IndexedDB schema (Dexie concept)

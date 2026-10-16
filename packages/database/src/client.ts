@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "./generated/client";
 
 export { Prisma, PrismaClient } from "./generated/client";
+export type { RestoreEligibility as DbRestoreEligibility, TabGroupColor as DbTabGroupColor } from "./generated/enums";
 
 /**
  * Creates a Prisma client over the node-postgres driver adapter (required by Prisma 7).

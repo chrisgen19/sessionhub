@@ -57,10 +57,10 @@ flowchart LR
 - [x] Integrate Better Auth with correct current adapter/version. (1.7.9, Prisma adapter, auth models regenerated from the real config: no changes.)
 - [ ] Implement signup/sign-in/password reset/account security. (Sign-up, sign-in, sign-out, rate limiting, safe redirects: done; password reset and email verification: pending email delivery.)
 - [x] Build web dashboard shell from UI/UX specification. (Overview, Saved sessions, Devices, Settings; see UI_UX_DESIGN.md 18c for deviations.)
-- [ ] Add session/workspace/device list/detail/read/write API with ownership checks.
-- [ ] Emit server sync changes for all web mutations.
+- [ ] Add session/workspace/device list/detail/read/write API with ownership checks. (Sessions: done, `/api/v1/sessions`; workspaces and devices: pending.)
+- [x] Emit server sync changes for all web mutations. (Every session create/update/delete writes `sync_changes` with a gap-free per-user sequence.)
 - [ ] Create Docker local Compose and healthchecks. (Local PostgreSQL compose with healthcheck: done; web app container: pending.)
-- [ ] Unit/API/auth tests including cross-user access denial.
+- [x] Unit/API/auth tests including cross-user access denial.
 
 **Done when:** Signed-in user can create/manage canonical saved-session records via web without Chrome extension APIs.
 

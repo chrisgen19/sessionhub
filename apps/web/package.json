@@ -14,6 +14,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@sessionhub/contracts": "workspace:*",
+    "@sessionhub/core": "workspace:*",
     "@sessionhub/database": "workspace:*",
     "@sessionhub/ui": "workspace:*",
     "better-auth": "1.7.9",

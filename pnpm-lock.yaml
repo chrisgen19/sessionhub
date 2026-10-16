@@ -117,6 +117,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@sessionhub/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@sessionhub/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@sessionhub/database':
         specifier: workspace:*
         version: link:../../packages/database

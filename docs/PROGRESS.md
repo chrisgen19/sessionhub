@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth and dashboard shell done. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell and saved-session API done. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -11,15 +11,40 @@
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
-| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; `GET /api/health`. No session detail or `/api/v1` yet |
+| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** CRUD with versions, tombstones and change log; `GET /api/health`. No session detail page yet |
 | Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth. The dashboard slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth, `8781777` dashboard. The sessions API slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (M3 sessions API slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** account-scoped `/api/v1/sessions` (list/detail/create/update/delete) with `packages/contracts` Zod schemas, ownership checks, optimistic `version`, and SessionVersion + SyncChange + UserSyncClock in one transaction; cross-user denial tests against PostgreSQL.
+
+**Implemented:**
+
+- `packages/contracts/src/api-sessions.ts`: write inputs (position-ordered, client-scoped group refs, 5,000-tab cap, strict objects), list/delete queries, summary/detail DTOs, error envelope with conflict fields, `API_LIMITS`.
+- `packages/core/src/session-structure.ts` `buildCanonicalStructure` (fresh child ids, remapped groups, positional order, re-classified URLs).
+- `apps/web/src/server/sessions/`: `mutations.ts` (create/update/delete; clock lock first; version-guarded UPDATE; `RollbackWith` for replays), `queries.ts` (keyset list, detail), `dto.ts`, `checksum.ts`, `cursor.ts`, `errors.ts`.
+- `apps/web/src/server/api/http.ts` (auth, same-origin check, JSON/size limits, validation issues, error mapping, `no-store`) and routes `src/app/api/v1/sessions/route.ts`, `[id]/route.ts`.
+- `packages/database/src/client.ts`: type re-exports for the DB enums.
+- Contract written up in `SYNC_PROTOCOL.md` 13a.
+
+**Validated commands and results:**
+
+- `pnpm check --force`: **pass** (14 tasks). Unit: contracts 20 (+12), core 84 (+3), extension 84, web 27.
+- `pnpm build --force`: **pass**.
+- `pnpm --filter @sessionhub/web test:db`: **18/18** (10 new): rows + version + change in one transaction; exact create retry is a no-op with no sequence consumed; id collision rejected; stale update/delete returns the conflict with server state and writes nothing; structure replacement; tombstone, idempotent delete, no resurrection; cross-user read/update/delete denied with nothing written and no clock row for the attacker; foreign/deleted workspace rejected; 20 concurrent creates get sequences 1..20; 10 concurrent edits of one version yield exactly 1 accept and 9 conflicts; keyset pages without duplicates; tampered cursor rejected.
+- **Mutation checks:** taking the clock lock after the version check let all 10 racing edits through (lost updates) until the version-guarded UPDATE was added; with the guard alone the test passes too, so each guard is independently effective. Final code has both.
+- `pnpm test:e2e`: **pass** (extension 9, web 15). Web E2E **60/60** over 2 x `--repeat-each 2`. New HTTP tests: 401 without session; full lifecycle incl. 201 + Location, 409 bodies, tombstone and repeat delete; cross-user 404s with data intact; foreign/missing Origin 403, wrong type 415, bad JSON 400, unknown field 400 with issues, body over 2 MB 413, non-UUID 404, bad limit/cursor 400; exact create retry 200 with identical body; API-created session appears in the dashboard.
+- The root `pnpm test:db` was **not** run (its database reset needs fresh user consent); the database package's schema and migrations are unchanged in this slice.
+
+**Known gaps:** no `/api/v1` rate limiting; no workspace/device endpoints or `/versions`; no session detail page; receipts for device pushes arrive with M4.
+
 
 ### 2026-10-16 (M3 dashboard slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -288,9 +313,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the dashboard slice (needs the user's go-ahead); push a remote so CI runs for the first time.
-2. Continue M3: **account-scoped saved-session API** (`/api/v1/sessions` list/detail/create/update/delete with Zod contracts from `packages/contracts`, ownership checks, optimistic `version`, child rows + `SessionVersion` + `SyncChange` + `UserSyncClock` in one transaction) with cross-user denial tests against PostgreSQL; then a session detail page in the dashboard (window/tab tree, export, safe "open links").
-3. Remaining M3: web app Dockerfile/compose service with healthcheck; email delivery for verification and password reset.
+1. Commit the sessions API slice (needs the user's go-ahead); push a remote so CI runs for the first time.
+2. Continue M3: **session detail page** in the dashboard (`/app/sessions/[id]`: window/group/tab tree with safe URL display, rename/archive/delete through the new API with version conflicts surfaced, export JSON, "open links" with a multi-tab warning; rows in the list become links).
+3. Then: rate limiting for `/api/v1` writes; workspace and device endpoints; web app Dockerfile/compose service with healthcheck; email delivery for verification and password reset.
 
 ## Open questions / architecture validations
 
