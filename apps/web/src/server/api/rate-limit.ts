@@ -30,15 +30,16 @@ export class TokenBucketLimiter {
     private readonly maxKeys = 10_000,
   ) {}
 
-  take(key: string): RateLimitDecision {
+  /** Takes `cost` tokens at once (a sync push pays one per operation), or none if they aren't all there. */
+  take(key: string, cost = 1): RateLimitDecision {
     const now = this.now();
     const bucket = this.refilled(this.buckets.get(key), now);
-    if (bucket.tokens >= 1) {
-      this.store(key, { tokens: bucket.tokens - 1, updatedAt: now });
-      return { allowed: true, remaining: Math.floor(bucket.tokens - 1) };
+    if (bucket.tokens >= cost) {
+      this.store(key, { tokens: bucket.tokens - cost, updatedAt: now });
+      return { allowed: true, remaining: Math.floor(bucket.tokens - cost) };
     }
     this.store(key, bucket);
-    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - bucket.tokens) / this.policy.refillPerSecond)) };
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((cost - bucket.tokens) / this.policy.refillPerSecond)) };
   }
 
   get size(): number {

@@ -20,7 +20,8 @@ export type LocalScope = "local" | AccountScope;
 export interface SessionSyncRecord {
   /** Last version the server confirmed; null until the first upload is accepted. */
   serverVersion: number | null;
-  state: "pending" | "synced" | "conflict";
+  /** `conflict`: the server refused a change for a reason the user must review; `error`: it can never be uploaded as is. */
+  state: "pending" | "synced" | "conflict" | "error";
 }
 
 export type LocalSessionRecord = SavedSession & { scope: LocalScope; sync?: SessionSyncRecord };
@@ -126,7 +127,8 @@ export type AccountRecord = PendingPairingRecord | ConnectionRecord | Connection
  * same transaction as the change. A `queued` operation has never been handed to the network and
  * may still be merged with a later change. The uploader must commit `sending` before the request
  * leaves; from then on the operation is immutable and never returns to `queued`, so a retry with
- * the same id always carries the same content.
+ * the same id always carries the same content. `conflict` and `rejected` operations stay (with the
+ * payload) until the user resolves them, and hold back every later operation of the same session.
  */
 export type OutboxRecord = {
   /** Auto-incremented on insert: upload order. */
@@ -138,7 +140,7 @@ export type OutboxRecord = {
   entityId: string;
   /** Server version this operation applies to (0 = create). Each accepted operation adds 1. */
   expectedVersion: number;
-  status: "queued" | "sending";
+  status: "queued" | "sending" | "conflict" | "rejected";
   createdAt: string;
   updatedAt: string;
   attempts: number;
@@ -156,12 +158,19 @@ export interface SessionTombstoneRecord {
   deletedAt: string;
 }
 
-/** Per-account sync progress; written by the push and pull slices. */
+/** Per-account sync progress. Uploads run only once `enabledAt` records the user's consent. */
 export interface SyncStateRecord {
   scope: AccountScope;
+  /** When the user turned sync on for this account in this browser; null or absent = never upload. */
+  enabledAt: string | null;
+  /** Pull cursor (pull slice). */
   cursor: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  /** Consecutive failed uploads, for backoff. */
+  failures: number;
+  /** No automatic upload before this time (backoff or Retry-After). */
+  nextAttemptAt: string | null;
 }
 
 export type SessionHubDb = Dexie & {

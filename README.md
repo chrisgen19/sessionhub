@@ -1,6 +1,6 @@
 # SessionHub — Product & Engineering Reference Pack
 
-> **Status:** Monorepo initialized (M1) and the first local extension slice works: save windows to IndexedDB, list/search, restore into new windows, rename/delete/export. No backend, accounts or sync yet. See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for verified status.
+> **Status:** Local extension (M2) and web app with accounts and APIs (M3) work. Cross-device sync (M4) is in progress: pairing, the extension's local outbox and upload (`sync/push`) exist; download (`sync/pull`) and the sync UI don't yet. See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for verified status.
 >
 > **Updated:** 2026-10-16  
 > **Product:** SessionHub (working name)  
@@ -41,7 +41,7 @@ pnpm test:docker             # builds the images and tests the stack in an isola
 
 Migrations run as their own one-shot `migrate` service (`prisma migrate deploy`) before `web` starts; to apply new migrations on an existing stack: `docker compose -f infra/docker/compose.yaml run --rm migrate`.
 
-Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Email (password reset, confirmation) goes to Mailpit in development (`MAIL_TRANSPORT=mailpit`; read it at http://127.0.0.1:58025); production uses `MAIL_TRANSPORT=resend` with `RESEND_API_KEY` and a `MAIL_FROM` on a domain verified in Resend. Without email, reset is shown as unavailable. API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
+Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Email (password reset, confirmation) goes to Mailpit in development (`MAIL_TRANSPORT=mailpit`; read it at http://127.0.0.1:58025); production uses `MAIL_TRANSPORT=resend` with `RESEND_API_KEY` and a `MAIL_FROM` on a domain verified in Resend. Without email, reset is shown as unavailable. API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a); extension sync upload `POST /api/v1/sync/push` (Bearer device token, 13f). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
 
 AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when an agent runs it. Ask the user for explicit consent **for each run** and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never reuse earlier consent, invent it, or bypass the check.
 

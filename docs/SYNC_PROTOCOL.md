@@ -260,7 +260,7 @@ All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-C
 5. Insert an immutable `session_versions` row (payload = detail DTO, checksum = SHA-256 of id-independent content) and a `sync_changes` row with the sequence.
 6. Replays (exact create retry, repeated delete) and conflicts roll back, so they consume **no** sequence: the change log stays gap-free.
 
-**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. **Not yet:** `sync_operation_receipts` (needs device credentials, M4), read rate limits and shared (multi-instance) limiter storage, `/versions` history.
+**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. Receipts (`sync_operation_receipts`) exist for device pushes only (13f). **Not yet:** read rate limits and shared (multi-instance) limiter storage, `/versions` history.
 
 ## 13b. Implemented: workspace REST API (2026-10-16)
 
@@ -315,8 +315,49 @@ Extension only; nothing is uploaded yet (`sync/push` is the next slice). Code: `
 - Invariant 2 (section 3) holds locally: an account-scoped session edit and its operation commit in one IndexedDB transaction, and so does a delete with its tombstone.
 - Invariant 10 holds locally: records and operations are scoped `account:<id>`, and only the connected account's are readable or editable. Queued operations of a disconnected account stay stored and hidden, never sent under another account.
 - Operation fields map to section 5: `id` = `clientOperationId`, `entityType` (`savedSession`), `entityId`, `action` (`upsert` / `delete`), `expectedVersion` (0 = create), `payload` (the full local session for an upsert, null for a delete). `deviceId` is not stored: the uploader sends the connection's device id, which the server checks against the credential.
-- **Contract for the uploader (push slice):** commit `status: "sending"` (and `attempts + 1`) before a request leaves; never change a `sending` operation's payload or return it to `queued`; send a scope's operations in `seq` order and only for the connected account; on acceptance remove the operation and set the session's `sync.serverVersion` to the returned version (`state: "synced"` when no operations remain); on a conflict keep the payload (conflict drafts). Later operations of the same entity already chain on the expected result (`expectedVersion + 1`), so after a conflict they conflict too and are kept the same way.
+- **Contract for the uploader (implemented in 13f):** commit `status: "sending"` (and `attempts + 1`) before a request leaves; never change a `sending` operation's payload or return it to `queued`; send a scope's operations in `seq` order and only for the connected account; on acceptance remove the operation and set the session's `sync.serverVersion` to the returned version (`state: "synced"` when no operations remain); on a conflict keep the payload (conflict drafts). Later operations of the same entity already chain on the expected result (`expectedVersion + 1`), so after a conflict they conflict too and are kept the same way.
 - **Contract for pull:** don't overwrite an entity with pending operations or a tombstone; purge a tombstone once the pulled change log has passed its delete.
+
+## 13f. Implemented: sync push (2026-10-16)
+
+Contracts: `packages/contracts/src/api-sync.ts`. Server: `apps/web/src/server/sync/push.ts`, route `apps/web/src/app/api/v1/sync/push/route.ts`. Extension: `apps/extension/src/lib/sync-uploader.ts`, `sync-batch.ts`.
+
+`POST /api/v1/sync/push` `{ protocolVersion: 1, deviceId, operations: [...] }`, `Authorization: Bearer shd_at_...` only (cookies never authenticate it). Checks in order:
+
+| Check | Failure |
+|---|---|
+| Valid device access token | 401 `UNAUTHENTICATED` / `INVALID_TOKEN` / `ACCESS_TOKEN_EXPIRED` / `DEVICE_REVOKED` |
+| JSON body (2 MB cap, `application/json`), envelope: `protocolVersion` 1, `deviceId` UUID, 1 to **25** operations | 413, 415, 400 `INVALID_JSON` / `VALIDATION_ERROR` |
+| `deviceId` equals the token's device | 403 `DEVICE_MISMATCH` |
+| At most one operation per `entityId` | 400 `VALIDATION_ERROR` |
+| Confirmed email (when this server can send email) | 403 `EMAIL_NOT_CONFIRMED` |
+| Write budget: one token **per operation** from the account's shared budget (13a) | 429 `RATE_LIMITED` + `Retry-After`, nothing applied |
+
+Then 200 `{ protocolVersion: 1, results }`, one result per operation in request order. Operations are validated **one at a time** (a malformed one can't block the others) and each runs in **its own transaction**: lock the user's clock, look up the receipt `(user, device, clientOperationId)`, run the shared session mutation (`createSessionInTx` / `updateSessionInTx` / `deleteSessionInTx`, with the device as provenance), write the receipt. A push is not all-or-nothing.
+
+| `status` | Meaning | Receipt |
+|---|---|---|
+| `accepted` | `serverVersion`, `serverSequence` (null when the service's own idempotent repeat changed nothing: same create content again, delete of a tombstone) | yes, in the mutation's transaction (none for the service's idempotent repeat) |
+| `conflict` | `code: VERSION_CONFLICT`, `expectedVersion`, `serverVersion` (no server state: the pull brings it) | yes |
+| `rejected` | `NOT_FOUND` (missing, tombstoned or another account's: indistinguishable), `ID_IN_USE` (create collided), `INVALID_WORKSPACE` | yes |
+| `validation_error` | `issues`; `clientOperationId` null if it wasn't a UUID | no (recomputed identically) |
+| `retryable_error` | unexpected server failure; send the same operation again | no |
+
+- **Repeats:** a receipt hit returns the stored result with `replayed: true` (this replaces section 5's `duplicate` status, so clients have one code path). 20 concurrent deliveries of one operation make exactly one change (tested).
+- **Conflict and rejection receipts** are written after the mutation rolled back (it used no change-log sequence, which stays gap-free). If a concurrent copy recorded first, its result is returned. Because they are stored, a retry can never turn a stale edit into an accepted one, even after the server later reaches the version the client expected (tested).
+- **Not used:** section 5's `permission_denied` (another account's session is `NOT_FOUND`).
+- **Payload of an upsert:** `{ name, windows }` with the same window/group/tab input rules as 13a; `expectedVersion` 0 creates with `entityId` as the id. Web-only fields (description, workspace, pinned, archived) are left as they are.
+
+**Extension uploader** (`pushNow`), following 13e:
+
+1. Runs only while connected (account id known) and when `syncState.enabledAt` is set for that account (local consent; set by the upload-preview slice, not yet built). Respects `nextAttemptAt` unless forced (`sync.pushNow` command).
+2. Per round, in one IndexedDB transaction: select the first pending operation of each session in queue order (sessions with a `conflict` or `rejected` operation are held back entirely), up to 25 operations and 1.5 MB; mark operations that can never fit `rejected`; commit `sending` and `attempts + 1`.
+3. Push with the connection's device id and access token (refresh and revocation handling from 13d).
+4. Apply results in one transaction: `accepted` (and `rejected NOT_FOUND` for a delete) removes the operation and sets `sync.serverVersion` (`synced` when nothing else is waiting); `conflict` and `rejected` keep the operation with its payload (status `conflict` / `rejected`, session state `conflict`); `validation_error` keeps it as `rejected` (session state `error`); `retryable_error` or a missing result leaves it `sending`.
+5. Up to 10 rounds per run. Failures back off 5 s doubling to 15 minutes with jitter, or longer if `Retry-After` says so; the retry alarm (`sync-retry`) runs it again. Revocation stops it (the connection is removed; queued operations stay).
+6. Triggers: worker start (resends anything left `sending`), after a successful `session.rename` / `session.delete`, the retry alarm, and `sync.pushNow`. One run at a time per worker (in-memory single flight; safety comes from receipts, not from this).
+
+**Not yet:** pull (`/api/v1/sync/pull`), conflict resolution UI and drafts, the opt-in/upload preview that sets `enabledAt`, URL exclusions before upload (no exclusion settings exist yet).
 
 ## 14. References
 
