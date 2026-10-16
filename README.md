@@ -47,6 +47,8 @@ AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when 
 
 First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec playwright install chromium`.
 
+**Which server the extension talks to** is fixed at build time: `WXT_API_BASE_URL=https://sessionhub.example.com pnpm --filter @sessionhub/extension build` (default `http://localhost:3000`; non-localhost origins must be https). The manifest gets a host permission for exactly that origin. Connect a browser from the manager's **Account** view; approve it on the website at `/app/pair`.
+
 **Load the extension in Chrome:** run `pnpm build`, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `apps/extension/.output/chrome-mv3`.
 
 | Workspace | Purpose |

@@ -1,9 +1,12 @@
 import { API_LIMITS, type ApiErrorCode, type ApiErrorResponse } from "@sessionhub/contracts/api-sessions";
 import { z } from "zod";
+import { getPrisma } from "@sessionhub/database/client";
 import { getAuth } from "@/server/auth";
+import { authenticateAccessToken, type DevicePrincipal } from "@/server/devices/credentials";
+import { bearerToken } from "@/server/devices/tokens";
 import { getServerEnv } from "@/server/env";
 import { ServiceError } from "@/server/service-errors";
-import { getWriteLimiter } from "./rate-limit";
+import { getIpLimiter, getWriteLimiter } from "./rate-limit";
 
 /** Error the HTTP layer turns into an `{ error }` JSON response. */
 export class HttpError extends Error {
@@ -31,6 +34,20 @@ const SERVICE_STATUS: Partial<Record<ApiErrorCode, number>> = {
   INVALID_CURSOR: 400,
   WORKSPACE_NOT_EMPTY: 409,
   LIMIT_REACHED: 422,
+  PAIRING_EXPIRED: 410,
+  PAIRING_DENIED: 403,
+  EMAIL_NOT_CONFIRMED: 403,
+  INVALID_TOKEN: 401,
+  ACCESS_TOKEN_EXPIRED: 401,
+  DEVICE_REVOKED: 401,
+  RATE_LIMITED: 429,
+};
+
+/** RFC 6750: tell bearer clients why their token was refused. */
+const BEARER_ERRORS: Partial<Record<ApiErrorCode, string>> = {
+  INVALID_TOKEN: 'Bearer error="invalid_token"',
+  ACCESS_TOKEN_EXPIRED: 'Bearer error="invalid_token", error_description="expired"',
+  DEVICE_REVOKED: 'Bearer error="invalid_token", error_description="revoked"',
 };
 
 const toResponse = (error: unknown): Response => {
@@ -39,7 +56,11 @@ const toResponse = (error: unknown): Response => {
     return json({ error: { code: error.code, message: error.message, ...error.extra } }, error.status, retryAfter ? { "retry-after": String(retryAfter) } : {});
   }
   if (error instanceof ServiceError) {
-    return json({ error: { code: error.code, message: error.message, ...error.details } }, SERVICE_STATUS[error.code] ?? 400);
+    const headers: Record<string, string> = {};
+    if (error.details.retryAfterSeconds) headers["retry-after"] = String(error.details.retryAfterSeconds);
+    const bearer = BEARER_ERRORS[error.code];
+    if (bearer) headers["www-authenticate"] = bearer;
+    return json({ error: { code: error.code, message: error.message, ...error.details } }, SERVICE_STATUS[error.code] ?? 400, headers);
   }
   // Class name only: never log request bodies, URLs or user data.
   console.error(`[api] unexpected ${error instanceof Error ? error.name : typeof error}`);
@@ -58,10 +79,42 @@ export const handle =
   };
 
 /** The signed-in user (Better Auth session cookie). Device tokens for the extension arrive in M4. */
-export const authenticate = async (request: Request): Promise<{ userId: string }> => {
+export const authenticate = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
   const session = await getAuth().api.getSession({ headers: request.headers });
   if (!session) throw new HttpError(401, "UNAUTHENTICATED", "Sign in to use the SessionHub API.");
-  return { userId: session.user.id };
+  return { userId: session.user.id, emailVerified: session.user.emailVerified };
+};
+
+/**
+ * Device (extension) requests: `Authorization: Bearer shd_at_...` only, never cookies. Checked
+ * against the database on every request, so a revoke takes effect immediately.
+ */
+export const authenticateDevice = async (request: Request): Promise<DevicePrincipal> => {
+  const token = bearerToken(request);
+  if (!token) {
+    throw new HttpError(401, "UNAUTHENTICATED", "Send this device's access token as a Bearer token.");
+  }
+  return authenticateAccessToken(getPrisma(), token);
+};
+
+/** First client address from X-Forwarded-For (the proxy must overwrite it; see SECURITY_PRIVACY.md). */
+export const clientIp = (request: Request): string => request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+
+const rateLimited = (retryAfterSeconds: number) =>
+  new HttpError(429, "RATE_LIMITED", `Too many requests in a short time. Try again in ${retryAfterSeconds} seconds.`, { retryAfterSeconds });
+
+/** Per-IP limit for unauthenticated device endpoints (pairing start, token poll, refresh). */
+export const limitByIp = (request: Request, name: "pairing-start" | "device-token"): void => {
+  const decision = getIpLimiter(name).take(clientIp(request));
+  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
+};
+
+/** Device writes share the account's write budget with the web app. */
+export const authorizeDeviceWrite = async (request: Request): Promise<DevicePrincipal> => {
+  const principal = await authenticateDevice(request);
+  const decision = getWriteLimiter().take(principal.userId);
+  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
+  return principal;
 };
 
 /**
@@ -79,16 +132,16 @@ export const assertSameOrigin = (request: Request): void => {
  * Gate for every /api/v1 write, in this order: same-origin check, authentication, then the
  * per-user write limit (so anonymous or cross-site requests never consume a user's budget).
  */
-export const authorizeWrite = async (request: Request): Promise<{ userId: string }> => {
+export const authorizeWrite = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
   assertSameOrigin(request);
-  const { userId } = await authenticate(request);
-  const decision = getWriteLimiter().take(userId);
+  const user = await authenticate(request);
+  const decision = getWriteLimiter().take(user.userId);
   if (!decision.allowed) {
     throw new HttpError(429, "RATE_LIMITED", `Too many changes in a short time. Try again in ${decision.retryAfterSeconds} seconds.`, {
       retryAfterSeconds: decision.retryAfterSeconds,
     });
   }
-  return { userId };
+  return user;
 };
 
 /** Reads a bounded JSON body and validates it. Size is checked before parsing. */

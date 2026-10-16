@@ -26,7 +26,7 @@ const withUrl = (url: string): CaptureWindowInput[] => [
 ];
 
 describe("database migration", () => {
-  it("upgrades a version 1 database to version 2 without losing sessions", async () => {
+  it("upgrades a version 1 database to the current version without losing sessions", async () => {
     const name = `migration-${Date.now()}`;
     const v1 = new Dexie(name);
     v1.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
@@ -36,8 +36,26 @@ describe("database migration", () => {
 
     const db = createDb(name);
     expect(await getSession(db, session.id)).toEqual(session);
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBe(3);
     expect(await db.recoverySnapshots.count()).toBe(0);
+    expect(await db.account.count()).toBe(0);
+  });
+
+  it("upgrades a version 2 database (with checkpoints) to version 3, adding an empty account table", async () => {
+    const name = `migration-v2-${Date.now()}`;
+    const v2 = new Dexie(name);
+    v2.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
+    v2.version(2).stores({ recoverySnapshots: "id, capturedAt, [capturedAt+tabCount]", recoveryState: "key" });
+    const session = sampleSession();
+    await v2.table("sessions").put({ ...session, scope: "local" });
+    await v2.table("recoveryState").put({ key: "state", dirty: true, lastChangeAt: null, lastSnapshotAt: null, lastFingerprint: null, lastError: null });
+    v2.close();
+
+    const db = createDb(name);
+    expect(db.verno).toBe(3);
+    expect(await getSession(db, session.id)).toEqual(session);
+    expect(await db.recoveryState.get("state")).toMatchObject({ dirty: true });
+    expect(await db.account.count()).toBe(0);
   });
 });
 

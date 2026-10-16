@@ -9,7 +9,8 @@
     "./session-export": "./src/session-export.ts",
     "./api-sessions": "./src/api-sessions.ts",
     "./api-workspaces": "./src/api-workspaces.ts",
-    "./api-devices": "./src/api-devices.ts"
+    "./api-devices": "./src/api-devices.ts",
+    "./api-pairing": "./src/api-pairing.ts"
   },
   "scripts": {
     "lint": "eslint .",

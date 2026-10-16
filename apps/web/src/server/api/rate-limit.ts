@@ -69,10 +69,29 @@ export class TokenBucketLimiter {
   }
 }
 
-const globalForLimiter = globalThis as unknown as { sessionhubWriteLimiter?: TokenBucketLimiter };
+/** Starting a pairing, per client IP: 5 at once, then 1 per minute. */
+export const PAIRING_START_LIMIT: RateLimitPolicy = { capacity: 5, refillPerSecond: 1 / 60 };
+/** Pairing polls and token refreshes, per client IP: 30 at once, then 1 every 2 seconds. */
+export const DEVICE_TOKEN_LIMIT: RateLimitPolicy = { capacity: 30, refillPerSecond: 0.5 };
+
+const globalForLimiter = globalThis as unknown as {
+  sessionhubWriteLimiter?: TokenBucketLimiter;
+  sessionhubIpLimiters?: Map<string, TokenBucketLimiter>;
+};
 
 /** Process-wide limiter for API writes (cached across Next.js dev reloads). */
 export const getWriteLimiter = (): TokenBucketLimiter => {
   globalForLimiter.sessionhubWriteLimiter ??= new TokenBucketLimiter(API_WRITE_LIMIT);
   return globalForLimiter.sessionhubWriteLimiter;
+};
+
+/** Process-wide per-IP limiter for one unauthenticated endpoint family. */
+export const getIpLimiter = (name: "pairing-start" | "device-token"): TokenBucketLimiter => {
+  globalForLimiter.sessionhubIpLimiters ??= new Map();
+  let limiter = globalForLimiter.sessionhubIpLimiters.get(name);
+  if (!limiter) {
+    limiter = new TokenBucketLimiter(name === "pairing-start" ? PAIRING_START_LIMIT : DEVICE_TOKEN_LIMIT);
+    globalForLimiter.sessionhubIpLimiters.set(name, limiter);
+  }
+  return limiter;
 };

@@ -1,7 +1,8 @@
-import { History, Layers } from "lucide-react";
+import { CircleUser, History, Layers } from "lucide-react";
 import type { ReactNode } from "react";
 import { BrandMark, SyncStatusChip } from "../../components/brand";
 import { routeHref, useManagerRoute, type ManagerRoute } from "../../hooks/use-manager-route";
+import { AccountView } from "../account/account-view";
 import { RecoveryView } from "../recovery/recovery-view";
 import { SessionsView } from "./sessions-view";
 
@@ -38,6 +39,9 @@ export function ManagerApp() {
           <NavLink route={{ view: "recovery", snapshotId: null }} current={route.view === "recovery"} icon={<History aria-hidden="true" className="size-4" />}>
             Recovery
           </NavLink>
+          <NavLink route={{ view: "account" }} current={route.view === "account"} icon={<CircleUser aria-hidden="true" className="size-4" />}>
+            Account
+          </NavLink>
         </nav>
         <div className="lg:mt-auto lg:space-y-2 lg:border-t lg:border-line lg:px-2 lg:pt-4">
           <SyncStatusChip />
@@ -47,7 +51,9 @@ export function ManagerApp() {
         </div>
       </aside>
 
-      {route.view === "recovery" ? (
+      {route.view === "account" ? (
+        <AccountView />
+      ) : route.view === "recovery" ? (
         <RecoveryView snapshotId={route.snapshotId} onSelect={(snapshotId) => navigate({ view: "recovery", snapshotId })} />
       ) : (
         <SessionsView sessionId={route.sessionId} onSelect={(sessionId) => navigate({ view: "sessions", sessionId })} />

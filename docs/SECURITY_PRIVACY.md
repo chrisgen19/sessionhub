@@ -67,6 +67,21 @@ The app must display which items were skipped during capture/restore and allow m
 - Account/device revocation enforced on every authenticated device request, not inferred solely from a client-sent ID.
 - Signing out removes/revokes cloud credentials but does not erase user-created local data without explicit consent.
 
+### 5a. Implemented extension pairing and device credentials (verified 2026-10-16)
+
+Design chosen with the user: an RFC 8628-style device flow with SessionHub's own device credentials (Better Auth's `device-authorization` plugin was not used: its token is a full web session that can call `/api/auth/*` and isn't bound to the `Device` row).
+
+1. The extension (Account view, user click) sends `POST /api/v1/pairing` with only its random installation id, a device name ("Chrome on Windows"), browser and platform. It receives a secret **device code** (stored only in the extension) and a **user code** `XXXX-XXXX` (20 consonants, 8 characters, about 2.6e10 combinations). The request lives 10 minutes.
+2. The extension opens `/app/pair?code=XXXX-XXXX` in a normal tab. The page requires a signed-in session (cookie) and, when this server can send email, a **confirmed email**. It shows the device name and the code and asks the user to compare it with the extension. Approving or declining is a same-origin `POST /api/v1/pairing/decision` (Origin check, write rate limit); the API also enforces the email rule, not just the page.
+3. The extension polls `POST /api/v1/pairing/token` every 5 seconds (faster polls get 429). After approval it receives credentials **once**; the pairing is then `redeemed` and any further poll is 410.
+4. Credentials: a 15-minute **access token** and a 30-day **refresh token** (`shd_at_` / `shd_rt_` prefixes, 32 random bytes). The server stores only SHA-256 hashes. Every bearer request is checked against the database: unknown or rotated token -> 401 `INVALID_TOKEN`; device revoked or re-paired since issue (`auth_credential_version` mismatch) -> 401 `DEVICE_REVOKED`; expired -> 401 `ACCESS_TOKEN_EXPIRED`. Responses carry `WWW-Authenticate: Bearer error="invalid_token"`. Bearer endpoints never accept the web session cookie, and cookie endpoints never accept bearer tokens.
+5. Refresh rotates both tokens and kills the old access token. Presenting an already-rotated refresh token **revokes the device**, with one exception: if its replacement has never been used (the extension lost the response, e.g. the worker was killed), the old token may be retried once and the unused replacement dies. The extension serializes refreshes so it never races itself into a revoke.
+6. Revocation (web Devices page "Disconnect", the extension's own Disconnect, or refresh reuse) sets `revoked_at`, bumps `auth_credential_version` and writes an `audit_events` row (`device_revoked` with the reason; `device_paired` on approval). Pairing again from the same installation reuses the device row, clears the revocation and issues fresh credentials; all older ones stay dead.
+7. Extension storage: tokens are kept in the extension's own IndexedDB (`account` table). Web pages can't read it (there are no content scripts and no `externally_connectable`), it is never included in exports, and disconnecting deletes it while keeping every saved session. `chrome.storage.local` with `TRUSTED_CONTEXTS` would need the `storage` permission and wouldn't add protection here, because no untrusted context exists in this extension.
+8. Rate limits: pairing start 5 per client IP, then 1 per minute; token polls and refreshes 30 per IP, then 1 every 2 seconds; the decision and disconnect calls share the account's write budget.
+
+Not covered yet: account switching on one profile (the extension refuses a second pairing while connected; local data is still `local` scope), sync itself (M4 next slices), shared rate-limit storage across instances.
+
 ### Implemented web auth (verified 2026-10-16)
 
 - Better Auth 1.7.9 email/password. Passwords are stored hashed by Better Auth (verified: the `account.password` value never contains the plaintext; algorithm is Better Auth's default and was not separately audited).
@@ -98,7 +113,7 @@ Permissions must be justified by features that are **actually shipped**. Propose
 | `host_permissions` limited to API origin | Send HTTPS requests to your own backend |
 | `identity` (conditional) | Only if selected auth implementation needs Chrome identity flows |
 
-**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints). No host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
+**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints), plus **one host permission** for the configured SessionHub server (`WXT_API_BASE_URL`, https required except localhost; used for pairing and, later, sync). No other host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
 
 Recovery checkpoints contain only tab URLs, titles, pinned state and groups of normal windows; they stay in local IndexedDB and are never uploaded. Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
 
