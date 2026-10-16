@@ -205,6 +205,10 @@ Prisma migrations occur in an explicit deploy step with safe rollback planning, 
 | `APP_BASE_URL` | Web origin used for generated links |
 | `NEXT_PUBLIC_APP_URL` | Safe public web origin only |
 | `WXT_API_BASE_URL` | Allowlisted API origin in extension build; no secrets |
+| `MAIL_TRANSPORT` | `disabled` (default), `mailpit` (development/E2E) or `resend` |
+| `MAIL_FROM` | Sender, e.g. `SessionHub <no-reply@example.com>` (required unless disabled; a Resend-verified domain in production) |
+| `RESEND_API_KEY` | Server-only Resend key (only with `resend`) |
+| `MAILPIT_URL` | Mailpit HTTP API, default `http://127.0.0.1:8025` (dev compose publishes it on `127.0.0.1:58025`) |
 
 No secret values in `NEXT_PUBLIC_*`, `WXT_*` build artifacts, shared packages, or client environment.
 
@@ -357,6 +361,9 @@ Verified 2026-10-16 (details in `PROGRESS.md`): monorepo skeleton, and the local
 | 2026-10-16 | Ownership enforced by composite foreign keys in PostgreSQL, in addition to service checks | A service bug can't create a cross-account reference | - |
 | 2026-10-16 | Local PostgreSQL 18 via `infra/docker/compose.dev.yaml` on `127.0.0.1:54329` with a `pg_isready` healthcheck and a separate `sessionhub_test` database; integration tests (`pnpm test:db`) reset only a database whose name ends in `_test` | Port 5432 is often taken; tests must never touch dev data | Production compose in M6 |
 | 2026-10-16 | Web image = Next.js `output: "standalone"` (tracing root = monorepo root) on `node:24-alpine`, non-root, read-only root fs; migrations are a separate `migrate` image/service (`prisma migrate deploy`) that `web` waits for via `service_completed_successfully`; `pnpm start` and the web E2E run the same standalone server | Small runtime image without the Prisma CLI or devDependencies; migrations never run inside web replicas; E2E covers the server that ships | Slim the migrate image if pull time matters; readiness check including PostgreSQL |
+| 2026-10-16 | Email via a small `MailTransport` interface: Resend over plain `fetch` (no SDK) for production, Mailpit's HTTP send API for development and E2E, `disabled` by default; templates are text + escaped HTML | User's choice (provider-agnostic + Resend); no new npm dependency; E2E reads the real messages back from Mailpit | Add another transport (e.g. SMTP) only if an operator needs it |
+| 2026-10-16 | Auth emails are queued with Next.js `after()` (falls back to a background promise outside a request) and never awaited; Better Auth callbacks return immediately | Better Auth awaits `sendVerificationEmail` and (without a background handler) `sendResetPassword`, so provider latency would reveal which emails have accounts | - |
+| 2026-10-16 | Unconfirmed email doesn't block sign-in; a banner asks to confirm; reset revokes all sessions; password change revokes the others | Accounts are optional and the extension works without one; confirmation becomes mandatory where it protects data (sync, pairing in M4) | Revisit if accounts start holding data before sync |
 | 2026-10-16 | The extension lint config forbids importing `@sessionhub/database`, `@prisma/*` and `pg` | Makes the AGENTS.md boundary machine-checked | - |
 | 2026-10-16 | Better Auth **1.7.9** (1.7.10 under a day old) with `prismaAdapter(getPrisma(), { provider: "postgresql", transaction: true })`, email/password (10 to 128 chars, auto sign-in, no email verification yet), `nextCookies()` last; instance and env validation are lazy so `next build` needs no secrets | Matches the planned stack; builds in CI without secrets | Email verification + password reset when email delivery exists |
 | 2026-10-16 | Sign-up and sign-in forms post to Better Auth's **HTTP endpoints** via `better-auth/react`'s client; only sign-out is a server action | Verified in E2E: calling `auth.api.signInEmail` from a server action **bypasses Better Auth's rate limiter** (4 wrong passwords, no 429), while the HTTP endpoint returns 429 after 3 per window | - |

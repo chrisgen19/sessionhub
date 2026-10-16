@@ -6,6 +6,9 @@ const MESSAGES: Record<string, string> = {
   PASSWORD_TOO_LONG: "That password is too long.",
   INVALID_EMAIL: "Enter a valid email address.",
   INVALID_NAME: "Enter a name of 120 characters or fewer.",
+  INVALID_PASSWORD: "Your current password is incorrect.",
+  INVALID_TOKEN: "This reset link has expired or was already used. Ask for a new one.",
+  EMAIL_ALREADY_VERIFIED: "Your email is already confirmed.",
 };
 
 export interface AuthErrorLike {

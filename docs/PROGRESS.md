@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API (rate-limited writes), session detail page and production Docker image + compose stack done. Email delivery pending. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth with password reset and email confirmation, dashboard shell, saved-session API (rate-limited writes), session detail page and production Docker image + compose stack done. Workspace and device APIs pending. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -59,6 +59,28 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M3 email slice) / Claude Code (Opus 5.5) / `feature/m3-email-auth`
+
+**Goal:** email delivery (user's choice: provider-agnostic, Resend for production, Mailpit locally) with password reset and email confirmation, plus change password.
+
+**Implemented:**
+
+- `apps/web/src/server/mail/`: `types.ts` (`MailTransport`, `parseAddress`), `resend.ts` (POST `https://api.resend.com/emails` via fetch, 10 s timeout, errors carry the HTTP status only), `mailpit.ts` (POST `/api/v1/send`), `templates.ts` (text + escaped HTML: confirm email, reset password, password changed), `deliver.ts` (`queueMail` with Next.js `after()`, failures logged without recipient or link; `isMailEnabled`).
+- `src/server/env.ts`: `getMailConfig()` validates `MAIL_TRANSPORT` (default `disabled`), `MAIL_FROM`, `RESEND_API_KEY`, `MAILPIT_URL`.
+- `src/server/auth.ts`: `sendResetPassword` (1 h, `revokeSessionsOnPasswordReset`), `onPasswordReset` notice, `emailVerification` (on sign-up, 24 h, no auto sign-in), `withCallback()` forces emailed links to `/email-verified` and `/reset-password`. Sign-in is still allowed with an unconfirmed email (decision in SYSTEM_DESIGN.md 14).
+- Pages: `/forgot-password` (says when email isn't set up), `/reset-password` (`no-referrer`, `no-store`), `/email-verified`; "Forgot password?" on sign-in; `/login?reset=1` notice. Dashboard: "Confirm your email" banner with resend on every `/app` page (only when mail is enabled); Settings shows email status, resend, and a change-password form (signs out other browsers).
+- `infra/docker/compose.dev.yaml`: Mailpit `axllent/mailpit:v1.31.3` (newest release older than two weeks) on `127.0.0.1:58025`. CI `check` job has a Mailpit service and `TEST_MAILPIT_URL`; `turbo.json` passes it through. Production compose passes `MAIL_TRANSPORT`/`MAIL_FROM`/`RESEND_API_KEY` (default disabled).
+
+**Validated commands and results:**
+
+- `pnpm --filter @sessionhub/web test`: **60/60** (+23: addresses, Resend request shape and secret-free errors, Mailpit request shape, template escaping and expiry text, `queueMail` failure logging and disabled no-op, mail env validation, reset/change schemas, `withCallback`).
+- `e2e/email.spec.ts` (real emails through Mailpit): **18/18** over `--repeat-each 3`. Covers confirmation link and banner removal, tampered link refused + resend, reset with identical answers for unknown emails (and no email sent to them), mismatch error, all sessions revoked, "password changed" notice, link reuse refused, old password rejected, forged token rejected, change password (wrong current password, other browser signed out, this one kept), 375 px overflow on the new pages.
+- Full web E2E **28/28**; `pnpm check` **pass** (14 tasks); `pnpm test:e2e` **pass** (4 tasks); web `test:db` **18/18**; `pnpm test:docker` **5/5** (now also checks that with email disabled `/forgot-password` says so and no banner appears).
+- Visual check at 390 and 1280 px (banner, Settings, reset page): no overflow, readable.
+- Failures found and fixed: Better Auth used `/` as the confirmation callback when the sign-up request had none (fixed server-side with `withCallback`); a revoked session on `/app/settings` is redirected by the `/app` layout to `/login?next=%2Fapp` (deep link lost; pre-existing, test loosened, noted below).
+
+**Known gaps:** Resend not tested against the live service (needs a key and verified domain); a revoked session loses the deep link (layout redirect); `apps/web/.env.local` has no `MAIL_*` lines, so local dev defaults to email disabled until they are added (see `.env.example`).
 
 ### 2026-10-16 (M3 web Docker slice) / Claude Code (Opus 5.5) / `feature/m3-web-docker`
 

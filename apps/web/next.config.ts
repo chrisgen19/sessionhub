@@ -10,9 +10,14 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Workspace package shipped as TypeScript source (Prisma client); Next must compile it.
   transpilePackages: ["@sessionhub/database"],
-  // Saved links opened from the dashboard must not tell other sites which session URL they came from.
+  // Saved links opened from the dashboard must not tell other sites which session URL they came
+  // from, and the reset page's URL carries a one-time token.
   async headers() {
-    return [{ source: "/app/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] }];
+    const noReferrer = [{ key: "Referrer-Policy", value: "no-referrer" }];
+    return [
+      { source: "/app/:path*", headers: noReferrer },
+      { source: "/reset-password", headers: [...noReferrer, { key: "Cache-Control", value: "no-store" }] },
+    ];
   },
 };
 

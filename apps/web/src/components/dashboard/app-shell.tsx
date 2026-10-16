@@ -5,9 +5,12 @@ import { signOutAction } from "@/app/(auth)/actions";
 import { initials } from "@/lib/format";
 import { BottomNav, SidebarNav } from "./nav-links";
 import { TopSearch } from "./top-search";
+import { VerifyEmailBanner } from "./verify-email-banner";
 
 interface AppShellProps {
   user: { name: string; email: string };
+  /** Show the "confirm your email" banner (unconfirmed email and email delivery set up). */
+  askToVerify: boolean;
   children: ReactNode;
 }
 
@@ -23,7 +26,7 @@ function Brand() {
 }
 
 /** Signed-in dashboard frame (docs/UI_UX_DESIGN.md section 8 and 14). */
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({ user, askToVerify, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-canvas text-fg lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
       <aside className="hidden border-r border-line bg-surface px-3.5 py-6 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:gap-7">
@@ -63,7 +66,10 @@ export function AppShell({ user, children }: AppShellProps) {
             {initials(user.name)}
           </Link>
         </header>
-        <main className="mx-auto max-w-[1160px] px-4 py-6 sm:px-6 lg:px-9 lg:py-9">{children}</main>
+        <main className="mx-auto max-w-[1160px] px-4 py-6 sm:px-6 lg:px-9 lg:py-9">
+          {askToVerify && <VerifyEmailBanner email={user.email} />}
+          {children}
+        </main>
       </div>
       <BottomNav />
     </div>

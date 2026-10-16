@@ -24,8 +24,15 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U sessionhub -d sessionhub_test"
           --health-interval 2s --health-timeout 3s --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.31.3
+        ports: ["58025:8025"]
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s --health-timeout 3s --health-retries 30
     env:
       TEST_DATABASE_URL: postgresql://sessionhub:sessionhub_ci@localhost:5432/sessionhub_test
+      TEST_MAILPIT_URL: http://localhost:58025
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

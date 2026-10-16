@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { signOutAction } from "@/app/(auth)/actions";
+import { ChangePasswordForm } from "@/components/auth/change-password-form";
+import { ResendVerificationButton } from "@/components/auth/resend-verification-button";
 import { PageHeader } from "@/components/dashboard/page-parts";
+import { isMailEnabled } from "@/server/mail/deliver";
 import { requireSession } from "@/server/session";
 
 export const metadata: Metadata = { title: "Settings · SessionHub" };
@@ -31,6 +34,16 @@ export default async function SettingsPage() {
             <dd className="truncate font-medium text-fg">{user.name}</dd>
             <dt>Email</dt>
             <dd className="truncate font-medium text-fg">{user.email}</dd>
+            <dt>Email status</dt>
+            <dd className="font-medium text-fg">
+              {user.emailVerified ? (
+                "Confirmed"
+              ) : (
+                <>
+                  Not confirmed{isMailEnabled() && <>. <ResendVerificationButton email={user.email} /></>}
+                </>
+              )}
+            </dd>
             <dt>Member since</dt>
             <dd className="font-medium text-fg">{memberSince}</dd>
           </dl>
@@ -47,7 +60,8 @@ export default async function SettingsPage() {
           <p>SessionHub doesn&apos;t offer end-to-end encryption, so synced data will be readable by the server operator.</p>
         </Section>
         <Section title="Security">
-          <p>Signing out ends this browser&apos;s session. It doesn&apos;t affect the extension or other devices.</p>
+          <ChangePasswordForm />
+          <p className="border-t border-line pt-3">Signing out ends this browser&apos;s session. It doesn&apos;t affect the extension or other devices.</p>
           <form action={signOutAction}>
             <button
               type="submit"

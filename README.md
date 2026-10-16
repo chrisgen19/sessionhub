@@ -25,7 +25,7 @@ Database (M3, needs Docker):
 
 ```bash
 cp packages/database/.env.example packages/database/.env
-pnpm db:up                   # PostgreSQL 18 on 127.0.0.1:54329 (dev db + sessionhub_test), waits for the healthcheck
+pnpm db:up                   # PostgreSQL 18 on 127.0.0.1:54329 (dev db + sessionhub_test) and Mailpit on http://127.0.0.1:58025
 pnpm db:migrate              # prisma migrate dev against the dev database
 pnpm test:db                 # resets sessionhub_test, applies all migrations, runs integration tests
 pnpm db:down                 # stop (add -v to delete the data volume)
@@ -41,7 +41,7 @@ pnpm test:docker             # builds the images and tests the stack in an isola
 
 Migrations run as their own one-shot `migrate` service (`prisma migrate deploy`) before `web` starts; to apply new migrations on an existing stack: `docker compose -f infra/docker/compose.yaml run --rm migrate`.
 
-Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
+Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Email (password reset, confirmation) goes to Mailpit in development (`MAIL_TRANSPORT=mailpit`; read it at http://127.0.0.1:58025); production uses `MAIL_TRANSPORT=resend` with `RESEND_API_KEY` and a `MAIL_FROM` on a domain verified in Resend. Without email, reset is shown as unavailable. API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
 
 AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when an agent runs it. Ask the user for explicit consent **for each run** and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never reuse earlier consent, invent it, or bypass the check.
 
