@@ -1,0 +1,16 @@
+node_modules/
+.turbo/
+dist/
+.output/
+.wxt/
+.next/
+next-env.d.ts
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*:Zone.Identifier
+.DS_Store

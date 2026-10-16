@@ -1,0 +1,142 @@
+# SessionHub — Security & Privacy Design
+
+**Status:** Initial threat model; requires a real code audit before release.  
+**Updated:** 2026-10-16.
+
+## 1. Why browser-session data is sensitive
+
+A session can include private document URLs, unguessable share links, access tokens in query strings, internal company hostnames, personal interests, and login-related redirect parameters. Titles and URL paths can also be sensitive. Even without page contents or cookies, saved tab metadata must be treated as private user data.
+
+## 2. Default product policy
+
+- Session capture/storage is **local-first** and works signed out.
+- Cloud synchronization defaults to **off**. User must affirmatively consent after being told tab titles and URLs can be uploaded.
+- Incognito capture/sync is **off** by default, and should remain out of MVP unless separately designed and disclosed.
+- No cookies, passwords, keystrokes, page content, request bodies, browsing-history surveillance, or third-party ad trackers.
+- Recovery snapshots remain **local-only** by default. Saved sessions/workspaces may sync after consent.
+- Provide account export, disconnect/revoke, and cloud deletion workflows.
+- Publish an accurate privacy policy and extension permission rationale before Chrome Web Store submission.
+
+### Suggested onboarding disclosure copy
+
+> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, titles, URLs, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync and exclude sites in Settings.
+
+Do not make the privacy disclosure conditional on reading a lengthy policy. Users must understand the substance in the UI.
+
+## 3. Browser URL classification
+
+Treat URLs as untrusted inputs and apply a versioned classifier to capture/export/sync/restore operations.
+
+| URL category | Default decision | Reason |
+|---|---|---|
+| `https:` and `http:` regular pages | Eligible, subject to exclusions/redaction | Core session feature |
+| `chrome:` / `chrome-extension:` / `devtools:` / browser internal | Metadata only or excluded; do not promise restoration | Browser and permissions restrictions |
+| `file:` | Excluded from cloud by default; local restore only after permissions/support validation | Local path disclosure |
+| `about:` / `data:` / `javascript:` | Not restorable/synced by default | Security/compatibility |
+| Internal/private hostnames or localhost | User-configurable exclusion; consider safe default prompt for work data | Potential sensitive development/internal URLs |
+| URL contains known credential-like query params | Redact/remove or exclude before upload | Access token leakage |
+
+The app must display which items were skipped during capture/restore and allow manual per-site exclusion. Do not claim regex-based redaction catches every secret; it is defense-in-depth, not a guarantee.
+
+## 4. Threat model
+
+| Threat | Impact | Proposed mitigation |
+|---|---|---|
+| User A accesses User B sessions via changed ID | Private browsing exposure | Resource ownership check in every query/action, authz tests |
+| Stolen/replayed device credential | Unauthorized sync | Scoped revocable tokens, short-lived access, rotation, device revoke, log review |
+| Website sends extension a destructive external message | Browser tab disruption | Exact allowlisted origins, validated intent, user gesture, in-extension confirmation |
+| MV3 worker termination mid-write | Data loss/corruption | IndexedDB transactions, durable outbox, retry-safe operations |
+| Concurrent clients overwrite each other | Session loss | Version checks, immutable revisions, recoverable conflict copies |
+| Imported JSON contains untrusted HTML/URLs | XSS or unsafe navigation | Zod structural validation, text rendering, safe URL allowlists, CSP |
+| Logs leak private tab URLs/tokens | Privacy breach | Structured redaction, limited fields, access control and retention |
+| Malicious extension/user impersonation | Account takeover | Explicit extension IDs/trusted origins, validated device pairing, no wildcard prod origins |
+| Lost/stolen computer with signed-in extension | Disclosure of local sessions/cloud data | Device revocation, OS disk encryption guidance, token lifecycle limits |
+| Compromised admin/server | Cloud data exposure | Least privilege, encrypted transport/storage, incident plan; no false E2EE claims |
+| Account switch on one Chrome profile | Cross-account local cache leak | Account-scoped IndexedDB records and outbox separation |
+| Extension update/IndexedDB migration failure | Recovery loss | Versioned schema, migration tests, export fallback, backups |
+| Database backup inaccessible or untested | Catastrophic backend loss | Off-host encrypted backups and periodic restore drills |
+
+## 5. Auth and device controls
+
+- Better Auth is web auth; validate compatible version/adapter/CSRF flow.
+- Distinct `Device` record per installation/browser profile.
+- Evaluate web sign-in and one-time pairing using PKCE/state or verified browser extension identity flow.
+- Auth authorization codes must be short-lived, single-use, bound to proper context; do not leak long-lived credentials in URLs.
+- Extension IDs in allowlists must be explicit in production; do not use `chrome-extension://*` trusted origins.
+- Store device credentials in the least-exposed persistent context supported by Chrome; consider `chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})` where applicable, rotate refresh tokens and limit lifetimes. Avoid exporting tokens in backups.
+- Account/device revocation enforced on every authenticated device request, not inferred solely from a client-sent ID.
+- Signing out removes/revokes cloud credentials but does not erase user-created local data without explicit consent.
+
+## 6. Extension permissions (minimum viable proposal)
+
+Permissions must be justified by features that are **actually shipped**. Proposed candidates:
+
+| Permission | Why it might be needed |
+|---|---|
+| `tabs` | Read title/URL/favicon for tab capture/search across browser windows |
+| `tabGroups` | Capture and restore tab-group metadata |
+| `storage` | Store small extension preferences/state |
+| `alarms` | Schedule bounded recovery snapshots and sync retry |
+| `sidePanel` | Offer Chrome side-panel interface |
+| `host_permissions` limited to API origin | Send HTTPS requests to your own backend |
+| `identity` (conditional) | Only if selected auth implementation needs Chrome identity flows |
+
+**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`. No host permissions, no `storage`, `alarms`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
+
+Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
+
+`chrome.windows` is an API namespace, not necessarily an extra manifest permission. Do not request `history`, `<all_urls>` host access, `cookies`, `webRequest`, or `scripting` without a feature-specific justification and privacy review. Chrome policy requires the narrowest necessary permissions.
+
+## 7. Web ↔ extension communication security
+
+Chrome supports controlled web-to-extension messaging via `externally_connectable` and `runtime.onMessageExternal`. If implemented:
+
+1. Restrict manifest `externally_connectable.matches` to the exact production web origin (and explicit development origins in dev builds).
+2. Check sender origin and message schema, size, supported command, nonce/state, and session association.
+3. Do not treat page claims about user identity as authoritative; verify server tokens/pairing.
+4. Restrict external messages to navigation/open-preview/pairing, not direct bulk close/restore.
+5. Require visible in-extension confirmation before tabs are created.
+6. Return bounded responses; never expose arbitrary local browsing lists to any matched web page without a deliberate authenticated user action.
+7. Audit the website for XSS: an allowed origin is not inherently trustworthy if its page is compromised.
+
+If this bridge isn't robust, omit it from MVP and use the extension's own manager to restore cloud sessions.
+
+## 8. Backend hardening
+
+- HTTPS-only production origin; secure proxy forwarded headers and cookie settings.
+- Parameterized Prisma queries and safe raw SQL only where necessary.
+- Validate Zod schema, max lengths/nesting/depth, batches and request-body size.
+- Access control by authenticated `userId`; don't trust URL user IDs or `deviceId` strings.
+- Auth and sync endpoint rate limits; use appropriate IP/device/account signals without privacy-invasive tracking.
+- Strong CSP for the extension, no arbitrary remote JavaScript execution.
+- Never expose Prisma/admin DB connection strings or Better Auth secrets to client builds.
+- Limit server logs; audit security-relevant activity without raw tab URLs.
+- Dependabot/lockfile management, reproducible release build, malware/static analysis as appropriate.
+- Maintain documented incident response procedure and ability to invalidate all tokens.
+
+## 9. Storage and encryption disclosures
+
+- TLS protects data in transit.
+- At-rest encryption may be supplied by OS/volume/DB infrastructure; document actual deployed configuration.
+- Server operators may technically access readable session metadata unless a future E2EE vault is implemented. **Never advertise zero-knowledge encryption for MVP.**
+- Backups should be encrypted off-host, retention controlled, access restricted, and restore-tested.
+- Local IndexedDB is not a backup if profile data is deleted/uninstalled; independent JSON exports remain important.
+
+## 10. Release-blocking privacy checks
+
+- [ ] Cloud sync cannot start until explicit consent is recorded locally.
+- [ ] Sync off produces zero URL/title uploads.
+- [ ] Excluded URLs are filtered before network serialization.
+- [ ] Another user cannot list/read/modify any of the first user's resources.
+- [ ] Revoked devices cannot push/pull; local data remains unaffected.
+- [ ] Browser-to-extension external messages cannot cause destructive actions without confirmation.
+- [ ] No sensitive values appear in URLs, exceptions, client logs, server logs, or telemetry.
+- [ ] Chrome Web Store permission disclosure, privacy policy and Limited Use statements are accurate.
+- [ ] Vulnerability review, dependency scan, TLS verification and backup restore drill completed.
+
+## 11. Official documentation
+
+- [Chrome Web Store program policies](https://developer.chrome.com/docs/webstore/program-policies)
+- [Chrome permissions list](https://developer.chrome.com/docs/extensions/reference/permissions-list)
+- [Chrome extension messaging security](https://developer.chrome.com/docs/extensions/develop/concepts/messaging)
+- [Better Auth extension guide](https://better-auth.com/docs/guides/browser-extension-guide)

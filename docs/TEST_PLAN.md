@@ -1,0 +1,124 @@
+# SessionHub — Verification & Test Strategy
+
+**Status:** Proposed tests; no results are claimed for this documentation pack.
+
+## 1. Test layers
+
+| Layer | Tool | Primary coverage |
+|---|---|---|
+| Pure domain / validators | Vitest | URL classification, serialization, restore plans, deterministic merge |
+| IndexedDB adapter | Vitest + browser-compatible IDB harness | Atomic save/outbox, migration, quota/failure behavior |
+| Extension UI | React Testing Library | Popup, manager, side panel, keyboard interactions |
+| Extension browser integration | Playwright with Chromium extension profile | Actual tabs/windows/groups, restore and background lifecycle |
+| API services | Vitest + Postgres test DB | Authz, idempotency, transaction correctness, version conflicts |
+| Web UI E2E | Playwright | Auth, sessions, devices, exports, responsive flows |
+| System E2E | Two isolated Chrome profiles + running API/DB | Cross-device simulation, offline sync, retries, revocation |
+| Operations | Docker/Coolify staging tests | Build, migrations, health, backup restore, deployment |
+
+Never rely only on mocked `chrome.tabs` for critical browser restoration behavior. API contract tests must exercise a real PostgreSQL backend for concurrency semantics.
+
+## 2. Essential unit test matrix
+
+### Core serialization and URL safety
+
+- Handles zero tabs, multi-window, pinned tabs, collapsed groups, duplicate URLs.
+- Stable app UUIDs; don't serialize runtime Chrome IDs as persistent identity.
+- Skips/classifies unsupported schemes consistently.
+- Redacts/excludes configured domains/query parameters before sync export.
+- JSON export/import round trip at current schemaVersion.
+- Older import schema migrated where promised, otherwise rejected with useful error.
+- Malformed JSON, giant payload, dangerous `javascript:` URL, invalid UUID, overlong title rejected safely.
+
+### Restore planner
+
+- New windows default.
+- Order/pinning/group relationships rebuilt in a deterministic plan.
+- Unsupported items omitted with visible failures and user-readable reasons.
+- Partial restore resumes only failed operations and avoids duplicate successful ones.
+- Existing browser state is never silently closed or replaced.
+
+### Sync reducer
+
+- Apply ordered change pages transactionally.
+- Duplicate server change or accepted own echo is idempotent.
+- Concurrent edits produce explicit conflict or allowed disjoint merge.
+- Tombstones defeat stale upserts.
+- Account switching never mixes outboxes or cached data.
+
+## 3. Extension service worker failure injection
+
+1. Terminate worker after Chrome state scan but before IndexedDB commit -> prior checkpoint remains; no corrupted partial record.
+2. Terminate worker after local+outbox commit -> pending operation persists.
+3. Terminate worker after sync POST accepted but before receipt persisted -> same operation ID resubmitted, no duplicated server mutation.
+4. Terminate worker after pull data committed but before next page -> persisted cursor resumes correctly.
+5. Browser exits during large restore -> user sees recoverable job state and summary of known completed steps after restart.
+6. Chrome extension update/IndexedDB migration -> preserves sessions or offers validated backup/export fallback.
+
+## 4. Multi-device acceptance matrix
+
+| Scenario | Expected outcome |
+|---|---|
+| Windows saves and Mac pulls | Mac sees identical saved URLs/title/group order after sync |
+| Mac restores a Windows session | Only Mac's live windows change |
+| Windows offline edits metadata | Local use continues; durable queue appears pending |
+| Windows reconnects | Queued mutations are accepted once logically |
+| Two installs concurrently edit same revision | One accepted; second conflict and preserved local copy |
+| Web dashboard edits a synced session | Change emitted to server changelog; extension pulls it |
+| User revokes Windows device on web | Windows API denied; its local sessions remain |
+| Chrome profile switches accounts | No account A cloud sessions shown to account B |
+| Sync consent disabled | No session URL upload; local backup still works |
+
+Test with distinct extension installations/profiles, not merely two browser tabs sharing one IndexedDB.
+
+## 5. Performance and load tests
+
+**Proposed target datasets:** 100 live tabs/10 windows; 500 live tabs/20 windows; 10,000 saved tab records; 50,000 historical tab records. Tune targets based on actual hardware and Chrome behavior.
+
+Measure:
+
+- Time from popup open to interactive search.
+- Search latency and max memory for 10,000 rows.
+- Worker event coalescing count when opening/closing many tabs.
+- IndexedDB transaction duration and snapshot growth over 7 days.
+- Sync request size, number of operations, pull page counts.
+- Web rendering responsiveness and table virtualization.
+- Restore progress and browser behavior at 100/500 URLs with throttling.
+
+Benchmarks need baselines and regression thresholds; don't assert performance without measurements.
+
+## 6. Accessibility / UX E2E tests
+
+- Tab through popup controls and save action.
+- Ctrl/Meta+K focuses search where supported; Esc closes dialogs without data loss.
+- Side panel window/group tree operates by keyboard and announces state.
+- Restore preview checkbox list and destination radios accessible to screen readers.
+- Destructive confirm requires explicit activation and announces scope.
+- Responsive views at 375, 768, 1024, 1440 px have no critical horizontal overflow.
+- Focus remains predictable after list deletion/archive, modal close and routing.
+- Color contrast and status textual alternatives meet WCAG 2.2 AA.
+
+## 7. API security and concurrency tests
+
+- Unauthenticated requests reject.
+- User A cannot read/mutate B's session by guessing ID.
+- Device ID impersonation rejected.
+- Revoked device credentials rejected on every protected endpoint.
+- Same idempotency key replayed returns same effect/result.
+- Same entity/version edited in concurrent transactions never silently overwrites.
+- Invalid payload, nested giant arrays, batch limits, injection attempts rejected.
+- Expired sync cursor triggers safe rebootstrap rather than lost changes.
+- Per-user ordered changelog is contiguous in **commit-safe** order under concurrency.
+
+## 8. Release checklist
+
+- [ ] No TypeScript / ESLint errors.
+- [ ] Unit and integration suites pass.
+- [ ] E2E browser tests pass on supported Chrome version(s).
+- [ ] Offline save, worker termination and two-device sync tests pass.
+- [ ] Multi-user security tests pass.
+- [ ] Privacy disclosures/permission rationale reviewed.
+- [ ] Chrome extension ZIP is reproducible and source code complies with Web Store MV3 rules.
+- [ ] Docker image builds and starts; migrations completed safely.
+- [ ] PostgreSQL backup restored successfully on test environment.
+- [ ] All final feature claims backed by tests/manual verification.
+- [ ] Actual commands/test outputs and remaining blockers recorded in `PROGRESS.md`.

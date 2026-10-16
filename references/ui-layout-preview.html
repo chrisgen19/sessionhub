@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SessionHub — UI Layout Reference (Static Concept)</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8f5; --surface: #fff; --muted: #f1f4ef; --text: #192522;
+      --sub: #637168; --brand: #13694c; --brand-strong: #0c5138;
+      --line: #e1e8e0; --danger: #a42d3e;
+      --shadow: 0 12px 40px rgba(16,36,25,.08);
+      --r: 12px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Arial, sans-serif; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #45c39a; outline-offset: 2px; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .hidden { display: none !important; }
+    .muted { color: var(--sub); }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; }
+    .caps { font-size: 10px; text-transform: uppercase; letter-spacing: .11em; font-weight: 800; color: #87958a; }
+    .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .mono { font-variant-numeric: tabular-nums; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 20px; padding: 5px 9px; background: #e6f5ec; color: #136343; font-size: 11px; font-weight: 650; }
+    .chip.neutral { background: #eff2ef; color: #68766d; }
+    .chip.warn { background: #fff4df; color: #94661d; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #3aab75; flex: 0 0 auto; }
+    .dot.gray { background: #a6b1a8; }
+    .dot.gold { background: #d19b35; }
+    .brandmark { width: 31px; height: 31px; border-radius: 9px; background: var(--brand); color: white; display: grid; place-items: center; font-weight: 800; letter-spacing: -.06em; box-shadow: inset 0 -5px 0 rgba(0,0,0,.05); }
+    .brandname { font-weight: 750; font-size: 17px; letter-spacing: -.5px; }
+    .btn { border: 1px solid var(--line); background: #fff; color: var(--text); padding: 9px 12px; font-size: 12px; font-weight: 650; border-radius: 8px; display: inline-flex; align-items: center; gap: 7px; justify-content: center; white-space: nowrap; }
+    .btn:hover { background: #f7f9f6; }
+    .btn.primary { background: var(--brand); color: white; border-color: var(--brand); }
+    .btn.primary:hover { background: var(--brand-strong); }
+    .iconbtn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--line); background: #fff; border-radius: 8px; color: #526259; }
+    .iconbtn:hover { background: var(--muted); }
+    .section-head { margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+    .section-head h3 { font-size: 14px; margin: 0; letter-spacing: -.1px; }
+    .section-head a { color: var(--brand); font-size: 12px; font-weight: 650; text-decoration: none; }
+    .demo-header { padding: 12px max(16px, calc((100vw - 1440px)/2)); display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 12px; background: #122b23; color: #ecf8f0; }
+    .demo-header .demotext { display: flex; gap: 12px; align-items: center; }
+    .demo-header .eyebrow { font-weight: 800; letter-spacing: .045em; }
+    .demo-header .caption { color: #a8c6b5; font-size: 12px; }
+    .switches { display: inline-flex; padding: 3px; gap: 3px; background: #2a4939; border-radius: 9px; }
+    .switches button { border: 0; color: #c4dbcd; font-size: 12px; font-weight: 650; background: transparent; padding: 8px 12px; border-radius: 6px; }
+    .switches button.active { background: #e7f4e9; color: #184f38; }
+    .help { max-width: 1450px; margin: 0 auto; padding: 19px 24px 13px; display: flex; gap: 12px; justify-content: space-between; flex-wrap: wrap; align-items: center; }
+    .help h1 { font-size: 22px; letter-spacing: -.75px; margin: 0 0 3px; }
+    .help p { margin: 0; font-size: 12px; color: #67746b; }
+    .help span { background: #e8ece7; color: #53645a; border-radius: 20px; padding: 5px 9px; font-size: 11px; font-weight: 650; }
+    .canvas { max-width: 1400px; margin: 0 auto 42px; padding: 0 20px; }
+    .browser-frame { border: 1px solid #dce5dd; background: white; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+    .browser-top { height: 38px; border-bottom: 1px solid var(--line); background: #f3f6f2; display: flex; gap: 12px; align-items: center; padding: 0 15px; color: #88988e; font-size: 11px; }
+    .lights { display: flex; gap: 5px; }
+    .lights i { height: 8px; width: 8px; border-radius: 50%; background: #c5d3c7; }
+    .address { background: white; color: #86968a; border: 1px solid #e5ece4; border-radius: 5px; padding: 3px 14px; flex: 1; max-width: 520px; }
+    /* Web dashboard */
+    .web-app { min-height: 730px; display: grid; grid-template-columns: 238px minmax(0,1fr); }
+    .sidebar { background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 28px; padding: 24px 14px 18px; }
+    .sidebar .logo { padding: 0 11px; }
+    .nav-group { display: grid; gap: 5px; }
+    .nav-label { margin: 0 10px 9px; color: #8c9b91; font-size: 10px; text-transform: uppercase; font-weight: 800; letter-spacing: .1em; }
+    .navitem { border: none; display: flex; align-items: center; gap: 11px; text-align: left; background: transparent; padding: 10px 12px; color: #617067; font-size: 12px; font-weight: 600; border-radius: 9px; width: 100%; }
+    .navitem.active { background: #eaf5ed; color: #13694c; }
+    .navitem:hover { background: #f3f6f2; }
+    .navico { width: 18px; display: inline-block; font-size: 16px; text-align: center; color: inherit; }
+    .sidebar-bottom { margin-top: auto; border-top: 1px solid var(--line); padding: 15px 10px 0; }
+    .main-area { min-width: 0; background: #fafbf9; }
+    .topbar { height: 70px; display: flex; justify-content: space-between; align-items: center; padding: 0 34px; border-bottom: 1px solid var(--line); background: #fff; gap: 12px; }
+    .top-search { max-width: 465px; background: #f6f8f5; color: #8a978e; border: 1px solid #e6ebe5; border-radius: 8px; display: flex; align-items: center; padding: 10px 13px; gap: 9px; flex: 1; font-size: 12px; }
+    .kbd { border: 1px solid #d7ded5; border-radius: 4px; font-size: 10px; color: #8a978e; padding: 1px 5px; margin-left: auto; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; background: #254938; color: white; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+    .inner { max-width: 1160px; margin: auto; padding: 35px 36px 50px; }
+    .welcome { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 27px; }
+    .welcome h2 { font-size: 27px; letter-spacing: -1.05px; margin: 0 0 6px; font-weight: 740; }
+    .welcome p { margin: 0; color: var(--sub); font-size: 13px; }
+    .overview-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; margin-bottom: 30px; }
+    .stat { border: 1px solid #e5ebe4; border-radius: 12px; background: #fff; padding: 17px 18px 15px; }
+    .stat .label { font-size: 11px; color: #6b786f; margin-bottom: 10px; }
+    .stat .num { font-weight: 750; font-size: 27px; line-height: 1; letter-spacing: -.7px; }
+    .stat .foot { font-size: 11px; color: #92a094; margin-top: 9px; }
+    .workspace-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; margin-bottom: 29px; }
+    .workspace { border: 1px solid #e5ebe4; background: white; border-radius: 12px; padding: 15px; }
+    .workspace .ws-icon { width: 32px; height: 32px; border-radius: 10px; background: #d8efe3; color: #18633f; display: grid; place-items: center; font-size: 15px; margin-bottom: 14px; }
+    .workspace:nth-child(2) .ws-icon { color: #6660a4; background: #eae8fb; }
+    .workspace:nth-child(3) .ws-icon { color: #956629; background: #fff1df; }
+    .workspace h4 { margin: 0 0 3px; font-size: 12px; }
+    .workspace p { font-size: 11px; margin: 0; color: #87948a; }
+    .list-card { border: 1px solid #e5ebe4; background: white; border-radius: 12px; overflow: hidden; }
+    .sessions-head { display: grid; grid-template-columns: minmax(190px,1fr) 155px 68px 95px; gap: 12px; border-bottom: 1px solid var(--line); padding: 11px 16px; color: #829086; font-weight: 650; font-size: 10px; letter-spacing: .045em; text-transform: uppercase; }
+    .session-row { display: grid; grid-template-columns: minmax(190px,1fr) 155px 68px 95px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #eff2ee; }
+    .session-row:last-child { border-bottom: 0; }
+    .session-row:hover { background: #fbfcfa; }
+    .session-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .session-icon { width: 31px; height: 31px; border-radius: 8px; display: grid; place-items: center; background: #eef4ed; color: #428061; flex-shrink: 0; }
+    .session-title strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .session-title small { font-size: 10px; color: #93a094; display: block; }
+    .session-meta { font-size: 11px; color: #6a796e; }
+    .session-meta .dot { display: inline-block; vertical-align: middle; margin-right: 4px; }
+    /* Popup / side panel concept */
+    .concept-stage { min-height: 655px; background: linear-gradient(125deg,#eaf0e8,#f7f9f5 57%,#e3eee6); padding: 38px; display: flex; justify-content: center; gap: 48px; align-items: flex-start; }
+    .concept-caption { max-width: 325px; padding-top: 75px; }
+    .concept-caption h2 { font-size: 29px; letter-spacing: -1px; margin: 0 0 12px; line-height: 1.18; }
+    .concept-caption p { font-size: 13px; color: #66766b; line-height: 1.65; }
+    .concept-caption ul { padding-left: 18px; font-size: 12px; color: #516357; line-height: 2; }
+    .mock-popup { width: 380px; max-width: 100%; background: white; border: 1px solid #dce6dc; border-radius: 13px; box-shadow: 0 22px 65px rgba(26,54,35,.18); overflow: hidden; flex-shrink: 0; }
+    .popup-section { padding: 16px 16px 13px; }
+    .pop-header { padding: 15px 16px 12px; border-bottom: 1px solid var(--line); }
+    .popup-search { display: flex; gap: 7px; align-items: center; border: 1px solid #e2e9e1; background: #f9fbf8; border-radius: 8px; padding: 10px; font-size: 12px; color: #92a197; margin: 0 0 13px; }
+    .popup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+    .popup-actions .btn { padding: 11px 6px; }
+    .pop-workspace { border: 1px solid #e3eae1; border-radius: 8px; padding: 10px; margin: 9px 0 18px; font-size: 12px; font-weight: 650; }
+    .pop-session { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eff2ee; align-items: center; gap: 10px; }
+    .pop-session:last-child { border-bottom: 0; }
+    .pop-session strong { font-size: 12px; }
+    .pop-footer { padding: 12px 16px; border-top: 1px solid #ebf0e9; background: #fcfdfb; display: flex; gap: 8px; }
+    .pop-footer .btn { flex: 1; }
+    .mock-sidepanel { width: 365px; min-height: 560px; background: white; box-shadow: 0 20px 65px rgba(26,54,35,.15); border: 1px solid #dce6dc; border-radius: 12px; overflow: hidden; }
+    .side-head { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .side-body { padding: 14px 10px; }
+    .side-window { background: #f6f9f5; border: 1px solid #e8ede6; border-radius: 9px; margin-bottom: 11px; overflow: hidden; }
+    .side-window-header { padding: 10px 11px; font-weight: 700; font-size: 12px; border-bottom: 1px solid #e5ebe3; }
+    .side-tab { font-size: 12px; padding: 8px 11px 8px 23px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #526357; }
+    .side-tab.selected { background: #e8f5ec; color: #166046; font-weight: 700; }
+    .fav { width: 15px; height: 15px; flex-shrink: 0; border-radius: 4px; background: #dfeadf; display: grid; place-items: center; font-size: 10px; }
+    .side-tab .left { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .side-tab .left span:last-child { overflow: hidden; text-overflow: ellipsis; }
+    .side-lower { margin: 18px 7px 0; }
+    .side-lower .pop-session { padding: 9px 4px; }
+    .note { background: #f6f8f4; border-top: 1px solid #e2e9df; padding: 10px 24px; color: #6d7c70; font-size: 11px; }
+    /* modal */
+    .overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(11,28,18,.45); z-index: 5; padding: 16px; }
+    .modal { border-radius: 14px; width: 440px; max-width: 100%; background: white; padding: 23px; box-shadow: 0 22px 80px rgba(0,0,0,.25); }
+    .modal h3 { margin: 0 0 5px; font-size: 19px; }
+    .modal p { color: var(--sub); font-size: 12px; }
+    .modal .choice { margin: 10px 0; border: 1px solid #e1e8df; border-radius: 8px; padding: 11px; font-size: 13px; }
+    .modal .warn { border-radius: 8px; background: #fff4e2; color: #8f661e; font-size: 12px; padding: 10px; margin: 14px 0; }
+    @media (max-width: 980px) { .sidebar { display: none; } .web-app { display: block; } .topbar { padding: 0 18px; } .inner { padding: 25px 20px; } .concept-stage { gap: 20px; padding: 23px; } .concept-caption { padding-top: 45px; } }
+    @media (max-width: 720px) { .demo-header, .help { padding-left: 15px; padding-right: 15px; } .canvas { padding: 0 8px; } .browser-frame { border-radius: 8px; } .topbar { height: 58px; } .inner { padding: 22px 13px; } .welcome { flex-direction: column; } .welcome h2 { font-size: 23px; } .overview-stats { gap: 7px; } .stat { padding: 12px 10px; } .stat .num { font-size: 21px; } .workspace-grid { gap: 7px; } .workspace { padding: 11px; } .sessions-head { display: none; } .session-row { grid-template-columns: minmax(0,1fr) 44px; gap: 6px; } .session-row .session-meta:nth-child(2), .session-row .session-meta:last-child { display: none; } .concept-stage { flex-direction: column; align-items: center; } .concept-caption { order: 2; padding-top: 0; } .mock-popup, .mock-sidepanel { width: min(380px,100%); } .help span { display: none; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <div class="demo-header">
+    <div class="demotext"><span class="eyebrow">SESSIONHUB · DESIGN REFERENCE</span><span class="caption">Static concept · Mock data only · No Chrome/browser sync actions</span></div>
+    <div class="switches" role="tablist" aria-label="Preview surface">
+      <button class="active" role="tab" aria-selected="true" data-preview="web">Web dashboard</button>
+      <button role="tab" aria-selected="false" data-preview="popup">Extension popup</button>
+      <button role="tab" aria-selected="false" data-preview="side">Side panel</button>
+    </div>
+  </div>
+  <div class="help">
+    <div><h1 id="pageTitle">Dashboard · Overview</h1><p id="pageDesc">Navigation, session hierarchy, sources, and sync state presentation.</p></div>
+    <span>Companion to docs/UI_UX_DESIGN.md</span>
+  </div>
+  <div class="canvas">
+    <section id="preview-web" class="browser-frame">
+      <div class="browser-top"><div class="lights"><i></i><i></i><i></i></div><div class="address">https://app.sessionhub.example/app</div><span>Chrome</span></div>
+      <div class="web-app">
+        <aside class="sidebar">
+          <div class="left logo"><div class="brandmark">S</div><span class="brandname">SessionHub</span></div>
+          <nav class="nav-group" aria-label="Demo navigation">
+            <div class="nav-label">WORKSPACE</div>
+            <button class="navitem active"><span class="navico">◫</span> Overview</button>
+            <button class="navitem"><span class="navico">▣</span> Workspaces</button>
+            <button class="navitem"><span class="navico">☷</span> Saved Sessions</button>
+            <button class="navitem"><span class="navico">▤</span> Devices</button>
+            <button class="navitem"><span class="navico">↶</span> Recovery</button>
+            <button class="navitem"><span class="navico">⌕</span> Search</button>
+          </nav>
+          <nav class="nav-group" aria-label="Account navigation"><div class="nav-label">PREFERENCES</div><button class="navitem"><span class="navico">⚙</span> Settings</button><button class="navitem"><span class="navico">?</span> Help & support</button></nav>
+          <div class="sidebar-bottom"><span class="chip"><span class="dot"></span> Synced · 2m ago</span><div class="small muted" style="margin-top:10px">Windows Desktop · Chrome</div></div>
+        </aside>
+        <main class="main-area">
+          <header class="topbar"><div class="top-search">⌕ &nbsp; Search sessions, workspaces, tabs... <span class="kbd">⌘ K</span></div><div class="left"><span class="muted small" style="white-space:nowrap">October 2026</span><div class="avatar" aria-label="Demo account">C</div></div></header>
+          <div class="inner">
+            <div class="welcome"><div><h2>Welcome back, Chris <span aria-hidden="true">↗</span></h2><p>Your saved browser sessions, available across devices.</p></div><button class="btn primary" id="openRestore">↗ &nbsp; Open session</button></div>
+            <div class="overview-stats">
+              <div class="stat"><div class="label">Saved sessions</div><div class="num mono">42</div><div class="foot">Across 3 workspaces</div></div>
+              <div class="stat"><div class="label">Saved tabs</div><div class="num mono">1,284</div><div class="foot">In your cloud library</div></div>
+              <div class="stat"><div class="label">Registered devices</div><div class="num mono">2</div><div class="foot">Last seen 2m ago</div></div>
+            </div>
+            <div class="section-head"><h3>Recent workspaces</h3><a href="#">View all →</a></div>
+            <div class="workspace-grid">
+              <div class="workspace"><div class="ws-icon">▤</div><h4>Client Websites</h4><p>18 sessions · 2h ago</p></div>
+              <div class="workspace"><div class="ws-icon">⌘</div><h4>Personal Apps</h4><p>14 sessions · Today</p></div>
+              <div class="workspace"><div class="ws-icon">⌕</div><h4>Research & Learning</h4><p>10 sessions · Yesterday</p></div>
+            </div>
+            <div class="section-head"><h3>Recent saved sessions</h3><a href="#">View all →</a></div>
+            <div class="list-card">
+              <div class="sessions-head"><span>Session</span><span>Source</span><span>Tabs</span><span>Updated</span></div>
+              <div class="session-row"><div class="session-title"><div class="session-icon">▤</div><div><strong>Frontend research</strong><small>Research & Learning</small></div></div><span class="session-meta">Windows Desktop</span><span class="session-meta mono">18 tabs</span><span class="session-meta">2 min ago</span></div>
+              <div class="session-row"><div class="session-title"><div class="session-icon">▣</div><div><strong>Sprint review links</strong><small>Client Websites</small></div></div><span class="session-meta">MacBook</span><span class="session-meta mono">9 tabs</span><span class="session-meta">Today</span></div>
+              <div class="session-row"><div class="session-title"><div class="session-icon">⌘</div><div><strong>Pickleball app resources</strong><small>Personal Apps</small></div></div><span class="session-meta">Windows Desktop</span><span class="session-meta mono">25 tabs</span><span class="session-meta">Oct 14</span></div>
+              <div class="session-row"><div class="session-title"><div class="session-icon">▤</div><div><strong>Next.js notes</strong><small>Research & Learning</small></div></div><span class="session-meta"><span class="dot gold"></span>Pending sync</span><span class="session-meta mono">12 tabs</span><span class="session-meta">Oct 13</span></div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </section>
+    <section id="preview-popup" class="browser-frame hidden">
+      <div class="browser-top"><div class="lights"><i></i><i></i><i></i></div><div class="address">Chrome toolbar · SessionHub popup</div></div>
+      <div class="concept-stage">
+        <div class="mock-popup">
+          <div class="pop-header bar"><div class="left"><div class="brandmark">S</div><span class="brandname">SessionHub</span></div><span class="chip neutral"><span class="dot gray"></span> Local only</span></div>
+          <div class="popup-section">
+            <div class="popup-search">⌕ &nbsp; Search tabs and sessions… <span class="kbd">⌘ K</span></div>
+            <div class="popup-actions"><button class="btn primary" onclick="demoToast('Session saved locally — demo')">▣ &nbsp; Save window</button><button class="btn" onclick="demoToast('All windows saved locally — demo')">▤ &nbsp; Save all (3)</button></div>
+            <div class="caps">Active workspace</div>
+            <div class="pop-workspace bar"><span>▣ &nbsp; Client Websites</span><span class="muted">⌄</span></div>
+            <div class="section-head"><h3>Recent sessions</h3><a href="#" onclick="event.preventDefault(); demoToast('View the full manager in the real extension')">View all →</a></div>
+            <div class="pop-session"><div class="left"><div class="session-icon">▤</div><div><strong>Frontend research</strong><div class="tiny muted">18 tabs · Today</div></div></div><span class="muted">›</span></div>
+            <div class="pop-session"><div class="left"><div class="session-icon">▣</div><div><strong>Sprint review</strong><div class="tiny muted">9 tabs · Yesterday</div></div></div><span class="muted">›</span></div>
+            <div class="pop-session"><div class="left"><div class="session-icon">⌘</div><div><strong>Personal apps</strong><div class="tiny muted">25 tabs · Oct 14</div></div></div><span class="muted">›</span></div>
+            <p class="small muted" style="margin:13px 0 0">Cloud sync is optional. All sessions stay on this browser until enabled.</p>
+          </div>
+          <div class="pop-footer"><button class="btn" onclick="demoToast('Manager screen is a planned extension page')">Open manager ↗</button><button class="btn" onclick="show('side')">Side panel →</button><button class="iconbtn" aria-label="Settings" onclick="demoToast('Settings is part of the planned product')">⚙</button></div>
+        </div>
+        <div class="concept-caption"><div class="caps">01 / Extension popup</div><h2>Capture your browser in seconds.</h2><p>Fast actions, visible local/cloud status, and just enough recent history to jump back into a project.</p><ul><li>Primary action always visible</li><li>No signup required for local saves</li><li>Compact, keyboard-friendly density</li><li>Cloud sync is secondary and opt-in</li></ul></div>
+      </div>
+    </section>
+    <section id="preview-side" class="browser-frame hidden">
+      <div class="browser-top"><div class="lights"><i></i><i></i><i></i></div><div class="address">Chrome side panel · SessionHub</div></div>
+      <div class="concept-stage">
+        <div class="mock-sidepanel">
+          <div class="side-head"><div class="bar"><div class="left"><div class="brandmark">S</div><strong>SessionHub</strong></div><button class="btn primary" onclick="demoToast('Local snapshot saved — demo')">+ Save</button></div><div class="popup-search" style="margin:13px 0 0">⌕ &nbsp; Filter open tabs…</div></div>
+          <div class="side-body"><div class="caps" style="margin:0 5px 12px">CURRENT WORKSPACE · CLIENT WEBSITES</div>
+            <div class="side-window"><div class="side-window-header bar"><span>⌄ &nbsp; Window 1</span><span class="muted small">16 tabs · ⋯</span></div>
+              <div class="side-tab"><div class="left">⌄ &nbsp; <strong>Development</strong></div><span class="muted">5 tabs</span></div>
+              <div class="side-tab selected"><div class="left"><div class="fav">◉</div><span>localhost:3000</span></div><span>●</span></div>
+              <div class="side-tab"><div class="left"><div class="fav">G</div><span>GitHub · Pull requests</span></div><span>↗</span></div>
+              <div class="side-tab"><div class="left"><div class="fav">T</div><span>TypeScript handbook</span></div><span>↗</span></div>
+              <div class="side-tab"><div class="left">› &nbsp; <strong>Research</strong></div><span class="muted">11 tabs</span></div>
+            </div>
+            <div class="side-window"><div class="side-window-header bar"><span>› &nbsp; Window 2</span><span class="muted small">8 tabs · ⋯</span></div></div>
+            <div class="side-lower"><div class="caps">Recently saved</div><div class="pop-session"><strong>▤ &nbsp; Sprint review</strong><span class="muted small">24 tabs</span></div><div class="pop-session"><strong>▤ &nbsp; UI inspiration</strong><span class="muted small">11 tabs</span></div><p class="small" style="color:var(--brand);font-weight:650">Open full manager →</p></div>
+          </div>
+        </div>
+        <div class="concept-caption"><div class="caps">02 / Extension side panel</div><h2>Navigate hundreds of tabs without hunting.</h2><p>A dense collapsible tree follows the user's actual browser windows and groups. Search, focus, reorder, and save from one place.</p><ul><li>Window → tab group → tab hierarchy</li><li>Virtualized lists for scale</li><li>Accessible keyboard navigation</li><li>Never auto-close tabs on workspace switch</li></ul></div>
+      </div>
+    </section>
+  </div>
+  <div class="note">Visual design reference only. Saved session counts, device names, and status values are illustrative mock data. No account, browser extension, sync API, or persistent actions are connected.</div>
+  <div id="modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal"><div class="bar"><h3 id="modalTitle">Restore “Frontend research”</h3><button class="iconbtn" onclick="closeModal()" aria-label="Close dialog">×</button></div><p>From Windows Desktop · 2 windows · 18 tabs</p><div class="caps" style="margin-top:18px">Restore destination</div><div class="choice"><label><input type="radio" name="destination" checked /> Open in new window(s) — recommended</label></div><div class="choice"><label><input type="radio" name="destination" /> Add to current window</label></div><div class="caps" style="margin-top:16px">Tabs to open</div><div style="font-size:12px;padding-top:10px"><label><input type="checkbox" checked /> Window 1 · 13 tabs</label><br/><label><input type="checkbox" checked /> Window 2 · 5 tabs</label></div><div class="warn">This is only a preview. Actual browser restore requires a verified installed Chrome extension and confirmation.</div><div class="bar" style="justify-content:flex-end"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="demoToast('Demo only — no tabs were opened');closeModal()">Restore 18 tabs (demo)</button></div></div>
+  </div>
+  <div id="toast" role="status" aria-live="polite" style="position:fixed;right:18px;bottom:18px;border-radius:9px;background:#183c2b;color:white;padding:10px 14px;box-shadow:var(--shadow);font-size:12px;display:none;z-index:10"></div>
+  <script>
+    const panels = { web: document.getElementById('preview-web'), popup: document.getElementById('preview-popup'), side: document.getElementById('preview-side') };
+    const names = { web: ['Dashboard · Overview', 'Navigation, session hierarchy, sources, and sync state presentation.'], popup: ['Chrome Extension · Popup', 'Fast save, recent sessions, local-first status and quick navigation.'], side: ['Chrome Extension · Side Panel', 'Dense live tab navigation with window and tab group hierarchy.'] };
+    function show(name) {
+      Object.entries(panels).forEach(([key, el]) => el.classList.toggle('hidden', key !== name));
+      document.querySelectorAll('[data-preview]').forEach(button => { const on = button.dataset.preview === name; button.classList.toggle('active', on); button.setAttribute('aria-selected', String(on)); });
+      document.getElementById('pageTitle').textContent = names[name][0];
+      document.getElementById('pageDesc').textContent = names[name][1];
+    }
+    document.querySelectorAll('[data-preview]').forEach(button => button.addEventListener('click', () => show(button.dataset.preview)));
+    const initialView = new URLSearchParams(location.search).get('view');
+    if (initialView && Object.prototype.hasOwnProperty.call(panels, initialView)) show(initialView);
+    const modal = document.getElementById('modal');
+    document.getElementById('openRestore').addEventListener('click', () => { modal.classList.remove('hidden'); modal.querySelector('input').focus(); });
+    function closeModal() { modal.classList.add('hidden'); document.getElementById('openRestore').focus(); }
+    modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
+    let toastTimer;
+    function demoToast(message) { const toast = document.getElementById('toast'); toast.textContent = message; toast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.style.display = 'none', 2800); }
+  </script>
+</body>
+</html>

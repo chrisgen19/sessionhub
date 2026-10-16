@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+
+# vitest declares jsdom as an optional peer; keep auto-installed peers on the version the extension tests use.
+overrides:
+  jsdom: 30.1.2

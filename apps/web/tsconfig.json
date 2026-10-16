@@ -1,0 +1,15 @@
+{
+  "extends": "@sessionhub/typescript-config/react.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "allowJs": false,
+    "incremental": true,
+    "types": ["node"],
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "src", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "*.config.ts"],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@sessionhub/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./capture": "./src/capture.ts",
+    "./naming": "./src/naming.ts",
+    "./restore-plan": "./src/restore-plan.ts",
+    "./search": "./src/search.ts",
+    "./session-edit": "./src/session-edit.ts",
+    "./session-export": "./src/session-export.ts",
+    "./session-summary": "./src/session-summary.ts",
+    "./url-classification": "./src/url-classification.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sessionhub/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@sessionhub/eslint-config": "workspace:*",
+    "@sessionhub/typescript-config": "workspace:*",
+    "eslint": "10.12.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

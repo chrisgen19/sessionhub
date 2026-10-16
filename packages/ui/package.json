@@ -1,0 +1,10 @@
+{
+  "name": "@sessionhub/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": ["*.css"],
+  "exports": {
+    "./tokens.css": "./src/tokens.css"
+  }
+}

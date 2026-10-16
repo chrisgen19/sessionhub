@@ -1,0 +1,116 @@
+import { z } from "zod";
+
+/** Current schema version of saved-session payloads (local records and exports). */
+export const SESSION_SCHEMA_VERSION = 1;
+
+/** Structural bounds. Values are an implementation decision recorded in docs/DATA_MODEL.md. */
+export const SESSION_LIMITS = {
+  nameMax: 200,
+  titleMax: 1024,
+  urlMax: 8192,
+  groupTitleMax: 256,
+  deviceNameMax: 120,
+  windowsMax: 200,
+  tabsPerWindowMax: 2000,
+  groupsPerWindowMax: 500,
+} as const;
+
+/**
+ * Restore eligibility decided by the URL classifier in `@sessionhub/core`.
+ * Only `restorable` tabs are ever opened by a restore.
+ */
+export const restoreEligibilitySchema = z.enum([
+  "restorable",
+  "browser-internal",
+  "local-file",
+  "unsafe",
+  "unsupported",
+  "invalid",
+]);
+export type RestoreEligibility = z.infer<typeof restoreEligibilitySchema>;
+
+/** Chrome tab-group colors (chrome.tabGroups.Color). */
+export const tabGroupColorSchema = z.enum([
+  "grey",
+  "blue",
+  "red",
+  "yellow",
+  "green",
+  "pink",
+  "purple",
+  "cyan",
+  "orange",
+]);
+export type TabGroupColor = z.infer<typeof tabGroupColorSchema>;
+
+export const savedTabSchema = z.object({
+  id: z.uuid(),
+  title: z.string().max(SESSION_LIMITS.titleMax),
+  url: z.string().max(SESSION_LIMITS.urlMax),
+  pinned: z.boolean(),
+  sortOrder: z.int().nonnegative(),
+  groupId: z.uuid().nullable(),
+  eligibility: restoreEligibilitySchema,
+});
+export type SavedTab = z.infer<typeof savedTabSchema>;
+
+export const savedGroupSchema = z.object({
+  id: z.uuid(),
+  title: z.string().max(SESSION_LIMITS.groupTitleMax),
+  color: tabGroupColorSchema,
+  collapsed: z.boolean(),
+  sortOrder: z.int().nonnegative(),
+});
+export type SavedGroup = z.infer<typeof savedGroupSchema>;
+
+export const savedWindowSchema = z
+  .object({
+    id: z.uuid(),
+    sortOrder: z.int().nonnegative(),
+    groups: z.array(savedGroupSchema).max(SESSION_LIMITS.groupsPerWindowMax),
+    tabs: z.array(savedTabSchema).max(SESSION_LIMITS.tabsPerWindowMax),
+  })
+  .superRefine((window, ctx) => {
+    const groupIds = new Set(window.groups.map((group) => group.id));
+    window.tabs.forEach((tab, index) => {
+      if (tab.groupId !== null && !groupIds.has(tab.groupId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Tab references a group that is not in the same window",
+          path: ["tabs", index, "groupId"],
+        });
+      }
+    });
+  });
+export type SavedWindow = z.infer<typeof savedWindowSchema>;
+
+export const savedSessionSchema = z
+  .object({
+    id: z.uuid(),
+    schemaVersion: z.literal(SESSION_SCHEMA_VERSION),
+    name: z.string().trim().min(1).max(SESSION_LIMITS.nameMax),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+    /** Provenance only, never a command target. */
+    sourceDeviceId: z.uuid().nullable(),
+    sourceDeviceName: z.string().max(SESSION_LIMITS.deviceNameMax),
+    /** Optimistic-concurrency version; starts at 1 and increments on each edit. */
+    version: z.int().positive(),
+    windows: z.array(savedWindowSchema).max(SESSION_LIMITS.windowsMax),
+  })
+  .superRefine((session, ctx) => {
+    const seen = new Set<string>();
+    const ids = session.windows.flatMap((window) => [
+      window.id,
+      ...window.groups.map((group) => group.id),
+      ...window.tabs.map((tab) => tab.id),
+    ]);
+    for (const id of ids) {
+      if (seen.has(id)) {
+        ctx.addIssue({ code: "custom", message: `Duplicate id ${id}`, path: ["windows"] });
+        return;
+      }
+      seen.add(id);
+    }
+  });
+export type SavedSession = z.infer<typeof savedSessionSchema>;
