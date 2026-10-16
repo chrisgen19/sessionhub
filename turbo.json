@@ -26,7 +26,10 @@
       "dependsOn": [
         "build"
       ],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL"
+      ]
     },
     "test:perf": {
       "dependsOn": [
@@ -35,13 +38,21 @@
       "cache": false
     },
     "test:db": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION"
+      ]
     },
     "@sessionhub/web#test:db": {
       "dependsOn": [
         "@sessionhub/database#test:db"
       ],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION"
+      ]
     }
   }
 }
