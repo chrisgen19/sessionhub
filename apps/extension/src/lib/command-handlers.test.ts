@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CaptureWindowInput } from "@sessionhub/core/capture";
+import { createSessionExport } from "@sessionhub/core/session-export";
 import { handleCommand, BrowserError, type HandlerDeps } from "./command-handlers";
 import type { RestoreTabOutcome } from "./db";
 import { getSession, listSessions } from "./session-repository";
@@ -123,5 +124,66 @@ describe("handleCommand", () => {
     const deps = makeDeps();
     const response = await handleCommand({ type: "restore.start", sessionId: "00000000-0000-4000-8000-00000000abcd" }, deps);
     expect(response).toMatchObject({ ok: false, error: { code: "not-found" } });
+  });
+
+  describe("session.import", () => {
+    const exportOf = async (deps: HandlerDeps, sessionId: string) =>
+      JSON.stringify(createSessionExport((await getSession(deps.db, sessionId))!, new Date("2026-10-16T09:00:00.000Z")));
+
+    it("imports an export as a new session and leaves the original untouched", async () => {
+      const deps = makeDeps();
+      const { sessionId } = await capture(deps);
+      const original = await getSession(deps.db, sessionId);
+      const content = await exportOf(deps, sessionId);
+
+      const first = await handleCommand({ type: "session.import", content }, deps);
+      const second = await handleCommand({ type: "session.import", content }, deps);
+      expect(first).toMatchObject({ ok: true, data: { report: { windowCount: 2, tabCount: 4, reclassifiedCount: 0 } } });
+      expect(second).toMatchObject({ ok: true });
+
+      const sessions = await listSessions(deps.db);
+      expect(sessions).toHaveLength(3);
+      expect(new Set(sessions.map((session) => session.id)).size).toBe(3);
+      expect(await getSession(deps.db, sessionId)).toEqual(original);
+      const imported = sessions.find((session) => first.ok && session.id === (first.data as { sessionId: string }).sessionId);
+      expect(imported).toMatchObject({ sourceDeviceId: null, version: 1, name: original!.name });
+    });
+
+    it("stores tampered unsafe urls as not restorable", async () => {
+      const deps = makeDeps();
+      const { sessionId } = await capture(deps);
+      const file = JSON.parse(await exportOf(deps, sessionId));
+      file.session.windows[1].tabs[0].url = "javascript:alert(1)";
+      file.session.windows[1].tabs[0].eligibility = "restorable";
+      const response = await handleCommand({ type: "session.import", content: JSON.stringify(file) }, deps);
+      if (!response.ok) throw new Error(response.error.message);
+      const imported = await getSession(deps.db, (response.data as { sessionId: string }).sessionId);
+      expect(imported!.windows[1]!.tabs[0]!.eligibility).toBe("unsafe");
+    });
+
+    it("rejects invalid files with a readable error and writes nothing", async () => {
+      const deps = makeDeps();
+      for (const content of ["{", "[]", JSON.stringify({ format: "sessionhub.session-export", schemaVersion: 9 })]) {
+        const response = await handleCommand({ type: "session.import", content }, deps);
+        expect(response).toMatchObject({ ok: false, error: { code: "invalid-input" } });
+        expect(response.ok ? "" : response.error.message.length).toBeGreaterThan(10);
+      }
+      expect(await listSessions(deps.db)).toEqual([]);
+    });
+
+    it("never overwrites an existing session, even on an id collision", async () => {
+      const deps = makeDeps();
+      const { sessionId } = await capture(deps);
+      const original = await getSession(deps.db, sessionId);
+      const content = await exportOf(deps, sessionId);
+      // Child ids stay unique; only the final id (the session's own key) collides.
+      const childIdCount = original!.windows.reduce((sum, window) => sum + 1 + window.groups.length + window.tabs.length, 0);
+      const fresh = idFactory(9);
+      let calls = 0;
+      const colliding = makeDeps({ db: deps.db, createId: () => (++calls > childIdCount ? sessionId : fresh()) });
+      const response = await handleCommand({ type: "session.import", content }, colliding);
+      expect(response).toMatchObject({ ok: false, error: { code: "conflict" } });
+      expect(await listSessions(deps.db)).toEqual([original]);
+    });
   });
 });

@@ -5,7 +5,7 @@ import { summarizeSession } from "@sessionhub/core/session-summary";
 import { SyncStatusChip } from "../../components/brand";
 import { buttonClass } from "../../components/modal";
 import { downloadSessionExport } from "../../lib/export-download";
-import { formatFullDate, plural } from "../../lib/format";
+import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import { DeleteDialog } from "./delete-dialog";
 import { RenameTitle } from "./rename-title";
 import { RestoreDialog } from "./restore-dialog";
@@ -32,7 +32,7 @@ export function SessionInspector({ session, onBack, onDeleted }: SessionInspecto
       <div className="space-y-2">
         <RenameTitle key={`${session.id}:${session.version}`} session={session} />
         <p className="text-xs text-fg-muted">
-          From {session.sourceDeviceName} · saved {formatFullDate(session.updatedAt)} · version {session.version}
+          {sessionOrigin(session)} · saved {formatFullDate(session.updatedAt)} · version {session.version}
         </p>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold tabular-nums">

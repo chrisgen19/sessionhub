@@ -23,11 +23,11 @@ const WORKS_TODAY = [
   "Chrome extension: save current or all windows to local storage",
   "Search saved sessions by name, tab title or URL",
   "Restore into new windows with a preview and a per-tab result summary",
-  "Rename, delete with confirmation, and export a session as JSON",
+  "Rename, delete with confirmation, and export or import sessions as JSON",
 ];
 
 const COMING_NEXT = [
-  "Automatic recovery snapshots and JSON import",
+  "Automatic recovery snapshots and retrying tabs that failed to reopen",
   "Side panel for navigating open tabs",
   "Account sign-in and opt-in sync between computers",
 ];

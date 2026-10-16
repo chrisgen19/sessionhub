@@ -2,7 +2,7 @@ import { Layers } from "lucide-react";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
 import type { SessionsState } from "../../hooks/use-sessions";
-import { formatListDate, plural } from "../../lib/format";
+import { formatListDate, plural, sessionSourceLabel } from "../../lib/format";
 
 interface SessionListProps {
   state: SessionsState;
@@ -38,7 +38,7 @@ export function SessionList({ state, sessions, selectedId, searching, onSelect, 
       <div className="m-4 rounded-xl border border-dashed border-line px-4 py-10 text-center">
         <p className="text-[13px] font-semibold">{searching ? "No sessions match your search" : "No saved sessions yet"}</p>
         {!searching && (
-          <p className="mt-1 text-xs text-fg-muted">Click the SessionHub toolbar icon and choose Save window.</p>
+          <p className="mt-1 text-xs text-fg-muted">Click the SessionHub toolbar icon and choose Save window, or import a SessionHub export.</p>
         )}
       </div>
     );
@@ -67,7 +67,7 @@ export function SessionList({ state, sessions, selectedId, searching, onSelect, 
                   {session.name}
                 </span>
                 <span className="block truncate text-xs text-fg-muted">
-                  {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {session.sourceDeviceName} · Local only
+                  {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)} · Local only
                 </span>
               </span>
               <span className="shrink-0 text-xs tabular-nums text-fg-muted">{formatListDate(session.updatedAt)}</span>

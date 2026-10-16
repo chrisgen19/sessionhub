@@ -125,3 +125,47 @@ test("rejects malformed commands", async ({ context, extensionId }) => {
   const result = await manager.evaluate(() => chrome.runtime.sendMessage({ type: "tabs.closeAll" }));
   expect(result).toMatchObject({ ok: false, error: { code: "invalid-command" } });
 });
+
+test("export -> import round trip creates a separate session that restores", async ({ context, worker, extensionId }) => {
+  const page = await context.newPage();
+  await page.goto(`${SITE}/gamma`);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html`);
+  const saved = await manager.evaluate(() => chrome.runtime.sendMessage({ type: "session.capture", scope: { kind: "all-windows" } }));
+  expect(saved).toMatchObject({ ok: true });
+
+  await manager.getByRole("button", { name: /all windows,/i }).click();
+  const downloadPromise = manager.waitForEvent("download");
+  await manager.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^sessionhub-all-windows-.*\.json$/);
+  const exportPath = await download.path();
+
+  await manager.getByLabel("Import a SessionHub export file").setInputFiles(exportPath);
+  const dialog = manager.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Import session" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Import session" }).click();
+
+  const inspector = manager.getByRole("article", { name: /session details/i });
+  await expect(inspector.getByText(/imported from this browser/i)).toBeVisible();
+  await expect(manager.getByRole("button", { name: /all windows,/i })).toHaveCount(2);
+  const ids = await manager.evaluate(async () => {
+    const request = indexedDB.open("sessionhub");
+    const db = await new Promise<IDBDatabase>((resolve) => (request.onsuccess = () => resolve(request.result)));
+    const all = await new Promise<{ id: string }[]>((resolve) => {
+      const get = db.transaction("sessions").objectStore("sessions").getAll();
+      get.onsuccess = () => resolve(get.result);
+    });
+    return all.map((session) => session.id);
+  });
+  expect(new Set(ids).size).toBe(2);
+
+  const before = await snapshotWindows(worker);
+  await inspector.getByRole("button", { name: /restore/i }).click();
+  await manager.getByRole("dialog").getByRole("button", { name: /^restore 1 tab$/i }).click();
+  await expect(manager.getByRole("dialog").getByText(/opened 1 of 1 tab/i)).toBeVisible();
+  await expect
+    .poll(async () => (await snapshotWindows(worker)).windows.find((window) => !before.windows.some((old) => old.id === window.id))?.urls)
+    .toEqual([`${SITE}/gamma`]);
+});
+

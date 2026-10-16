@@ -5,6 +5,7 @@ import { BrandMark, SyncStatusChip } from "../../components/brand";
 import { useSelectedSession } from "../../hooks/use-selected-session";
 import { useSessions } from "../../hooks/use-sessions";
 import { plural } from "../../lib/format";
+import { ImportControl } from "./import-control";
 import { SessionInspector } from "./session-inspector";
 import { SessionList } from "./session-list";
 
@@ -46,9 +47,12 @@ export function ManagerApp() {
       <div className="xl:grid xl:grid-cols-[minmax(420px,1fr)_400px]">
         <main className={`min-w-0 ${selected ? "hidden xl:block" : ""}`}>
           <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6">
-            <div className="flex items-baseline justify-between gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">Saved sessions</h1>
-              {state.status === "ready" && <span className="text-xs tabular-nums text-fg-muted">{plural(total, "session")}</span>}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-baseline gap-3">
+                <h1 className="text-2xl font-bold tracking-tight">Saved sessions</h1>
+                {state.status === "ready" && <span className="hidden text-xs whitespace-nowrap tabular-nums text-fg-muted sm:inline">{plural(total, "session")}</span>}
+              </div>
+              <ImportControl onImported={select} />
             </div>
             <label className="flex max-w-xl items-center gap-2 rounded-lg border border-line bg-canvas px-3 focus-within:outline-2 focus-within:outline-focus">
               <Search aria-hidden="true" className="size-4 text-fg-muted" />

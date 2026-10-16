@@ -9,16 +9,40 @@
 | Area | State |
 |---|---|
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
-| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; restore preview -> new windows -> per-tab summary |
-| Recovery snapshots, import, side panel, workspaces | Not implemented |
+| Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary |
+| Recovery snapshots, retry of failed tabs, side panel, workspaces | Not implemented |
 | Web app | Static landing page + `GET /api/health` only. No auth, DB or dashboard |
 | Database / auth / sync | Not implemented (`packages/database`, `packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Repo initialized this session on branch `feature/m1-monorepo-local-slice`; **nothing committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`. `e491fc9` = skeleton + local slice. The import slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (second slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** M2 JSON import with preview (re-classify URLs, fresh UUIDs, never overwrite).
+
+**Implemented:**
+
+- `packages/core/src/session-import.ts`: `parseSessionExport` (10 MB cap, JSON, format, newer-version and schema checks with readable messages), `prepareImportedSession` (fresh ids, remapped groups, normalized ordering, re-classified URLs, `sourceDeviceId: null`), `SessionImportError` codes.
+- `apps/extension/src/lib/`: `session.import` command (`messages.ts`), handler (`command-handlers.ts`, errors mapped to `invalid-input` / `conflict`), `addSession` with `SessionExistsError` (`session-repository.ts`), `sessionSourceLabel` / `sessionOrigin` (`format.ts`).
+- `apps/extension/src/features/manager/import-control.tsx`, `import-dialog.tsx`; Import button in `manager-app.tsx`; "Imported from ..." label in list, popup, inspector and restore dialog.
+- Web landing page status lists updated.
+
+**Validated commands and results (final run after last code change):**
+
+- `pnpm check --force`: **pass** (12 tasks). Tests: contracts 8, core 65 (+18 import), extension 30 (+4 handler, +1 repository, +3 import UI), web 1.
+- `pnpm build --force`: **pass**.
+- `pnpm --filter @sessionhub/extension test:e2e`: **4/4 pass**; `--repeat-each 5`: **20/20 pass**. New test: export through the real download, import that file through the file input, two distinct session ids in IndexedDB, then restore the imported copy into a new window.
+
+**Covered rejection cases (unit):** not JSON, JSON array, foreign format, newer schema version, version 0, invalid UUID, overlong title, dangling group reference, duplicate ids, >10 MB, file with no tabs. Tampered `eligibility: "restorable"` on a `javascript:` URL is stored as `unsafe`. Forced session-id collision returns `conflict` and leaves the original byte-for-byte unchanged. HTML in names/titles renders as text (RTL test).
+
+**Manual verification:** screenshots of import preview (1440, 390) and the newer-version error dialog. Fixed: at 390 px the manager header wrapped; the session count is now hidden below `sm`.
+
+**Known gaps:** no drag-and-drop import; no import entry in the popup; no multi-session/backup files (one session per file); identical names are not de-duplicated.
+
 
 ### 2026-10-16 / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -64,12 +88,11 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. **Commit this work** on `feature/m1-monorepo-local-slice` (not committed yet; needs the user's go-ahead) and push to a GitHub remote so CI runs for the first time.
-2. Continue M2 in this order, each as a tested slice:
-   1. **JSON import with preview**: parse with `sessionExportSchema`, re-classify URLs, assign fresh UUIDs, never overwrite an existing session; add a `session.import` command and an import entry in the manager.
-   2. **Retry failed tabs** from a restore job (`restore.retry` command reading `restoreJobs` outcomes; never reopen successful tabs).
-   3. **Automatic recovery snapshots**: `alarms` permission, debounced dirty flag in IndexedDB, bounded retention that never evicts the last good snapshot, Recovery view in the manager.
-   4. Quota-failure handling and restore-job retention.
+1. Commit the import slice (needs the user's go-ahead), push a remote so CI runs for the first time.
+2. Continue M2:
+   1. **Retry failed tabs** from a restore job (`restore.retry` command reading `restoreJobs` outcomes; never reopen successful tabs; summary shows Retry when failures exist).
+   2. **Automatic recovery snapshots**: `alarms` permission, debounced dirty flag in IndexedDB, bounded retention that never evicts the last good snapshot, Recovery view in the manager.
+   3. Quota-failure handling and `restoreJobs` retention.
 3. Then M3 (PostgreSQL, Prisma 7.x stable, Better Auth).
 
 ## Open questions / architecture validations

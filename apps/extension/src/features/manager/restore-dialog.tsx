@@ -4,7 +4,7 @@ import type { SavedSession } from "@sessionhub/contracts/session";
 import { planRestore } from "@sessionhub/core/restore-plan";
 import { DialogActions, Modal, buttonClass } from "../../components/modal";
 import type { RestoreJobRecord } from "../../lib/db";
-import { formatFullDate, plural } from "../../lib/format";
+import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import { sendCommand } from "../../lib/message-client";
 import { RestoreSummary, SkippedList } from "./restore-summary";
 
@@ -46,7 +46,7 @@ export function RestoreDialog({ session, onClose }: { session: SavedSession; onC
   return (
     <Modal title={`Restore "${session.name}"`} onClose={onClose} dismissible={phase.name !== "running"}>
       <p className="text-xs text-fg-muted">
-        From {session.sourceDeviceName} · {plural(session.windows.length, "window")} · saved {formatFullDate(session.updatedAt)}
+        {sessionOrigin(session)} · {plural(session.windows.length, "window")} · saved {formatFullDate(session.updatedAt)}
       </p>
 
       {phase.name === "preview" && (

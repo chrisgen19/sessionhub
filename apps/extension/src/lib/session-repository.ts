@@ -30,6 +30,26 @@ export const putSession = async (db: SessionHubDb, session: SavedSession): Promi
   await db.sessions.put({ ...valid, scope: SCOPE });
 };
 
+export class SessionExistsError extends Error {
+  override name = "SessionExistsError";
+}
+
+/**
+ * Inserts a new session. Unlike `putSession` this can never replace a record:
+ * an existing id fails with `SessionExistsError` and nothing is written.
+ */
+export const addSession = async (db: SessionHubDb, session: SavedSession): Promise<void> => {
+  const valid = savedSessionSchema.parse(session);
+  try {
+    await db.sessions.add({ ...valid, scope: SCOPE });
+  } catch (error) {
+    if (error instanceof Error && error.name === "ConstraintError") {
+      throw new SessionExistsError("A session with this id already exists");
+    }
+    throw error;
+  }
+};
+
 export class VersionConflictError extends Error {
   override name = "VersionConflictError";
 }

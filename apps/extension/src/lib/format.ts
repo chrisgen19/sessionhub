@@ -24,3 +24,15 @@ export const formatFullDate = (iso: string, locale?: string): string =>
 
 export const plural = (count: number, singular: string, pluralForm = `${singular}s`): string =>
   `${count.toLocaleString()} ${count === 1 ? singular : pluralForm}`;
+
+/** Short source label for list rows: "This browser" or "Imported from Windows Desktop". */
+export const sessionSourceLabel = (session: { sourceDeviceId: string | null; sourceDeviceName: string }): string =>
+  session.sourceDeviceId !== null
+    ? session.sourceDeviceName
+    : session.sourceDeviceName
+      ? `Imported from ${session.sourceDeviceName}`
+      : "Imported";
+
+/** Provenance sentence fragment for detail views: "From This browser" or "Imported from Windows Desktop". */
+export const sessionOrigin = (session: { sourceDeviceId: string | null; sourceDeviceName: string }): string =>
+  session.sourceDeviceId !== null ? `From ${session.sourceDeviceName}` : sessionSourceLabel(session);

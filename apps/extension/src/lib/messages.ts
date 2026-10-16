@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { SESSION_LIMITS } from "@sessionhub/contracts/session";
 import type { CaptureReport } from "@sessionhub/core/capture";
+import { IMPORT_MAX_BYTES, type ImportReport } from "@sessionhub/core/session-import";
 import type { RestoreJobRecord } from "./db";
 
 /**
@@ -22,6 +23,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     name: z.string().max(SESSION_LIMITS.nameMax * 2),
   }),
   z.object({ type: z.literal("session.delete"), sessionId: z.uuid() }),
+  // Raw file text: the worker parses and re-validates it rather than trusting a page-prepared session.
+  z.object({ type: z.literal("session.import"), content: z.string().max(IMPORT_MAX_BYTES) }),
   z.object({
     type: z.literal("restore.start"),
     sessionId: z.uuid(),
@@ -34,6 +37,7 @@ export interface CommandResults {
   "session.capture": { sessionId: string; report: CaptureReport };
   "session.rename": { version: number };
   "session.delete": Record<string, never>;
+  "session.import": { sessionId: string; report: ImportReport };
   "restore.start": { job: RestoreJobRecord };
 }
 

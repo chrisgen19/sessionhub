@@ -2,14 +2,17 @@ import { buildSavedSession, CaptureLimitError, type CaptureWindowInput } from "@
 import { defaultSessionName } from "@sessionhub/core/naming";
 import { planRestore, type RestorePlan } from "@sessionhub/core/restore-plan";
 import { InvalidSessionNameError, renameSession } from "@sessionhub/core/session-edit";
+import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { commandSchema, type Command, type CommandResponse, type ErrorCode } from "./messages";
 import { appendRestoreOutcomes, createRestoreJob, finishRestoreJob } from "./restore-job-repository";
 import {
+  addSession,
   deleteSession,
   getSession,
   putSession,
+  SessionExistsError,
   SessionNotFoundError,
   updateSession,
   VersionConflictError,
@@ -32,9 +35,9 @@ export class BrowserError extends Error {
 const fail = (code: ErrorCode, message: string): CommandResponse => ({ ok: false, error: { code, message } });
 
 const toErrorResponse = (error: unknown): CommandResponse => {
-  if (error instanceof VersionConflictError) return fail("conflict", error.message);
+  if (error instanceof VersionConflictError || error instanceof SessionExistsError) return fail("conflict", error.message);
   if (error instanceof SessionNotFoundError) return fail("not-found", error.message);
-  if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError) {
+  if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError || error instanceof SessionImportError) {
     return fail("invalid-input", error.message);
   }
   if (error instanceof BrowserError) return fail("browser-error", error.message);
@@ -53,6 +56,16 @@ const capture = async (command: Extract<Command, { type: "session.capture" }>, d
   });
   if (report.tabCount === 0) throw new BrowserError("There are no tabs to save in this window");
   await putSession(deps.db, session);
+  return { sessionId: session.id, report };
+};
+
+/** Re-validates untrusted file text and inserts it as a brand-new session (never an overwrite). */
+const importSession = async (command: Extract<Command, { type: "session.import" }>, deps: HandlerDeps) => {
+  const { session, report } = prepareImportedSession(parseSessionExport(command.content), {
+    now: deps.now(),
+    createId: deps.createId,
+  });
+  await addSession(deps.db, session);
   return { sessionId: session.id, report };
 };
 
@@ -86,6 +99,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
       case "session.delete":
         await deleteSession(deps.db, command.sessionId);
         return { ok: true, data: {} };
+      case "session.import":
+        return { ok: true, data: await importSession(command, deps) };
       case "restore.start":
         return { ok: true, data: await restore(command, deps) };
     }

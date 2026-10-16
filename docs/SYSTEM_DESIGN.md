@@ -342,6 +342,8 @@ Verified 2026-10-16 (details in `PROGRESS.md`): monorepo skeleton, and the local
 | 2026-10-16 | Restore job record (plan + per-tab outcomes) is written **before** any tab opens, then appended per window | An interrupted restore remains inspectable; enables "retry failed only" next | Retry UX and job retention (pending) |
 | 2026-10-16 | Local delete is a hard delete with confirmation | No sync exists, so no tombstone consumer yet | M4 adds tombstones for synced sessions |
 | 2026-10-16 | Favicons via Chrome's `_favicon` endpoint (`favicon` permission) instead of stored `favIconUrl` | No third-party icon requests and no stored remote icon URLs | - |
+| 2026-10-16 | Import sends the **raw file text** in a `session.import` command; the worker parses, re-validates, re-identifies and inserts it with `add()`. The manager builds its preview with the same core functions | Pages are not trusted to hand the worker a prepared session; `add()` makes overwriting impossible | - |
+| 2026-10-16 | Imported sessions keep their original name; no automatic renaming on duplicates. They are labeled "Imported from <device>" via `sourceDeviceId: null` | Avoids scanning every stored session on import; provenance is still visible | If users find same-named copies confusing |
 | 2026-10-16 | `packages/database` and `packages/sync` not created yet | Empty packages add no value; created with M3/M4 | M3 / M4 |
 | 2026-10-16 | Web app uses the ESLint CLI with the shared config, not `eslint-config-next` | `next lint` was removed in Next 16; `eslint-config-next` 16.4 depends on `eslint-plugin-react` 7.37, which does not declare ESLint 10 support | eslint-plugin-react supports ESLint 10 |
 

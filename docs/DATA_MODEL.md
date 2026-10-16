@@ -221,6 +221,19 @@ Versioned export. Implemented as `sessionExportSchema` in `packages/contracts/sr
 
 Import must verify `format`, supported `schemaVersion`, structural bounds, ID collisions, duplicated ordering and URL classification. Never execute imported content as HTML/JavaScript. Imported sessions receive a safe new local identity and don't overwrite existing sessions by default.
 
+**Implemented (2026-10-16)** in `packages/core/src/session-import.ts`:
+
+1. Reject files over 10 MB (`IMPORT_MAX_BYTES`) before parsing.
+2. `JSON.parse`; then `format` must equal `sessionhub.session-export`; a `schemaVersion` above the current one gets an "update the extension" error. Only version 1 exists, so there is no migration path yet.
+3. Full `sessionExportSchema` validation (bounds, UUIDs, unique ids, group references). The first issue and its path are shown to the user.
+4. Every session, window, group and tab gets a fresh UUID; group links are remapped.
+5. Windows, groups and tabs are re-sorted by `sortOrder` (ties keep file order) and renumbered from 0.
+6. Every URL is re-classified; the file's `eligibility` values are ignored and differences are counted.
+7. Empty windows are dropped; a file with no tabs is rejected.
+8. The result has `version: 1`, `createdAt`/`updatedAt` set to import time, the original `name` and `sourceDeviceName`, and `sourceDeviceId: null`. **`sourceDeviceId: null` marks an imported session** and the UI labels it "Imported from <device>".
+
+The extension stores it with Dexie `add()` (not `put()`), so even an id collision fails instead of replacing a record.
+
 ## 6. Indexing and query guidance
 
 - `SavedSession (userId, updatedAt DESC, id)` pagination.
