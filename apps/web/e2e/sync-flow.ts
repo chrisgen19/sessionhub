@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { BASE_URL } from "../playwright.config";
 import { openAccountView, startConnect } from "./pairing-flow";
@@ -25,49 +24,31 @@ export const connectExtension = async (context: BrowserContext, extensionId: str
   return manager;
 };
 
-/** A valid local session record, as the extension stores it. */
-export const localSession = (name: string) => {
-  const now = new Date().toISOString();
-  const tab = (url: string, sortOrder: number) => ({ id: randomUUID(), title: url, url, pinned: false, sortOrder, groupId: null, eligibility: "restorable" });
-  return {
-    id: randomUUID(),
-    schemaVersion: 1,
-    name,
-    createdAt: now,
-    updatedAt: now,
-    sourceDeviceId: randomUUID(),
-    sourceDeviceName: "This browser",
-    version: 1,
-    windows: [{ id: randomUUID(), sortOrder: 0, groups: [], tabs: [tab("https://a.test/", 0), tab("https://b.test/", 1)] }],
-  };
+/** Saves all of this profile's open windows through the extension, as the popup's Save all does. */
+export const captureAllWindows = async (manager: Page): Promise<string> => {
+  const response = (await sendCommand(manager, { type: "session.capture", scope: { kind: "all-windows" } })) as { ok: boolean; data: { sessionId: string } };
+  expect(response.ok).toBe(true);
+  return response.data.sessionId;
 };
 
 /**
- * Stand-in for the opt-in and upload preview (a later slice): turns sync on for the account in this
- * profile and, given a session, places it in the account's scope with a queued create.
+ * Turns sync on through the Account view's real opt-in: opens the upload preview, checks what it
+ * lists (every local session ticked), and confirms.
  */
-export const enableSync = (manager: Page, scope: string, session?: ReturnType<typeof localSession>) =>
-  manager.evaluate(
-    ({ scope, session, operationId, now }) =>
-      new Promise<void>((resolve, reject) => {
-        const open = indexedDB.open("sessionhub");
-        open.onerror = () => reject(open.error);
-        open.onsuccess = () => {
-          const tx = open.result.transaction(["sessions", "outbox", "syncState"], "readwrite");
-          if (session) {
-            tx.objectStore("sessions").put({ ...session, scope, sync: { serverVersion: null, state: "pending" } });
-            tx.objectStore("outbox").add({ id: operationId, scope, entityType: "savedSession", entityId: session.id, action: "upsert", expectedVersion: 0, payload: session, status: "queued", createdAt: now, updatedAt: now, attempts: 0, nextAttemptAt: null, lastError: null });
-          }
-          tx.objectStore("syncState").put({ scope, enabledAt: now, cursor: null, lastSyncAt: null, lastError: null, failures: 0, nextAttemptAt: null });
-          tx.oncomplete = () => {
-            open.result.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-      }),
-    { scope, session: session ?? null, operationId: randomUUID(), now: new Date().toISOString() },
-  );
+export const turnOnSync = async (manager: Page, extensionId: string, expectListed: number) => {
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#view=account`);
+  const section = manager.getByRole("region", { name: "Sync" });
+  await section.getByRole("button", { name: "Turn on sync…" }).click();
+  const dialog = manager.getByRole("dialog", { name: "Turn on sync" });
+  if (expectListed === 0) {
+    await expect(dialog.getByText("No sessions are saved only in this browser")).toBeVisible();
+  } else {
+    await expect(dialog.getByRole("list", { name: "Sessions to upload" }).getByRole("checkbox", { checked: true })).toHaveCount(expectListed);
+  }
+  await dialog.getByRole("button", { name: /^Turn on sync/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect(section.getByText(/^Sync is on\./)).toBeVisible();
+};
 
 /** Sends a worker command from an extension page, as the extension's own pages do. */
 export const sendCommand = (manager: Page, command: object): Promise<unknown> => manager.evaluate((message) => chrome.runtime.sendMessage(message), command);

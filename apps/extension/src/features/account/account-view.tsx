@@ -2,8 +2,10 @@ import { CheckCircle2, ExternalLink, LoaderCircle, Link2, Unlink } from "lucide-
 import type { ReactNode } from "react";
 import { buttonClass } from "../../components/modal";
 import { useAccount } from "../../hooks/use-account";
+import { useSessions } from "../../hooks/use-sessions";
 import { API_ORIGIN } from "../../lib/api-config";
 import type { AccountStatus } from "../../lib/account-service";
+import { SyncSection } from "./sync-section";
 
 const NOTICE_TEXT = {
   revoked: "This browser was disconnected from your account, from the website or because its sign-in was used somewhere else. Your saved sessions are still here.",
@@ -26,8 +28,8 @@ function Disconnected({ status, busy, onConnect }: { status: Extract<AccountStat
       <p className="text-[13px] leading-relaxed text-fg-muted">
         SessionHub works fully without an account. Connecting is the first step towards syncing saved sessions between your
         computers. Connecting sends only this browser&apos;s name (for example &quot;Chrome on Windows&quot;) and a random installation
-        ID to <span className="font-semibold text-fg">{new URL(API_ORIGIN).host}</span>. It doesn&apos;t upload any sessions; sync is a
-        separate opt-in that isn&apos;t available yet.
+        ID to <span className="font-semibold text-fg">{new URL(API_ORIGIN).host}</span>. It doesn&apos;t upload any sessions: you choose
+        that separately when you turn on sync.
       </p>
       <button type="button" className={buttonClass.primary} disabled={busy} onClick={onConnect}>
         {busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Link2 aria-hidden="true" className="size-4" />}
@@ -78,11 +80,10 @@ function Connected({ status, busy, onDisconnect }: { status: Extract<AccountStat
         <dd className="min-w-0 truncate font-medium">{status.deviceName}</dd>
         <dt className="text-fg-muted">Server</dt>
         <dd className="min-w-0 truncate font-medium">{new URL(status.apiOrigin).host}</dd>
-        <dt className="text-fg-muted">Sync</dt>
-        <dd className="font-medium">Off. Nothing is uploaded yet.</dd>
       </dl>
       <p className="text-xs leading-relaxed text-fg-muted">
-        Disconnecting signs this browser out of your account. Sessions saved here stay on this computer.
+        Disconnecting signs this browser out of your account. Sessions saved only in this browser stay here; your account&apos;s sessions
+        stay in your account and show up again when you connect.
       </p>
       <button type="button" className={buttonClass.ghostDanger} disabled={busy} onClick={onDisconnect}>
         <Unlink aria-hidden="true" className="size-4" /> Disconnect
@@ -94,6 +95,8 @@ function Connected({ status, busy, onDisconnect }: { status: Extract<AccountStat
 /** Manager view for connecting this browser to a SessionHub account (pairing). */
 export function AccountView() {
   const { data, busy, message, run } = useAccount();
+  const { state } = useSessions();
+  const localSessions = state.status === "ready" ? state.sessions.filter((session) => state.syncLabels[session.id] === "local") : [];
   return (
     <main className="min-w-0 space-y-5 px-4 py-6 lg:px-8 lg:py-8">
       <h1 className="text-2xl font-bold tracking-tight">Account</h1>
@@ -109,7 +112,10 @@ export function AccountView() {
       )}
       {data.status === "ready" && data.account.kind === "pairing" && <Pairing status={data.account} busy={busy === "cancel"} onCancel={() => void run("cancel")} />}
       {data.status === "ready" && data.account.kind === "connected" && (
-        <Connected status={data.account} busy={busy === "disconnect"} onDisconnect={() => void run("disconnect")} />
+        <>
+          <Connected status={data.account} busy={busy === "disconnect"} onDisconnect={() => void run("disconnect")} />
+          <SyncSection localSessions={localSessions} />
+        </>
       )}
     </main>
   );

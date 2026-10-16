@@ -4,6 +4,10 @@ export const accountScope = (accountId: string): AccountScope => `account:${acco
 
 export const isAccountScope = (scope: LocalScope): scope is AccountScope => scope !== "local";
 
+/** The connected account's scope, or null when disconnected or the connection predates account ids. */
+export const activeAccountScope = (connection: AccountRecord | undefined): AccountScope | null =>
+  connection?.key === "connection" && connection.account.id ? accountScope(connection.account.id) : null;
+
 /**
  * Scopes visible for the stored connection (`db.account.get("connection")`): `local` always, and
  * the connected account's cached data only while connected to it and once the connection knows
@@ -12,5 +16,7 @@ export const isAccountScope = (scope: LocalScope): scope is AccountScope => scop
  * Pure on purpose: callers read the connection with a direct Dexie await. Wrapping that read in
  * another async function makes liveQuery stop tracking the queries that follow it.
  */
-export const visibleScopes = (connection: AccountRecord | undefined): LocalScope[] =>
-  connection?.key === "connection" && connection.account.id ? ["local", accountScope(connection.account.id)] : ["local"];
+export const visibleScopes = (connection: AccountRecord | undefined): LocalScope[] => {
+  const active = activeAccountScope(connection);
+  return active ? ["local", active] : ["local"];
+};

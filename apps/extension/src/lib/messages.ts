@@ -48,14 +48,18 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("account.disconnect") }),
   // Sync now: upload queued changes, then download the account's changes (only once sync is on).
   z.object({ type: z.literal("sync.now") }),
+  // The user turned sync on (consent) and chose which of this browser's sessions move into the account.
+  z.object({ type: z.literal("sync.enable"), sessionIds: z.array(z.uuid()).max(10_000) }),
+  z.object({ type: z.literal("sync.disable") }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
 export interface CommandResults {
-  "session.capture": { sessionId: string; report: CaptureReport };
+  /** `syncing`: saved into the account (sync is on), so it uploads in the background. */
+  "session.capture": { sessionId: string; report: CaptureReport; syncing: boolean };
   "session.rename": { version: number };
   "session.delete": Record<string, never>;
-  "session.import": { sessionId: string; report: ImportReport };
+  "session.import": { sessionId: string; report: ImportReport; syncing: boolean };
   "restore.start": { job: RestoreJobRecord };
   "restore.retry": { job: RestoreJobRecord };
   "recovery.restore": { job: RestoreJobRecord };
@@ -72,6 +76,8 @@ export interface CommandResults {
   "account.check": AccountStatus;
   "account.disconnect": AccountStatus;
   "sync.now": SyncSummary;
+  "sync.enable": { enabledAt: string; moved: number };
+  "sync.disable": Record<string, never>;
 }
 
 export type ErrorCode =

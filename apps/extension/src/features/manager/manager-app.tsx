@@ -1,6 +1,7 @@
 import { CircleUser, History, Layers } from "lucide-react";
 import type { ReactNode } from "react";
-import { BrandMark, SyncStatusChip } from "../../components/brand";
+import { BrandMark } from "../../components/brand";
+import { SyncNote, SyncStatusChip } from "../../components/sync-status-chip";
 import { routeHref, useManagerRoute, type ManagerRoute } from "../../hooks/use-manager-route";
 import { AccountView } from "../account/account-view";
 import { RecoveryView } from "../recovery/recovery-view";
@@ -45,9 +46,7 @@ export function ManagerApp() {
         </nav>
         <div className="lg:mt-auto lg:space-y-2 lg:border-t lg:border-line lg:px-2 lg:pt-4">
           <SyncStatusChip />
-          <p className="hidden text-[11px] leading-relaxed text-fg-muted lg:block">
-            Saved in this browser only. Export important sessions to keep an independent backup.
-          </p>
+          <SyncNote />
         </div>
       </aside>
 

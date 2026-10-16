@@ -357,7 +357,7 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
 5. Up to 10 rounds per run. When the cap ends a run with operations still sendable (not held back), it arms the retry alarm at once to continue. Failures back off 5 s doubling to 15 minutes with jitter, or longer if `Retry-After` says so; the retry alarm (`sync-retry`) runs it again. Revocation stops it (the connection is removed; queued operations stay).
 6. Triggers: worker start (resends anything left `sending`), after a successful `session.rename` / `session.delete`, the retry alarm, and `sync.pushNow`. One run at a time per worker (in-memory single flight; safety comes from receipts, not from this).
 
-**Not yet:** conflict resolution UI (conflicting operations and the held server copy are both kept, 13g), the opt-in/upload preview that sets `enabledAt`, URL exclusions before upload (no exclusion settings exist yet).
+**Not yet:** conflict resolution UI (conflicting operations and the held server copy are both kept, 13g), URL exclusions before upload (no exclusion settings exist yet). The opt-in that sets `enabledAt` is 13h.
 
 ## 13g. Implemented: sync pull and bootstrap (2026-10-16)
 
@@ -396,6 +396,15 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 7. A pull never opens, closes or navigates tabs: it touches only IndexedDB (verified on both profiles of the two-profile E2E around every pull).
 
 **Local fields not stored:** description, workspace, pinned and archived stay on the server (an upload doesn't change them). Pulled sessions keep the server's `sourceDeviceId`/`sourceDeviceName`.
+
+## 13h. Implemented: opt-in, upload preview and sync status (2026-10-16)
+
+Extension only. Commands: `sync.enable { sessionIds }`, `sync.disable`, `sync.now`. Code: `apps/extension/src/lib/sync-consent.ts`, `session-repository.ts` (`saveNewSession`), `sync-runner.ts`; UI in `UI_UX_DESIGN.md` 18e.
+
+- `sync.enable` records consent (`enabledAt`, kept from the first time; the cursor and bootstrap progress are kept) and **moves** each chosen session that is still `local` into the account scope with a queued create, in one transaction. Ids that aren't this browser's sessions are skipped. It needs a connection with an account id.
+- `sync.disable` only clears `enabledAt`: uploads and downloads stop (the gate in 13f/13g), nothing is deleted, queued changes wait.
+- While sync is on, `session.capture` and `session.import` save into the account scope with a queued create; their results carry `syncing: true`.
+- The worker runs a sync after `session.capture`, `session.import`, `session.rename`, `session.delete` and `sync.enable`. A sync requested while a run is in progress gets **one follow-up run right after it**, shared by everyone who asked meanwhile. Joining the running run instead would miss a change made after that run's upload (found by the real-extension E2E: a rename waited for the 10-minute alarm).
 
 ## 14. References
 

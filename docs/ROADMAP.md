@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M2 and M3 done; M0 and M1 each have one open item; M4 in progress (8 of 10: open are conflict handling UI and the sync status UX); M5 and M6 not started (verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M2 and M3 done; M0 and M1 each have one open item; M4 in progress (9 of 10: open is conflict review, the last part of conflict handling); M5 and M6 not started (verified 2026-10-16). See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -73,7 +73,7 @@ flowchart LR
 - [x] Implement paginated `/api/v1/sync/pull` with safe cursors. (2026-10-16: HMAC-bound cursors, `CURSOR_EXPIRED` + `/sync/bootstrap`)
 - [x] Add offline backoff, worker restart continuation, pull echo reconciliation. (2026-10-16: shared backoff with Retry-After; `sending` resent and bootstrap resumed after a worker restart; own echoes ignored, held server copies settled after acceptance)
 - [ ] Handle versions/tombstones/conflicts and preserve both copies when needed. (storage done 2026-10-16: tombstones never undone, conflicts keep the local operation and the server copy; review/resolve UI pending)
-- [ ] UX states for local-only/pending/synced/error/conflict.
+- [x] UX states for local-only/pending/synced/error/conflict. (2026-10-16: status chip, per-session labels, Account view sync card with opt-in and upload preview; UI_UX_DESIGN.md 18e)
 - [x] Two distinct profile test: Windows-origin session appears on Mac simulation. (`apps/web/e2e/sync-two-profiles.spec.ts`: create, rename and delete across two real extension profiles)
 - [x] Test browser actions are never executed on source/remote device without local confirmation. (same spec: tab URLs unchanged on the receiving profile around every pull; pull code has no browser access)
 

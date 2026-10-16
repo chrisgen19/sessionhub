@@ -18,6 +18,7 @@ import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
 import type { SyncDeps } from "./sync-gate";
+import { disableSync, enableSync, SyncUnavailableError } from "./sync-consent";
 import { syncNow } from "./sync-runner";
 import { getSnapshot } from "./recovery-repository";
 import { isQuotaError, RestoreRecordingError, STORAGE_FULL_HINT } from "./storage-errors";
@@ -32,10 +33,9 @@ import {
   RestoreJobNotRetryableError,
 } from "./restore-job-repository";
 import {
-  addSession,
   deleteSession,
   getSession,
-  putSession,
+  saveNewSession,
   SessionExistsError,
   SessionNotFoundError,
   updateSession,
@@ -85,6 +85,8 @@ const NOT_DONE: Record<Command["type"], string> = {
   "account.check": "the connection couldn't be checked",
   "account.disconnect": "this browser wasn't disconnected",
   "sync.now": "nothing was synced",
+  "sync.enable": "sync wasn't turned on and nothing was moved",
+  "sync.disable": "sync wasn't turned off",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
@@ -97,7 +99,7 @@ const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse
     return fail("invalid-input", error.message);
   }
   if (error instanceof BrowserError) return fail("browser-error", error.message);
-  if (error instanceof AccountApiError) return fail("account-error", error.message);
+  if (error instanceof AccountApiError || error instanceof SyncUnavailableError) return fail("account-error", error.message);
   return fail("storage-error", error instanceof Error ? error.message : "Unexpected error");
 };
 
@@ -112,8 +114,8 @@ const capture = async (command: Extract<Command, { type: "session.capture" }>, d
     createId: deps.createId,
   });
   if (report.tabCount === 0) throw new BrowserError("There are no tabs to save in this window");
-  await putSession(deps.db, session);
-  return { sessionId: session.id, report };
+  const scope = await saveNewSession(deps.db, session, { now, createId: deps.createId }, { replace: true });
+  return { sessionId: session.id, report, syncing: scope !== "local" };
 };
 
 /** Re-validates untrusted file text and inserts it as a brand-new session (never an overwrite). */
@@ -122,8 +124,8 @@ const importSession = async (command: Extract<Command, { type: "session.import" 
     now: deps.now(),
     createId: deps.createId,
   });
-  await addSession(deps.db, session);
-  return { sessionId: session.id, report };
+  const scope = await saveNewSession(deps.db, session, { now: deps.now(), createId: deps.createId });
+  return { sessionId: session.id, report, syncing: scope !== "local" };
 };
 
 /**
@@ -260,6 +262,11 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
       }
       case "sync.now":
         return { ok: true, data: await syncNow(toSyncDeps(deps), { force: true }) };
+      case "sync.enable":
+        return { ok: true, data: await enableSync(deps.db, command.sessionIds, { now: deps.now(), createId: deps.createId }) };
+      case "sync.disable":
+        await disableSync(deps.db);
+        return { ok: true, data: {} };
       default:
         return await runAccountCommand(command, deps);
     }

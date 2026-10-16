@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createPrismaClient } from "@sessionhub/database/client";
 import { launchWithExtension } from "./extension";
 import { randomIp, signUp } from "./pairing-flow";
-import { connectExtension, enableSync, localSession, readStore, sendCommand, signInProfile } from "./sync-flow";
+import { captureAllWindows, connectExtension, readStore, sendCommand, signInProfile, turnOnSync } from "./sync-flow";
 
 const prisma = createPrismaClient(process.env.TEST_DATABASE_URL);
 test.afterAll(async () => {
@@ -25,25 +25,30 @@ test("a session saved in one profile appears in another; edits and deletes follo
     expect(user.devices).toHaveLength(2);
     const scope = `account:${user.id}`;
 
-    const session = localSession("Saved on Windows");
-    await enableSync(onWindows, scope, session);
-    await enableSync(onMac, scope);
-    expect(await sendCommand(onWindows, { type: "sync.now" })).toMatchObject({ ok: true, data: { push: { status: "done", accepted: 1 } } });
+    // Windows saves its open tabs, then turns sync on and uploads them from the preview.
+    const sessionId = await captureAllWindows(onWindows);
+    const session = { id: sessionId };
+    await sendCommand(onWindows, { type: "session.rename", sessionId, expectedVersion: 1, name: "Saved on Windows" });
+    await turnOnSync(onWindows, windows.extensionId, 1);
+    await expect.poll(async () => (await prisma.savedSession.findUnique({ where: { id: sessionId } }))?.name, { timeout: 15_000 }).toBe("Saved on Windows");
 
-    // Every download below runs through this: it must never open, close or navigate a tab.
+    // Every download below must never open, close or navigate a tab.
     const syncWithoutTabChanges = async (profile: typeof mac, manager: typeof onMac) => {
       const before = profile.context.pages().map((page) => page.url());
       const response = await sendCommand(manager, { type: "sync.now" });
       expect(profile.context.pages().map((page) => page.url())).toEqual(before);
       return response;
     };
-
-    // The Mac downloads it into its account scope.
-    expect(await syncWithoutTabChanges(mac, onMac)).toMatchObject({ ok: true, data: { pull: { status: "done", applied: 1, bootstrapped: true } } });
     const sessionOn = async (manager: typeof onMac) => (await readStore<Stored>(manager, "sessions")).find((stored) => stored.id === session.id);
-    expect(await sessionOn(onMac)).toMatchObject({ name: "Saved on Windows", scope, sync: { serverVersion: 1, state: "synced" } });
+
+    // The Mac turns sync on (nothing local to upload) and downloads it into its account scope.
+    const macTabs = mac.context.pages().map((page) => page.url());
+    await turnOnSync(onMac, mac.extensionId, 0);
+    await expect.poll(async () => (await sessionOn(onMac))?.sync?.state, { timeout: 15_000 }).toBe("synced");
+    expect(mac.context.pages().map((page) => page.url())).toEqual(macTabs);
+    expect(await sessionOn(onMac)).toMatchObject({ name: "Saved on Windows", scope, sync: { serverVersion: 1 } });
     await onMac.goto(`chrome-extension://${mac.extensionId}/manager.html`);
-    await expect(onMac.getByRole("button", { name: /Saved on Windows/ })).toBeVisible();
+    await expect(onMac.getByRole("button", { name: /Saved on Windows/ })).toContainText("Synced");
 
     // Renamed on the Mac: the worker uploads it; Windows pulls the new name.
     const macCopy = (await sessionOn(onMac))!;

@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) in progress: **pairing, local account scope and outbox, push and pull done; a session syncs between two real profiles**. Left: opt-in/upload preview, sync status UI, conflict review. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) nearly done: **pairing, outbox, push, pull, opt-in with upload preview and sync status UI work; two real profiles sync through the real UI**. Left: conflict review. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -14,10 +14,10 @@
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
-| Sync | **Upload and download work end to end** (two-profile E2E): outbox and tombstones (Dexie v4), `serverCopies` (v5); `POST /api/v1/sync/push` with receipts, `GET /api/v1/sync/pull` with HMAC-bound cursors, `GET /api/v1/sync/bootstrap`; `packages/sync` reconciliation rules; extension `sync.now` (push then pull), backoff, retry and 10-minute alarms. Gated on local consent (`syncState.enabledAt`), which no UI sets yet, so nothing syncs in normal use. No conflict review or sync status UI |
+| Sync | **Works end to end from the UI** (two-profile E2E): the opt-in (Account view: disclosure, upload preview with every local session ticked, chosen sessions move into the account), `sync.now`, status chip and per-session labels; new saves and imports go to the account while sync is on; push with receipts, pull with HMAC cursors, bootstrap, `packages/sync` rules. No conflict review UI yet (both versions are kept) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (base `feature/m4-local-outbox`, `236b64a`, CI green). **`feature/m4-sync-pull`** (off #7, uncommitted at the end of the 2026-10-16 pull session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (`236b64a`, CI green), #8 **`feature/m4-sync-pull`** (`13b468b`, CI green). **`feature/m4-sync-ui`** (off #8, uncommitted at the end of the 2026-10-16 sync UI session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -133,6 +133,43 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M4 sync opt-in and status UI slice) / Claude Code (Opus 5.5) / `feature/m4-sync-ui` (macOS laptop)
+
+**Goal:** opt-in + upload preview + sync status UI: replace the hardcoded "Local only", set `syncState.enabledAt`, Sync now (user's scope). User's decisions: uploads **move** chosen sessions into the account; the preview starts with **all** local sessions ticked. Recorded in SYSTEM_DESIGN.md 14.
+
+**Implemented:**
+
+- Extension worker:
+  - `sync-consent.ts`: `enableSync` (consent + move with queued creates, one transaction; keeps the cursor) and `disableSync`.
+  - `session-repository.ts`: `saveNewSession` (capture and import go to the account while sync is on) and `listSessionsWithSync`.
+  - Commands `sync.enable` / `sync.disable`; `syncing` in the capture and import results.
+  - `sync-runner.ts` queues one follow-up run for requests that arrive mid-run (bug found by E2E).
+  - `lastErrorCode` for Offline; `account-scope.ts` `activeAccountScope`.
+- Status: `lib/sync-status.ts` (row labels, overview, Sync now text; pure), `lib/sync-overview.ts`, `hooks/use-sync.ts`, `use-sessions.ts` (labels).
+- UI:
+  - `components/sync-status-chip.tsx` (chip, sidebar note, per-session badge)
+  - `features/account/sync-section.tsx`, `upload-preview.tsx`
+  - Account view copy updated
+  - row status on its own line (manager) / in the meta line (popup)
+  - inspector badge
+  - delete dialog copy for account sessions
+  - popup save text
+- E2E: `sync-flow.ts` now drives the real UI (`captureAllWindows`, `turnOnSync`) instead of seeding IndexedDB; `sync-push.spec.ts` and `sync-two-profiles.spec.ts` rewritten on it; `pairing.spec.ts` copy updated.
+- Docs: UI_UX_DESIGN 18e (new), SYNC_PROTOCOL 13h (new), DATA_MODEL, SECURITY_PRIVACY section 10 (two release checks ticked with evidence), SYSTEM_DESIGN 14 (five rows), ROADMAP, README.
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit):**
+
+- `pnpm check --force`: **pass** (17 tasks). Extension **159** (+15: 7 status, 5 consent and save routing, 1 runner follow-up, 2 RTL opt-in/labels).
+- `pnpm build`: **pass**.
+- Web DB tests **47/47**.
+- Sync and pairing E2E: **12/12** over `--repeat-each 2`. The real UI opt-in on two profiles: Windows captures and uploads via the preview, the Mac turns sync on with nothing to upload and downloads it (tab URLs unchanged), then rename and delete follow both ways. Also a new save while sync is on uploads by itself.
+- Full web E2E **37/38**, extension E2E **8/9**: only the two pre-existing macOS failures.
+- Layout: Account view (off and on), upload preview, session list and popup at 390 and 1280 px (and dark mode at 390 px) via a scratch Playwright script against the real build: no horizontal overflow; screenshots reviewed. Two things found and fixed:
+  - narrow rows truncated the status away
+  - a stale chip, which was an artifact of the script writing IndexedDB outside Dexie; reloading confirmed the chip is correct
+
+**Known gaps:** no conflict review (Needs review explains both versions are kept); no first-run sync banner in the popup; no Settings page or URL exclusions; no per-row "Syncing..." state.
 
 ### 2026-10-16 (M4 sync pull slice) / Claude Code (Opus 5.5) / `feature/m4-sync-pull` (macOS laptop)
 
@@ -633,9 +670,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push `feature/m4-sync-pull`, open its PR on top of #7. The stack merges in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
-2. M4 next slice: opt-in + upload preview + sync status UI (UI_UX_DESIGN.md section 13 states): the consent step that sets `syncState.enabledAt` (with the SECURITY_PRIVACY.md disclosure copy), choosing local sessions to upload (copy or move: decide with the user), per-session status instead of the hardcoded "Local only", a "Sync now" action, last sync time and errors.
-3. Then conflict review (keep mine / keep server / save both) using the held server copy and the conflicting operation.
+1. Commit and push `feature/m4-sync-ui`, open its PR on top of #8. The stack merges in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+2. Last M4 item: conflict review (SYNC_PROTOCOL.md section 9). For a session in `conflict`/`error`, show mine vs the server copy (`serverCopies`) and offer keep mine (re-queue on the server version), keep server (apply the copy, drop the operations), or save both (the local version as a new session with a new id). Then M4 is done.
+3. Then M5 (side panel, workspaces in the extension, etc.) or M6 hardening, by the user's priority.
 4. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures.
 
 ## Open questions / architecture validations

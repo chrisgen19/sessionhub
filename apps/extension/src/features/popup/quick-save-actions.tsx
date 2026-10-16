@@ -9,12 +9,13 @@ type SaveScope = "window" | "all-windows";
 type SaveState =
   | { status: "idle" }
   | { status: "saving"; scope: SaveScope }
-  | { status: "saved"; report: CaptureReport }
+  | { status: "saved"; report: CaptureReport; syncing: boolean }
   | { status: "error"; scope: SaveScope; message: string };
 
-const savedMessage = (report: CaptureReport) => {
+const savedMessage = (report: CaptureReport, syncing: boolean) => {
   const skipped = Object.values(report.notRestorable).reduce((sum, count) => sum + count, 0);
-  const base = `Saved locally: ${plural(report.tabCount, "tab")} in ${plural(report.windowCount, "window")}.`;
+  const counts = `${plural(report.tabCount, "tab")} in ${plural(report.windowCount, "window")}`;
+  const base = syncing ? `Saved: ${counts}. It will sync to your account.` : `Saved locally: ${counts}.`;
   return skipped > 0 ? `${base} ${plural(skipped, "browser page")} saved as reference only.` : base;
 };
 
@@ -46,7 +47,7 @@ export function QuickSaveActions() {
     });
     setState(
       response.ok
-        ? { status: "saved", report: response.data.report }
+        ? { status: "saved", report: response.data.report, syncing: response.data.syncing }
         : { status: "error", scope, message: response.error.message },
     );
   };
@@ -76,7 +77,7 @@ export function QuickSaveActions() {
       </div>
       <div aria-live="polite" className="min-h-0">
         {state.status === "saved" && (
-          <p className="mt-2 rounded-lg bg-brand-soft px-3 py-2 text-xs font-medium text-brand">{savedMessage(state.report)}</p>
+          <p className="mt-2 rounded-lg bg-brand-soft px-3 py-2 text-xs font-medium text-brand">{savedMessage(state.report, state.syncing)}</p>
         )}
         {state.status === "error" && (
           <p role="alert" className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">

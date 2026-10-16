@@ -66,7 +66,7 @@ export function useAccount() {
     setBusy(action);
     setMessage(null);
     const type = action === "connect" ? "account.connect" : action === "cancel" ? "account.cancel" : "account.disconnect";
-    apply(await sendCommand({ type }), action === "disconnect" ? "Disconnected. Sessions saved in this browser are still here." : undefined);
+    apply(await sendCommand({ type }), action === "disconnect" ? "Disconnected. Sessions saved only in this browser are still here; your account's sessions come back when you connect again." : undefined);
     setBusy(null);
   }, []);
 

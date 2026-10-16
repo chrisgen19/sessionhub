@@ -55,7 +55,7 @@ export const recordFailure = async (deps: SyncDeps, scope: AccountScope, error: 
   const failures = ((await deps.db.syncState.get(scope))?.failures ?? 0) + 1;
   const retryAfterMs = error.retryAfterSeconds ? error.retryAfterSeconds * 1000 : 0;
   const retryAt = new Date(deps.now().getTime() + Math.max(retryDelayMs(failures, deps.random), retryAfterMs));
-  await deps.db.syncState.update(scope, { failures, nextAttemptAt: retryAt.toISOString(), lastError: error.message });
+  await deps.db.syncState.update(scope, { failures, nextAttemptAt: retryAt.toISOString(), lastError: error.message, lastErrorCode: error.code });
   await deps.scheduleRetry(retryAt).catch(() => undefined);
   return { status: "error", message: error.message, retryAt: retryAt.toISOString() };
 };
@@ -65,5 +65,5 @@ export const recordFailure = async (deps: SyncDeps, scope: AccountScope, error: 
  * step, calls it: if the push cleared it, a pull that keeps failing would never back off further.
  */
 export const recordSuccess = async (deps: SyncDeps, scope: AccountScope): Promise<void> => {
-  await deps.db.syncState.update(scope, { failures: 0, nextAttemptAt: null, lastError: null, lastSyncAt: deps.now().toISOString() });
+  await deps.db.syncState.update(scope, { failures: 0, nextAttemptAt: null, lastError: null, lastErrorCode: null, lastSyncAt: deps.now().toISOString() });
 };
