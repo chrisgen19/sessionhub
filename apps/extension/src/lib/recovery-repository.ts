@@ -84,3 +84,17 @@ export const listSnapshots = (db: SessionHubDb): Promise<RecoverySnapshotRecord[
 
 export const getSnapshot = (db: SessionHubDb, id: string): Promise<RecoverySnapshotRecord | undefined> =>
   db.recoverySnapshots.get(id);
+
+/**
+ * Emergency eviction after a quota failure: shrinks checkpoints to half, still keeping
+ * the newest and the largest recent one (selectSnapshotsToEvict's protections).
+ * Returns how many were removed; 0 means there was nothing safe to remove.
+ */
+export const freeCheckpointSpace = (db: SessionHubDb, now: Date): Promise<number> =>
+  db.transaction("rw", db.recoverySnapshots, async () => {
+    const metas = await snapshotMetas(db);
+    const policy = { maxCount: Math.max(1, Math.floor(metas.length / 2)), maxAgeDays: RECOVERY_RETENTION.maxAgeDays };
+    const evict = selectSnapshotsToEvict(metas, now, policy);
+    await db.recoverySnapshots.bulkDelete(evict);
+    return evict.length;
+  });

@@ -4,12 +4,50 @@ import { fingerprintCapture } from "@sessionhub/core/recovery";
 import type { HandlerDeps } from "./command-handlers";
 import type { RecoverySnapshotRecord } from "./db";
 import { getOrCreateDevice } from "./device-repository";
-import { commitCheckpoint, getRecoveryState, recordRecoveryError, type CheckpointOutcome } from "./recovery-repository";
+import {
+  commitCheckpoint,
+  freeCheckpointSpace,
+  getRecoveryState,
+  recordRecoveryError,
+  type CheckpointOutcome,
+  type CommitCheckpointInput,
+} from "./recovery-repository";
+import { isQuotaError } from "./storage-errors";
+
+class CheckpointStorageFullError extends Error {
+  override name = "CheckpointStorageFullError";
+  constructor(cause: unknown) {
+    super(
+      "Storage for SessionHub is full, so this checkpoint wasn't saved. Earlier checkpoints are kept. Delete or export sessions you no longer need.",
+      { cause },
+    );
+  }
+}
 
 export type CheckpointResult =
   | { status: "clean" }
-  | { status: CheckpointOutcome; snapshotId: string | null; stillDirty: boolean }
-  | { status: "error"; message: string };
+  | { status: CheckpointOutcome; snapshotId: string | null; stillDirty: boolean; freedForSpace: number }
+  | { status: "error"; message: string; storageFull: boolean };
+
+/**
+ * Commits a checkpoint; if storage is full, evicts older checkpoints (never the newest
+ * or largest recent one) and retries exactly once. The failed attempt's transaction
+ * aborted, so it removed nothing on its own.
+ */
+const commitWithSpaceRecovery = async (db: Parameters<typeof commitCheckpoint>[0], input: CommitCheckpointInput) => {
+  try {
+    return { committed: await commitCheckpoint(db, input), freedForSpace: 0 };
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    const freedForSpace = await freeCheckpointSpace(db, input.startedAt);
+    if (freedForSpace === 0) throw new CheckpointStorageFullError(error);
+    try {
+      return { committed: await commitCheckpoint(db, input), freedForSpace };
+    } catch (retryError) {
+      throw isQuotaError(retryError) ? new CheckpointStorageFullError(retryError) : retryError;
+    }
+  }
+};
 
 /**
  * Takes a recovery checkpoint of all normal windows. Automatic runs (`force: false`)
@@ -44,12 +82,13 @@ export const runCheckpoint = async (
             tabCount: report.tabCount,
             session,
           };
-    const { outcome, stillDirty } = await commitCheckpoint(deps.db, { snapshot, fingerprint, startedAt });
-    return { status: outcome, snapshotId: outcome === "created" ? session.id : null, stillDirty };
+    const { committed, freedForSpace } = await commitWithSpaceRecovery(deps.db, { snapshot, fingerprint, startedAt });
+    const { outcome, stillDirty } = committed;
+    return { status: outcome, snapshotId: outcome === "created" ? session.id : null, stillDirty, freedForSpace };
   } catch (error) {
     const message =
       error instanceof CaptureLimitError ? error.message : error instanceof Error ? error.message : "Checkpoint failed";
     await recordRecoveryError(deps.db, message).catch(() => undefined);
-    return { status: "error", message };
+    return { status: "error", message, storageFull: error instanceof CheckpointStorageFullError };
   }
 };

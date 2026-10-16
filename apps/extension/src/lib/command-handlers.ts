@@ -8,6 +8,7 @@ import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
 import { getSnapshot } from "./recovery-repository";
+import { isQuotaError, RestoreRecordingError, STORAGE_FULL_HINT } from "./storage-errors";
 import { commandSchema, type Command, type CommandResponse, type ErrorCode } from "./messages";
 import {
   appendRestoreOutcomes,
@@ -45,7 +46,21 @@ export class BrowserError extends Error {
 
 const fail = (code: ErrorCode, message: string): CommandResponse => ({ ok: false, error: { code, message } });
 
-const toErrorResponse = (error: unknown): CommandResponse => {
+/** What a quota failure means for each command (nothing was written in every case). */
+const NOT_DONE: Record<Command["type"], string> = {
+  "session.capture": "this wasn't saved",
+  "session.rename": "the new name wasn't saved",
+  "session.delete": "nothing was deleted",
+  "session.import": "this file wasn't imported",
+  "restore.start": "the restore couldn't start and nothing was opened",
+  "restore.retry": "the retry couldn't start and nothing was opened",
+  "recovery.restore": "the restore couldn't start and nothing was opened",
+  "recovery.checkpointNow": "the checkpoint wasn't saved",
+};
+
+const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
+  if (error instanceof RestoreRecordingError) return fail("storage-full", error.message);
+  if (isQuotaError(error)) return fail("storage-full", `Storage for SessionHub is full, so ${NOT_DONE[type]}. ${STORAGE_FULL_HINT}`);
   if (error instanceof VersionConflictError || error instanceof SessionExistsError) return fail("conflict", error.message);
   if (error instanceof SessionNotFoundError || error instanceof RestoreJobNotFoundError) return fail("not-found", error.message);
   if (error instanceof RestoreJobNotRetryableError) return fail("conflict", error.message);
@@ -94,11 +109,16 @@ const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps
       await appendRestoreOutcomes(deps.db, jobId, outcomes, deps.now());
     }
   } catch (error) {
-    failure = error;
+    // Once a window has been opened, a full disk means its outcome couldn't be recorded:
+    // stop opening more windows and say so, rather than claiming nothing happened.
+    failure = isQuotaError(error) ? new RestoreRecordingError() : error;
   }
-  const job = await finishRestoreJob(deps.db, jobId, deps.now());
-  if (failure) throw failure;
-  return job;
+  if (failure) {
+    // Best effort: settling may fail for the same reason; keep the original error.
+    await finishRestoreJob(deps.db, jobId, deps.now()).catch(() => undefined);
+    throw failure;
+  }
+  return finishRestoreJob(deps.db, jobId, deps.now());
 };
 
 const restoreFrom = async (session: SavedSession, tabIds: string[] | undefined, deps: HandlerDeps) => {
@@ -154,11 +174,14 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         return { ok: true, data: await restoreCheckpoint(command, deps) };
       case "recovery.checkpointNow": {
         const result = await runCheckpoint(deps, { force: true, reason: "manual" });
-        if (result.status === "error") return fail("browser-error", result.message);
-        return { ok: true, data: { status: result.status, snapshotId: "snapshotId" in result ? result.snapshotId : null } };
+        if (result.status === "error") {
+          return fail(result.storageFull ? "storage-full" : "browser-error", result.message);
+        }
+        if (result.status === "clean") return { ok: true, data: { status: "clean", snapshotId: null, freedForSpace: 0 } };
+        return { ok: true, data: { status: result.status, snapshotId: result.snapshotId, freedForSpace: result.freedForSpace } };
       }
     }
   } catch (error) {
-    return toErrorResponse(error);
+    return toErrorResponse(error, command.type);
   }
 };

@@ -84,7 +84,7 @@ export function RestoreSummary({ session, job, retrying, retryError, onRetry, on
       )}
       {retryError && (
         <p role="alert" className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
-          Retry didn't start: {retryError}
+          Retry stopped: {retryError}
         </p>
       )}
       <DialogActions>

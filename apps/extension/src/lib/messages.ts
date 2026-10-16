@@ -48,10 +48,23 @@ export interface CommandResults {
   "restore.start": { job: RestoreJobRecord };
   "restore.retry": { job: RestoreJobRecord };
   "recovery.restore": { job: RestoreJobRecord };
-  "recovery.checkpointNow": { status: "created" | "unchanged" | "empty" | "clean"; snapshotId: string | null };
+  "recovery.checkpointNow": {
+    status: "created" | "unchanged" | "empty" | "clean";
+    snapshotId: string | null;
+    /** Older checkpoints removed because storage was full. */
+    freedForSpace: number;
+  };
 }
 
-export type ErrorCode = "invalid-command" | "not-found" | "conflict" | "invalid-input" | "browser-error" | "storage-error";
+export type ErrorCode =
+  | "invalid-command"
+  | "not-found"
+  | "conflict"
+  | "invalid-input"
+  | "browser-error"
+  | "storage-error"
+  /** IndexedDB quota exhausted; the message says what did and didn't happen. */
+  | "storage-full";
 
 export type CommandResponse<T extends Command["type"] = Command["type"]> =
   | { ok: true; data: CommandResults[T] }

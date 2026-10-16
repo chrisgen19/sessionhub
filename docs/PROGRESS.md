@@ -14,11 +14,32 @@
 | Web app | Static landing page + `GET /api/health` only. No auth, DB or dashboard |
 | Database / auth / sync | Not implemented (`packages/database`, `packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery. The housekeeping slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping. The quota slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (sixth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** M2 quota-failure handling (catch `QuotaExceededError` on save/import/checkpoint, specific message, evict extra old checkpoints and retry once while protecting the newest).
+
+**Implemented:**
+
+- `apps/extension/src/lib/storage-errors.ts`: `isQuotaError` (name, legacy code 22, `inner`, `cause`, bulk `failures`, depth-limited), `RestoreRecordingError`.
+- `command-handlers.ts`: `storage-full` error code with per-command "so X didn't happen" messages; `runRestoreJob` stops at the first unrecordable window and keeps the original error even if settling fails too.
+- `recovery-repository.ts` `freeCheckpointSpace`; `recovery-checkpoint.ts` evict-and-retry-once with a typed storage-full error; `recovery.checkpointNow` returns `freedForSpace`.
+- UI: Recovery notice for freed space; "Restore stopped:" / "Retry stopped:" prefixes; no duplicated checkpoint error.
+
+**Validated commands and results (final run after last code change):**
+
+- `pnpm check --force`: **pass** (12 tasks). Tests: contracts 8, core 81, extension 84 (+10 detection, +9 quota handling, +3 quota UI), web 1.
+- `pnpm build --force`: **pass**. E2E: **9/9 pass** (regression; no new E2E, see below).
+
+**Not verified in a real browser:** a genuine quota failure. `Storage.overrideQuotaForOrigin` via CDP is **not enforced** for the extension's IndexedDB in Chromium 156: with a 1-byte override, three saves, a ~1 MB import and a checkpoint all succeeded. Quota behavior is covered only by unit/UI tests that inject `Dexie.QuotaExceededError` at the exact write points. A manual check on a nearly full disk, or a different enforcement mechanism, is still needed.
+
+**Known gaps:** no storage usage display; no explicit "free space" action; if a restore job's outcome write fails, the tabs of that window are open but unrecorded (the message says so).
+
 
 ### 2026-10-16 (fifth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -162,10 +183,8 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the housekeeping slice (needs the user's go-ahead); push a remote so CI runs for the first time.
-2. Finish M2:
-   1. Quota-failure handling: catch `QuotaExceededError` on save/import/checkpoint, show a specific message, and for checkpoints evict extra old snapshots and retry once while still protecting the newest.
-   2. Large live-browser test (100+ tabs) for capture, checkpoint and restore timing; record numbers in this file.
+1. Commit the quota slice (needs the user's go-ahead); push a remote so CI runs for the first time.
+2. Finish M2: large live-browser test (100+ tabs across several windows) for capture, checkpoint and restore timing; record the numbers here and set baselines in `TEST_PLAN.md`.
 3. Then M3 (PostgreSQL, Prisma 7.x stable, Better Auth).
 
 ## Open questions / architecture validations
@@ -173,7 +192,7 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - Confirm extension auth implementation that satisfies current Better Auth and Chrome policies.
 - Recovery retention is 50 checkpoints / 7 days for now; revisit after quota benchmarks.
 - Decide use of browser-to-extension external messaging only after threat review.
-- Should capture skip SessionHub's own extension pages entirely?
+- Should a manual save/import be allowed to delete old recovery checkpoints when storage is full (currently: no, it only reports)?
 - Resolved this session: URL classification policy is now in code and tests (`packages/core/src/url-classification.ts`); WXT entrypoint names are `background`, `popup`, `manager` (builds `manager.html`).
 
 ## Session handoff template — update after every coding session

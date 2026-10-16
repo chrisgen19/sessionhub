@@ -10,6 +10,11 @@ import { CheckpointList } from "./checkpoint-list";
 
 const RESULT_TEXT = { created: "Checkpoint saved.", unchanged: "Nothing changed since the last checkpoint.", empty: "No tabs to save.", clean: "" };
 
+const resultText = (data: { status: keyof typeof RESULT_TEXT; freedForSpace: number }) =>
+  data.freedForSpace > 0
+    ? `${RESULT_TEXT[data.status]} Storage was full, so ${data.freedForSpace} older checkpoint${data.freedForSpace === 1 ? " was" : "s were"} removed to make room.`
+    : RESULT_TEXT[data.status];
+
 export function RecoveryView({ snapshotId, onSelect }: { snapshotId: string | null; onSelect: (id: string | null) => void }) {
   const { data, retry } = useRecovery();
   const [taking, setTaking] = useState(false);
@@ -20,7 +25,7 @@ export function RecoveryView({ snapshotId, onSelect }: { snapshotId: string | nu
     setTaking(true);
     const response = await sendCommand({ type: "recovery.checkpointNow" });
     setTaking(false);
-    setNotice(response.ok ? { tone: "ok", text: RESULT_TEXT[response.data.status] } : { tone: "error", text: response.error.message });
+    setNotice(response.ok ? { tone: "ok", text: resultText(response.data) } : { tone: "error", text: response.error.message });
   };
 
   const list = (
@@ -41,9 +46,9 @@ export function RecoveryView({ snapshotId, onSelect }: { snapshotId: string | nu
           {data.status === "ready" && data.state.lastSnapshotAt && (
             <p className="text-fg-muted">Last checkpoint: {formatListDate(data.state.lastSnapshotAt)}</p>
           )}
-          {data.status === "ready" && data.state.lastError && (
+          {data.status === "ready" && data.state.lastError && notice?.tone !== "error" && (
             <p className="flex items-center gap-1.5 text-warning">
-              <AlertTriangle aria-hidden="true" className="size-3.5" /> Last automatic checkpoint failed: {data.state.lastError}
+              <AlertTriangle aria-hidden="true" className="size-3.5" /> Last checkpoint failed: {data.state.lastError}
             </p>
           )}
           {notice && <p className={notice.tone === "ok" ? "text-brand" : "text-danger"}>{notice.text}</p>}

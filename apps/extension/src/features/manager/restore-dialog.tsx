@@ -122,7 +122,7 @@ export function RestoreDialog({ session, kind = "session", onClose }: RestoreDia
       {phase.name === "error" && (
         <>
           <p role="alert" className="mt-5 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">
-            Restore didn't start: {phase.message}
+            Restore stopped: {phase.message}
           </p>
           <DialogActions>
             <button type="button" className={buttonClass.secondary} onClick={onClose}>

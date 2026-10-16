@@ -88,7 +88,7 @@ describe("automatic checkpoints", () => {
   it("records errors and clears them after the next success", async () => {
     const deps = makeDeps({ readWindows: vi.fn(async () => Promise.reject(new Error("tabs API unavailable"))) });
     await markRecoveryDirty(deps.db, tick());
-    expect(await automatic(deps)).toEqual({ status: "error", message: "tabs API unavailable" });
+    expect(await automatic(deps)).toEqual({ status: "error", message: "tabs API unavailable", storageFull: false });
     expect(await getRecoveryState(deps.db)).toMatchObject({ dirty: true, lastError: "tabs API unavailable" });
 
     deps.readWindows = vi.fn(async () => sampleWindows());
