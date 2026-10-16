@@ -87,7 +87,7 @@ describe("update and delete", () => {
       await updateSession(prisma, user.id, detail.id, { expectedVersion: 1, name: "Stale edit" });
       expect.unreachable();
     } catch (error) {
-      expect(error).toMatchObject({ code: "VERSION_CONFLICT", conflict: { expectedVersion: 1, serverVersion: 2, serverState: { isPinned: true } } });
+      expect(error).toMatchObject({ code: "VERSION_CONFLICT", details: { expectedVersion: 1, serverVersion: 2, serverState: { isPinned: true } } });
     }
     expect(await clock(user.id)).toBe(2n);
     expect((await getSessionDetail(prisma, user.id, detail.id))?.name).toBe("Research");

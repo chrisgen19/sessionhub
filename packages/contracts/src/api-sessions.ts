@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { apiWorkspaceSchema } from "./api-workspaces";
 import { SESSION_LIMITS, savedWindowSchema, tabGroupColorSchema } from "./session";
 
 /**
@@ -135,6 +136,8 @@ export const apiErrorCodeSchema = z.enum([
   "INVALID_WORKSPACE",
   "VERSION_CONFLICT",
   "ID_IN_USE",
+  "WORKSPACE_NOT_EMPTY",
+  "LIMIT_REACHED",
   "RATE_LIMITED",
   "INTERNAL_ERROR",
 ]);
@@ -149,7 +152,9 @@ export const apiErrorResponseSchema = z.object({
     /** VERSION_CONFLICT only: the canonical server state the client should reconcile with. */
     expectedVersion: z.int().optional(),
     serverVersion: z.int().optional(),
-    serverState: apiSessionDetailSchema.nullable().optional(),
+    serverState: z.union([apiSessionDetailSchema, apiWorkspaceSchema]).nullable().optional(),
+    /** WORKSPACE_NOT_EMPTY only: live sessions still in the workspace. */
+    sessionCount: z.int().nonnegative().optional(),
     /** RATE_LIMITED only: same value as the Retry-After header. */
     retryAfterSeconds: z.int().positive().optional(),
   }),

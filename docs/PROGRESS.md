@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth with password reset and email confirmation, dashboard shell, saved-session API (rate-limited writes), session detail page and production Docker image + compose stack done. Workspace and device APIs pending. M2 complete.
+> **Current milestone:** M3 (backend, web account) **complete**: database package, email/password auth with password reset and email confirmation, dashboard shell, session/workspace/device APIs (rate-limited writes), session detail page and production Docker image + compose stack. Next: M4 (cross-device sync). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -11,12 +11,12 @@
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
-| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** CRUD with versions, tombstones and change log; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
+| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
+| Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces and devices |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`, PR #1). `check` job **passes** on PR #1 (after `3ec6bfc`). New `docker` job (`pnpm test:docker`) added on `feature/m3-web-docker`, **not yet run on GitHub** |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. `feature/m1-monorepo-local-slice` (PR #1 into `main`) ends with the checkpoint eviction fix. `feature/m3-web-docker` (PR #2) is stacked on it: the Docker slice and the compose auth URL fix are committed there |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). `check` job **passed** on PR #1 (after `3ec6bfc`). The `docker` job (PR #2) and the Mailpit service in `check` (PR #3) are verified locally; their GitHub runs are listed in the latest session entry |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked branches: `feature/m1-monorepo-local-slice` (PR #1 into `main`, ends at `3ec6bfc`), `feature/m3-web-docker` (PR #2, `4dc907e`), `feature/m3-email-auth` (email `4083b69` + workspace/device API) |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -59,6 +59,24 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M3 workspace and device API slice) / Claude Code (Opus 5.5) / `feature/m3-email-auth`
+
+**Goal:** finish M3's API item: workspace and device list/read/write with ownership checks.
+
+**Implemented:**
+
+- `packages/contracts`: `api-workspaces.ts` (create/update/delete schemas, `ApiWorkspace`, list with `sessionCount`, limits), `api-devices.ts` (`ApiDevice` without installation id, rename schema); error codes `WORKSPACE_NOT_EMPTY` and `LIMIT_REACHED`; conflict `serverState` can be a workspace.
+- `apps/web/src/server/service-errors.ts` (`ServiceError` with `details`, `RollbackWith`) and `src/server/sync/transaction.ts` (`runMutation`, lock-first `nextSequence`), moved out of the sessions service unchanged; `sessions/errors.ts` removed.
+- `src/server/workspaces/` (service + DTO) and `src/server/devices/service.ts`. Routes: `GET/POST /api/v1/workspaces`, `PATCH/DELETE /api/v1/workspaces/:id`, `GET /api/v1/devices`, `PATCH /api/v1/devices/:id`, `POST /api/v1/devices/:id/revoke`. Documented in `SYNC_PROTOCOL.md` 13b and 13c.
+
+**Validated commands and results:**
+
+- `pnpm --filter @sessionhub/web test:db`: **27/27** (+9: workspace create/list order and live counts, idempotent retry and `ID_IN_USE` across users, versioned update and conflict state, not-empty refusal then idempotent tombstone, no edits or new sessions into a tombstone, account isolation and the 100 cap, concurrent same-version edits (exactly one wins, gap-free sequence); device order without installation id, rename, revoke once with one credential bump, other users untouched). One existing session test updated for the renamed `details` property.
+- `e2e/api-workspaces-devices.spec.ts`: **12/12** over `--repeat-each 3` (401/403, full HTTP lifecycle with 201/200/409/422 and `Location`, validation 400s, cross-user 404s, device rename/revoke idempotency and cross-site 403).
+- Contracts unit tests **30/30** (+8). `pnpm check` **pass** (14 tasks); `pnpm test:e2e` **pass** (4 tasks).
+
+**Known gaps:** no workspace or device management UI yet (M5); device registration and credentials (M4).
 
 ### 2026-10-16 (M3 email slice) / Claude Code (Opus 5.5) / `feature/m3-email-auth`
 
@@ -445,9 +463,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Review PR #2 (base `feature/m1-monorepo-local-slice` until PR #1 merges) and confirm the `docker` CI job passes, including the new `BETTER_AUTH_URL` config test (not run locally).
-2. Finish M3: email delivery for verification and password reset (choose a provider with the user first). Optional: readiness check (PostgreSQL) in `/api/health`.
-3. Then M4 (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
+1. Review and merge the stacked PRs: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices); confirm CI (`check` with Mailpit, `docker`) passes on each.
+2. Production email: create a Resend API key and verify the sending domain, then set `MAIL_TRANSPORT=resend`, `MAIL_FROM`, `RESEND_API_KEY` and send one real reset email (not yet tested against the live service).
+3. M4, starting with the pairing design (needs a recorded decision before code, per CLAUDE.md): device registration + credential issuance, revocation checks via `auth_credential_version`, confirmed email required (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
 
 ## Open questions / architecture validations
 

@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M0 version validation, M1 and M2 done; M3 in progress (database package and email/password auth verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M0 version validation, M1, M2 and M3 done (verified 2026-10-16); M4 next. See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -57,7 +57,7 @@ flowchart LR
 - [x] Integrate Better Auth with correct current adapter/version. (1.7.9, Prisma adapter, auth models regenerated from the real config: no changes.)
 - [x] Implement signup/sign-in/password reset/account security. (Sign-up, sign-in, sign-out, rate limiting, safe redirects, password reset with session revocation, email confirmation, change password; email via Resend or Mailpit.)
 - [x] Build web dashboard shell from UI/UX specification. (Overview, Saved sessions, Devices, Settings; see UI_UX_DESIGN.md 18c for deviations.)
-- [ ] Add session/workspace/device list/detail/read/write API with ownership checks. (Sessions: done, `/api/v1/sessions`; workspaces and devices: pending.)
+- [x] Add session/workspace/device list/detail/read/write API with ownership checks. (`/api/v1/sessions`, `/api/v1/workspaces`, `/api/v1/devices` list/rename/revoke; device registration belongs to M4 pairing.)
 - [x] Emit server sync changes for all web mutations. (Every session create/update/delete writes `sync_changes` with a gap-free per-user sequence.)
 - [x] Create Docker local Compose and healthchecks. (`compose.dev.yaml`: PostgreSQL for development; `compose.yaml`: postgres -> `prisma migrate deploy` job -> web, all with healthchecks; tested by `pnpm test:docker`.)
 - [x] Unit/API/auth tests including cross-user access denial.
