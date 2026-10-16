@@ -136,6 +136,18 @@ Do not use IP address or user agent string as device identity. Avoid exposing un
 
 - Security-relevant events only: account sign-in, device pairing, device revoke, account deletion request, significant export. Sanitize logs; **never** log full URL lists/tokens by default.
 
+### Implemented server schema (Prisma 7.10.0, PostgreSQL 18, verified 2026-10-16)
+
+Source: `packages/database/prisma/schema.prisma`, migration `20261016052129_init`. All entities in this section exist, with these decisions:
+
+- **Auth tables** (`user`, `session`, `account`, `verification`) are exactly what the Better Auth CLI (`auth generate`, v1.7.9, email/password, Prisma/PostgreSQL) produced: string ids and camelCase columns. Only Prisma back-relation fields were added to `User`. Regenerate when auth plugins change and diff.
+- **Domain tables** use snake_case table and column names, app-generated UUID primary keys, `timestamptz(3)` timestamps and `varchar` limits equal to the contracts limits.
+- **Same-account ownership in the database:** composite foreign keys `(workspace_id, user_id)`, `(source_device_id, user_id)`, `(author_device_id, user_id)`, `(device_id, user_id)` and `(session_id, user_id)` reference `(id, user_id)` unique keys, and `(group_id, window_id)` references `(id, window_id)`, so a row can never point at another user's workspace/device/session or at a group in another window. These use `ON DELETE NO ACTION`: hard-deleting a device or workspace that is still referenced fails; services must clear the reference first (soft delete via `revoked_at` / `deleted_at` is the normal path).
+- Deleting a user cascades to all of their rows and nobody else's; deleting a saved session cascades to windows, groups, tabs and versions.
+- Unique keys: `(user_id, installation_id)` on devices, `(user_id, sequence)` on sync changes, primary key `(user_id, device_id, client_operation_id)` on receipts, `(session_id, version)` on versions, and `sort_order` per parent for windows, groups and tabs.
+- Naming reconciliations: group **`title`** (matches the contracts DTO; section 3 said `name`); **no `favicon_url` column** (clients use the browser's favicon cache); Postgres enum values use `_` where contracts use `-` (`browser_internal`), mapped in the service layer.
+- `AuditEvent.kind` is an enum: `sign_in`, `device_paired`, `device_revoked`, `account_deletion_requested`, `data_exported`.
+
 ## 4. Local IndexedDB schema (Dexie concept)
 
 ```text

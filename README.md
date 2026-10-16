@@ -21,6 +21,18 @@ pnpm --filter @sessionhub/extension dev   # WXT dev mode with reload
 pnpm --filter @sessionhub/web dev         # Next.js on http://localhost:3000
 ```
 
+Database (M3, needs Docker):
+
+```bash
+cp packages/database/.env.example packages/database/.env
+pnpm db:up                   # PostgreSQL 18 on 127.0.0.1:54329 (dev db + sessionhub_test), waits for the healthcheck
+pnpm db:migrate              # prisma migrate dev against the dev database
+pnpm test:db                 # resets sessionhub_test, applies all migrations, runs integration tests
+pnpm db:down                 # stop (add -v to delete the data volume)
+```
+
+AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when an agent runs it. Ask the user for explicit consent and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never invent consent or bypass the check.
+
 First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec playwright install chromium`.
 
 **Load the extension in Chrome:** run `pnpm build`, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `apps/extension/.output/chrome-mv3`.
@@ -29,6 +41,7 @@ First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec
 |---|---|
 | `apps/extension` | WXT MV3 extension: background worker, popup, manager page, IndexedDB (Dexie) |
 | `apps/web` | Next.js App Router shell and `/api/health` (no auth/DB yet) |
+| `packages/database` | Server-only Prisma 7 schema, migrations and client (PostgreSQL); never imported by the extension (lint-enforced) |
 | `packages/contracts` | Zod schemas: saved session, export file format |
 | `packages/core` | Pure logic: URL classification, capture normalization, restore planning, search |
 | `packages/ui` | Shared design tokens (Tailwind v4 `@theme`) |

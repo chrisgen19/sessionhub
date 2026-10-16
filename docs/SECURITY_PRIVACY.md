@@ -114,6 +114,10 @@ If this bridge isn't robust, omit it from MVP and use the extension's own manage
 - Dependabot/lockfile management, reproducible release build, malware/static analysis as appropriate.
 - Maintain documented incident response procedure and ability to invalidate all tokens.
 
+### Development database credentials
+
+`infra/docker/compose.dev.yaml` uses a fixed dev-only password and binds PostgreSQL to `127.0.0.1` only. `packages/database/.env` is git-ignored; only `.env.example` is committed. Production credentials must come from the host's secret configuration (M6).
+
 ## 9. Storage and encryption disclosures
 
 - TLS protects data in transit.
