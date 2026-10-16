@@ -39,8 +39,8 @@ test("sign up, sign out, protected page, wrong password, sign in", async ({ page
   const email = newEmail();
   await signUp(page, email);
   await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { name: "Signed in" })).toBeVisible();
-  await expect(page.getByText(`Chris Tester · ${email}`)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome, Chris" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Account settings for Chris Tester" })).toHaveAttribute("title", `Chris Tester (${email})`);
   const sessionCookie = (await context.cookies()).find((cookie) => cookie.name.includes("session_token"));
   expect(sessionCookie).toMatchObject({ httpOnly: true, sameSite: "Lax" });
 

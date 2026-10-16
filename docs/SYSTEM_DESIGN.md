@@ -361,6 +361,8 @@ Verified 2026-10-16 (details in `PROGRESS.md`): monorepo skeleton, and the local
 | 2026-10-16 | Sign-up and sign-in forms post to Better Auth's **HTTP endpoints** via `better-auth/react`'s client; only sign-out is a server action | Verified in E2E: calling `auth.api.signInEmail` from a server action **bypasses Better Auth's rate limiter** (4 wrong passwords, no 429), while the HTTP endpoint returns 429 after 3 per window | - |
 | 2026-10-16 | Server-side name rules (trimmed, 1 to 120 chars) in `databaseHooks.user.create/update.before` | The HTTP endpoint accepts any name string | - |
 | 2026-10-16 | Post-login `next` is limited to same-site relative paths (`safeNextPath`) | Prevents open redirects | - |
+| 2026-10-16 | Web authorization: `src/proxy.ts` only checks that a session cookie exists (redirects to `/login?next=<path>`); the `/app` layout **and every page** call `requireSession()`, which validates the session against the database; dashboard queries take the user id from that session only | Proxy is optimistic by design (Next.js docs); layouts don't re-run on client navigation | - |
+| 2026-10-16 | Dashboard reads (`src/server/queries/dashboard.ts`) are plain server-component queries, not an HTTP API yet | Nothing else consumes them; the versioned `/api/v1` comes with the sync/API slice | When the extension or another client needs them |
 | 2026-10-16 | `packages/sync` not created yet | Empty packages add no value; created with M3/M4 | M3 / M4 |
 | 2026-10-16 | Web app uses the ESLint CLI with the shared config, not `eslint-config-next` | `next lint` was removed in Next 16; `eslint-config-next` 16.4 depends on `eslint-plugin-react` 7.37, which does not declare ESLint 10 support | eslint-plugin-react supports ESLint 10 |
 

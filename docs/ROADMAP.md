@@ -56,7 +56,7 @@ flowchart LR
 - [x] Add PostgreSQL, Prisma schema and safe migrations. (Initial migration; integration tests run it from scratch.)
 - [x] Integrate Better Auth with correct current adapter/version. (1.7.9, Prisma adapter, auth models regenerated from the real config: no changes.)
 - [ ] Implement signup/sign-in/password reset/account security. (Sign-up, sign-in, sign-out, rate limiting, safe redirects: done; password reset and email verification: pending email delivery.)
-- [ ] Build web dashboard shell from UI/UX specification.
+- [x] Build web dashboard shell from UI/UX specification. (Overview, Saved sessions, Devices, Settings; see UI_UX_DESIGN.md 18c for deviations.)
 - [ ] Add session/workspace/device list/detail/read/write API with ownership checks.
 - [ ] Emit server sync changes for all web mutations.
 - [ ] Create Docker local Compose and healthchecks. (Local PostgreSQL compose with healthcheck: done; web app container: pending.)

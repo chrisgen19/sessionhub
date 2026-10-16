@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package and email/password auth done. M2 complete.
+> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth and dashboard shell done. M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -11,15 +11,39 @@
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
-| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/app`, `/api/auth/*`) on PostgreSQL, `GET /api/health`. No dashboard or session APIs yet |
+| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; `GET /api/health`. No session detail or `/api/v1` yet |
 | Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | CI | `.github/workflows/ci.yml` written; **never run on GitHub** (no remote configured) |
-| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database. The M3 auth slice is **not committed yet** |
+| Git | Branch `feature/m1-monorepo-local-slice`: `e491fc9` skeleton + local slice, `7f0287a` import, `11520cf` retry, `2d43ae9` recovery, `aa7b857` housekeeping, `237cdce` quota, `ffa53d4` perf baseline, `fe880c7` database, `9af9663` auth. The dashboard slice is **not committed yet** |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-16 (M3 dashboard slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
+
+**Goal:** web dashboard shell under `/app` per UI_UX_DESIGN.md section 8: persistent nav, top search, Overview / Saved sessions / Devices / Settings, shared signed-in layout, honest empty states.
+
+**Implemented:**
+
+- `src/proxy.ts` (cookie-presence gate for `/app/*`, keeps the deep link in `next`); `src/server/session.ts` `requireSession()`.
+- `src/server/queries/dashboard.ts`: `getOverviewStats`, `listSessions` (name search, 100 cap, excludes deleted/archived), `listDevices` (active first, last seen); all scoped by user id.
+- `src/app/app/layout.tsx` + `components/dashboard/app-shell.tsx`, `nav-links.tsx` (sidebar + bottom tab bar, `aria-current`), `top-search.tsx` (Ctrl/Cmd+K), `page-parts.tsx` (header, empty state, sync notice, stat tile), `session-list.tsx`.
+- Pages: `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`; `loading.tsx`, `error.tsx`. The previous `/app` placeholder was replaced.
+- `src/lib/format.ts` (relative time, plural, initials) with tests.
+
+**Validated commands and results:**
+
+- `pnpm check --force`: **pass** (14 tasks); web unit tests 27.
+- `pnpm build --force`: **pass** (also with no auth env vars; proxy registered).
+- `pnpm --filter @sessionhub/web test:db`: **8/8** (4 new: cross-user isolation in lists/counts/search/devices, deleted and archived hidden, case-insensitive search, list cap, device ordering). Run directly (non-destructive `migrate deploy`); the root `pnpm test:db` was **not** run because its reset needs fresh user consent.
+- `pnpm test:e2e`: **pass** (extension 9, web 10). Web E2E also **40/40** over 2 x `--repeat-each 2`. New dashboard E2E: signed-out deep link -> sign-in -> back to `/app/devices`; forged cookie rejected by the server check; nav `aria-current` and honest empty states; seeded data for two users shows only the signer's rows (Overview tiles, recent list, Ctrl+K search, no-match state); devices "last seen"/"Access revoked" and never "online"; 375 px bottom nav without overflow on all four pages.
+
+**Manual verification:** screenshots at 1440 (light, dark), 900 and 390 px with seeded data.
+
+**Known gaps:** no session detail page or row actions; search covers names only; no workspaces, recovery or account-deletion pages; avatar is a link, not a menu.
+
 
 ### 2026-10-16 (M3 auth slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
@@ -264,9 +288,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the auth slice (needs the user's go-ahead); push a remote so CI (PostgreSQL service, web E2E) runs for the first time.
-2. Continue M3: **web dashboard shell** from `UI_UX_DESIGN.md` section 8 (persistent nav, top search, Overview/Saved sessions/Devices/Settings routes under `/app`, signed-in guard in a shared layout, empty states that are honest about sync not existing yet).
-3. Then: account-scoped saved-session read API (`/api/v1/sessions`) with ownership checks and cross-user denial tests against PostgreSQL; then web-created sessions emitting `SyncChange` rows.
+1. Commit the dashboard slice (needs the user's go-ahead); push a remote so CI runs for the first time.
+2. Continue M3: **account-scoped saved-session API** (`/api/v1/sessions` list/detail/create/update/delete with Zod contracts from `packages/contracts`, ownership checks, optimistic `version`, child rows + `SessionVersion` + `SyncChange` + `UserSyncClock` in one transaction) with cross-user denial tests against PostgreSQL; then a session detail page in the dashboard (window/tab tree, export, safe "open links").
+3. Remaining M3: web app Dockerfile/compose service with healthcheck; email delivery for verification and password reset.
 
 ## Open questions / architecture validations
 

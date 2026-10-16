@@ -1,29 +1,48 @@
+import { Layers } from "lucide-react";
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { signOutAction } from "@/app/(auth)/actions";
-import { getCurrentSession } from "@/server/session";
+import Link from "next/link";
+import { EmptyState, PageHeader, StatTile, SyncNotice } from "@/components/dashboard/page-parts";
+import { SessionList } from "@/components/dashboard/session-list";
+import { getPrisma } from "@sessionhub/database/client";
+import { getOverviewStats, listSessions } from "@/server/queries/dashboard";
+import { requireSession } from "@/server/session";
 
-export const metadata: Metadata = { title: "Your account · SessionHub" };
+export const metadata: Metadata = { title: "Overview · SessionHub" };
 
-/** Minimal signed-in page until the dashboard shell lands (next M3 item). */
-export default async function AppHomePage() {
-  const session = await getCurrentSession();
-  if (!session) redirect("/login?next=/app");
+export default async function OverviewPage() {
+  const { user } = await requireSession("/app");
+  const prisma = getPrisma();
+  const [stats, recent] = await Promise.all([getOverviewStats(prisma, user.id), listSessions(prisma, user.id, { take: 5 })]);
+  const firstName = user.name.split(/\s+/)[0] ?? user.name;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 sm:px-8">
-      <h1 className="text-2xl font-bold tracking-tight">Signed in</h1>
-      <p className="mt-2 text-sm text-fg-muted">
-        {session.user.name} · {session.user.email}
-      </p>
-      <p className="mt-6 rounded-xl border border-line bg-surface p-4 text-[13px] text-fg-muted">
-        Your synced saved sessions will appear here once cloud sync is available. Nothing has been uploaded from your browser.
-      </p>
-      <form action={signOutAction} className="mt-6">
-        <button type="submit" className="inline-flex h-9 items-center rounded-lg border border-line bg-surface px-3.5 text-[13px] font-semibold hover:bg-surface-muted">
-          Sign out
-        </button>
-      </form>
-    </main>
+    <>
+      <PageHeader title={`Welcome, ${firstName}`} description="Your saved sessions and devices, across browsers." />
+      <SyncNotice />
+      <section aria-label="Summary" className="mb-8 grid gap-3 sm:grid-cols-3">
+        <StatTile label="Saved sessions" value={stats.sessionCount} foot="Synced to your account" />
+        <StatTile label="Saved tabs" value={stats.tabCount} foot="Across synced sessions" />
+        <StatTile label="Devices" value={stats.deviceCount} foot="Connected browsers" />
+      </section>
+      <section aria-labelledby="recent-heading">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 id="recent-heading" className="text-sm font-semibold">
+            Recent saved sessions
+          </h2>
+          {recent.length > 0 && (
+            <Link href="/app/sessions" className="text-xs font-semibold text-brand hover:underline">
+              View all
+            </Link>
+          )}
+        </div>
+        {recent.length > 0 ? (
+          <SessionList sessions={recent} />
+        ) : (
+          <EmptyState icon={Layers} title="No synced sessions yet">
+            Save sessions with the SessionHub extension. They&apos;ll show up here after you turn on sync, which isn&apos;t available yet.
+          </EmptyState>
+        )}
+      </section>
+    </>
   );
 }

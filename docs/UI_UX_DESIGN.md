@@ -513,6 +513,18 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 
 `/signup` and `/login` use a centered card (brand mark, title, one-line purpose, fields with labels, inline per-field errors linked with `aria-describedby`, a form-level `role="alert"` message, `autocomplete` hints) and a note that an account is optional for the extension. Signed-in visitors are redirected to `/app` (a minimal "Signed in" page with sign-out until the dashboard shell exists). The landing header has Sign in and Create account. Verified at 1280 and 375 px and in dark mode.
 
+## 18c. Web dashboard shell (2026-10-16)
+
+Built under `/app` with a shared signed-in layout: 240 px sidebar (Overview, Saved sessions, Devices, Settings; "Sync off" with "Cloud sync isn't available yet. Nothing has been uploaded."; Sign out), top bar with search (Ctrl+K, or Cmd+K on Apple platforms, focuses it; ignored while typing in another field) and an initials avatar linking to Settings. Below 1024 px the sidebar is replaced by a fixed bottom tab bar and the search moves under the brand row. Deliberate deviations:
+
+- Nav shows only pages that exist (no Workspaces, Recovery or Search page yet).
+- Search submits to `/app/sessions?q=` and matches session names only; the query stays in the box on that page.
+- "Welcome, <first name>" instead of a time-of-day greeting (the server doesn't know the viewer's time zone).
+- Overview: sync notice, three tiles (saved sessions, saved tabs, active devices) and up to five recent sessions; no workspace cards yet.
+- Session rows aren't links yet (no session detail route). Devices show "last seen ..." (or "not seen yet") and "Access revoked", never "Online".
+- Empty states say plainly that sync isn't available yet and where sessions live meanwhile. A skeleton (`loading.tsx`) and a generic error boundary with Try again (`error.tsx`) cover slow and failed loads.
+- Verified at 1440, 900 and 390 px and in dark mode.
+
 ## 19. Reference materials
 
 - [W3C WAI-ARIA combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/)

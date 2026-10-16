@@ -74,6 +74,7 @@ The app must display which items were skipped during capture/restore and allow m
 - Sign-in/sign-up go through Better Auth's HTTP endpoints, so its rate limiter and origin checks apply: 3 attempts per window per client IP, then 429 and "Too many attempts" (verified). Server-side `auth.api.*` calls skip the rate limiter and must not be used for credential checks.
 - **Deployment requirement (M6):** the limiter keys on the client IP from `X-Forwarded-For`. Without a proxy setting that header, all clients share one bucket (a handful of bad attempts would briefly block sign-in for everyone); with a proxy, it must overwrite (not trust) client-supplied values, or attackers can rotate the header. Rate-limit storage is in memory: fine for one container, not for several.
 - Post-login redirects only accept same-site relative paths. Server logs record only the error class for failed sign-in/up, never emails, passwords or bodies.
+- Dashboard authorization: a forged session cookie passes the optimistic proxy but is rejected by the per-page database check (verified in E2E). All dashboard queries filter by the session's user id; seeded data for a second user never appears in lists, counts or search (verified in DB and E2E tests). Soft-deleted and archived sessions are excluded.
 - Known trade-offs: sign-up says when an email is already registered (account enumeration; accepted for MVP); no email verification or password reset yet; `BETTER_AUTH_SECRET` must be at least 32 characters and is validated at first use.
 
 ## 6. Extension permissions (minimum viable proposal)
