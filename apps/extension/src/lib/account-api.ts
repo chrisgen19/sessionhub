@@ -10,7 +10,15 @@ import {
   type StartPairingResponse,
 } from "@sessionhub/contracts/api-pairing";
 import { apiErrorResponseSchema, type ApiErrorCode } from "@sessionhub/contracts/api-sessions";
-import { pushResponseSchema, type PushRequest, type PushResponse } from "@sessionhub/contracts/api-sync";
+import {
+  bootstrapResponseSchema,
+  pullResponseSchema,
+  pushResponseSchema,
+  type BootstrapResponse,
+  type PullResponse,
+  type PushRequest,
+  type PushResponse,
+} from "@sessionhub/contracts/api-sync";
 import type { z } from "zod";
 
 /** A failed call to the SessionHub server, with the API error code when there is one. */
@@ -80,3 +88,11 @@ export const disconnectSelf = (fetchImpl: Fetch, origin: string, accessToken: st
 /** Uploads queued changes (POST /api/v1/sync/push); one result per operation. */
 export const pushChanges = (fetchImpl: Fetch, origin: string, accessToken: string, body: PushRequest): Promise<PushResponse> =>
   call(fetchImpl, origin, "/api/v1/sync/push", pushResponseSchema, { method: "POST", body, accessToken });
+
+/** The account's changes after `cursor` (GET /api/v1/sync/pull). */
+export const fetchSyncPull = (fetchImpl: Fetch, origin: string, accessToken: string, cursor: string): Promise<PullResponse> =>
+  call(fetchImpl, origin, `/api/v1/sync/pull?${new URLSearchParams({ cursor })}`, pullResponseSchema, { method: "GET", accessToken });
+
+/** One page of the account's current sessions (GET /api/v1/sync/bootstrap). */
+export const fetchSyncBootstrap = (fetchImpl: Fetch, origin: string, accessToken: string, after: string | null): Promise<BootstrapResponse> =>
+  call(fetchImpl, origin, `/api/v1/sync/bootstrap${after ? `?${new URLSearchParams({ after })}` : ""}`, bootstrapResponseSchema, { method: "GET", accessToken });

@@ -91,3 +91,56 @@ export const pushResponseSchema = z.object({
   results: z.array(pushResultSchema),
 });
 export type PushResponse = z.infer<typeof pushResponseSchema>;
+
+export const SYNC_PULL_LIMITS = {
+  pageSizeMax: 100,
+  /** A page stops early once its payloads pass this size (it always holds at least one change). */
+  pageBytesMax: 4 * 1024 * 1024,
+} as const;
+
+const pageSizeSchema = z.coerce.number().int().min(1).max(SYNC_PULL_LIMITS.pageSizeMax).default(SYNC_PULL_LIMITS.pageSizeMax);
+
+/** No cursor: from the start of the log. The extension bootstraps instead when it has none. */
+export const pullQuerySchema = z.object({ cursor: z.string().max(200).optional(), limit: pageSizeSchema });
+export const bootstrapQuerySchema = z.object({ after: z.uuid().optional(), limit: pageSizeSchema });
+
+/**
+ * One canonical change. `payload` is the entity's full DTO for an upsert (ApiSessionDetail for a
+ * savedSession, ApiWorkspace for a workspace) and null for a delete. Clients validate it per entity
+ * type, so one change they can't read never blocks the rest of the page.
+ */
+export const syncChangeSchema = z.object({
+  sequence: z.string().regex(/^[1-9]\d*$/),
+  entityType: z.enum(["savedSession", "workspace"]),
+  entityId: z.uuid(),
+  action: z.enum(["upsert", "delete"]),
+  version: z.int().positive(),
+  payload: z.unknown(),
+});
+export type SyncChange = z.infer<typeof syncChangeSchema>;
+
+export const pullResponseSchema = z.object({
+  protocolVersion: z.literal(SYNC_PROTOCOL_VERSION),
+  /** The cursor this page started after (null: the start of the log). */
+  cursor: z.string().nullable(),
+  /** Store it in the same transaction as the page's changes, then pull again while `hasMore`. */
+  nextCursor: z.string(),
+  hasMore: z.boolean(),
+  changes: z.array(syncChangeSchema),
+});
+export type PullResponse = z.infer<typeof pullResponseSchema>;
+
+/** The latest state of one session (a delete for a tombstone), as a change without a sequence. */
+export const bootstrapItemSchema = syncChangeSchema.omit({ sequence: true });
+export type BootstrapItem = z.infer<typeof bootstrapItemSchema>;
+
+export const bootstrapResponseSchema = z.object({
+  protocolVersion: z.literal(SYNC_PROTOCOL_VERSION),
+  /** Change-log position read before this page's rows. Keep the first page's and pull from it after the last page. */
+  cursor: z.string(),
+  /** Pass as `after` for the next page; null on the last page. */
+  nextAfter: z.uuid().nullable(),
+  hasMore: z.boolean(),
+  items: z.array(bootstrapItemSchema),
+});
+export type BootstrapResponse = z.infer<typeof bootstrapResponseSchema>;

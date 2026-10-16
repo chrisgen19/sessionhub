@@ -36,13 +36,34 @@ describe("database migration", () => {
 
     const db = createDb(name);
     expect(await getSession(db, session.id)).toEqual(session);
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBe(5);
     expect(await db.recoverySnapshots.count()).toBe(0);
     expect(await db.account.count()).toBe(0);
     expect(await db.outbox.count()).toBe(0);
   });
 
-  it("upgrades a version 3 database (connected, before account ids) to version 4 with an empty outbox", async () => {
+  it("upgrades a version 4 database (queued uploads, sync state) to version 5 without losing them", async () => {
+    const name = `migration-v4-${Date.now()}`;
+    const v4 = new Dexie(name);
+    v4.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
+    v4.version(2).stores({ recoverySnapshots: "id, capturedAt, [capturedAt+tabCount]", recoveryState: "key" });
+    v4.version(3).stores({ account: "key" });
+    v4.version(4).stores({ outbox: "++seq, &id, [scope+seq], entityId", sessionTombstones: "id, scope", syncState: "scope" });
+    const session = sampleSession();
+    const scope = "account:Alice";
+    await v4.table("sessions").put({ ...session, scope, sync: { serverVersion: 2, state: "pending" } });
+    await v4.table("outbox").add({ id: session.windows[0]!.id, scope, entityType: "savedSession", entityId: session.id, action: "upsert", expectedVersion: 2, payload: session, status: "sending", createdAt: session.createdAt, updatedAt: session.createdAt, attempts: 1, nextAttemptAt: null, lastError: null });
+    await v4.table("syncState").put({ scope, enabledAt: session.createdAt, cursor: "c1.7.AAAAAAAAAAAAAAAAAAAAAA", lastSyncAt: null, lastError: null, failures: 0, nextAttemptAt: null });
+    v4.close();
+
+    const db = createDb(name);
+    expect(db.verno).toBe(5);
+    expect(await db.outbox.toArray()).toMatchObject([{ entityId: session.id, status: "sending", attempts: 1, seq: 1 }]);
+    expect(await db.syncState.get(scope)).toMatchObject({ cursor: "c1.7.AAAAAAAAAAAAAAAAAAAAAA" });
+    expect(await db.serverCopies.count()).toBe(0);
+  });
+
+  it("upgrades a version 3 database (connected, before account ids) with an empty outbox", async () => {
     const name = `migration-v3-${Date.now()}`;
     const v3 = new Dexie(name);
     v3.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
@@ -55,7 +76,7 @@ describe("database migration", () => {
     v3.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBe(5);
     expect(await db.account.get("connection")).toEqual(connection);
     // No account id yet, so only this browser's sessions are visible (the next account check adds it).
     expect(await listSessions(db)).toEqual([session]);
@@ -75,7 +96,7 @@ describe("database migration", () => {
     v2.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBe(5);
     expect(await getSession(db, session.id)).toEqual(session);
     expect(await db.recoveryState.get("state")).toMatchObject({ dirty: true });
     expect(await db.account.count()).toBe(0);

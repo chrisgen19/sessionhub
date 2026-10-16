@@ -316,7 +316,7 @@ Extension only; nothing is uploaded yet (`sync/push` is the next slice). Code: `
 - Invariant 10 holds locally: records and operations are scoped `account:<id>`, and only the connected account's are readable or editable. Queued operations of a disconnected account stay stored and hidden, never sent under another account.
 - Operation fields map to section 5: `id` = `clientOperationId`, `entityType` (`savedSession`), `entityId`, `action` (`upsert` / `delete`), `expectedVersion` (0 = create), `payload` (the full local session for an upsert, null for a delete). `deviceId` is not stored: the uploader sends the connection's device id, which the server checks against the credential.
 - **Contract for the uploader (implemented in 13f):** commit `status: "sending"` (and `attempts + 1`) before a request leaves; never change a `sending` operation's payload or return it to `queued`; send a scope's operations in `seq` order and only for the connected account; on acceptance remove the operation and set the session's `sync.serverVersion` to the returned version (`state: "synced"` when no operations remain); on a conflict keep the payload (conflict drafts). Later operations of the same entity already chain on the expected result (`expectedVersion + 1`), so after a conflict they conflict too and are kept the same way.
-- **Contract for pull:** don't overwrite an entity with pending operations or a tombstone; purge a tombstone once the pulled change log has passed its delete.
+- **Contract for pull (implemented in 13g):** don't overwrite an entity with pending operations or a tombstone; purge a tombstone once the pulled change log has passed its delete.
 
 ## 13f. Implemented: sync push (2026-10-16)
 
@@ -357,7 +357,45 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
 5. Up to 10 rounds per run. When the cap ends a run with operations still sendable (not held back), it arms the retry alarm at once to continue. Failures back off 5 s doubling to 15 minutes with jitter, or longer if `Retry-After` says so; the retry alarm (`sync-retry`) runs it again. Revocation stops it (the connection is removed; queued operations stay).
 6. Triggers: worker start (resends anything left `sending`), after a successful `session.rename` / `session.delete`, the retry alarm, and `sync.pushNow`. One run at a time per worker (in-memory single flight; safety comes from receipts, not from this).
 
-**Not yet:** pull (`/api/v1/sync/pull`), conflict resolution UI and drafts, the opt-in/upload preview that sets `enabledAt`, URL exclusions before upload (no exclusion settings exist yet).
+**Not yet:** conflict resolution UI (conflicting operations and the held server copy are both kept, 13g), the opt-in/upload preview that sets `enabledAt`, URL exclusions before upload (no exclusion settings exist yet).
+
+## 13g. Implemented: sync pull and bootstrap (2026-10-16)
+
+Contracts: `packages/contracts/src/api-sync.ts`. Server: `apps/web/src/server/sync/pull.ts`, `cursor.ts`, `device-reader.ts`; routes `api/v1/sync/pull`, `api/v1/sync/bootstrap`. Rules: `packages/sync/src/reconcile.ts`. Extension: `sync-downloader.ts`, `sync-apply.ts`, `sync-runner.ts`.
+
+Both endpoints: `Authorization: Bearer` device token only, confirmed email when this server sends email (403 `EMAIL_NOT_CONFIRMED`), `Cache-Control: no-store`. Reads are not rate-limited yet (M6 item).
+
+| Method and path | Success | Errors |
+|---|---|---|
+| `GET /api/v1/sync/pull?cursor=&limit=1..100` | 200 `{ protocolVersion: 1, cursor, nextCursor, hasMore, changes }`; no cursor = from the start of the log | 400 `VALIDATION_ERROR`, 400 `INVALID_CURSOR`, 410 `CURSOR_EXPIRED` |
+| `GET /api/v1/sync/bootstrap?after=<id>&limit=1..100` | 200 `{ protocolVersion: 1, cursor, nextAfter, hasMore, items }` | 400 |
+
+- **Changes** are `{ sequence, entityType: savedSession \| workspace, entityId, action: upsert \| delete, version, payload }`, in sequence order, with the stored DTO as `payload` (null for deletes). A page also stops once its payloads pass 4 MB (it always holds at least one change).
+- **Cursors** are `c1.<sequence>.<mac>`: an HMAC-SHA256 over (user id, sequence) with a key derived from `BETTER_AUTH_SECRET`, truncated to 22 characters, compared in constant time. Another account's or an edited cursor is `INVALID_CURSOR` (tested). It is never authorization: every query is scoped to the authenticated user. Rotating the secret invalidates all cursors, and clients rebuild.
+- **`CURSOR_EXPIRED`** when the cursor is ahead of the user's clock (the server lost changes, e.g. a backup restore) or when the change right after it is missing (log pruned). Detection relies on the gap-free log (13a); a false positive only costs a bootstrap. No pruning job exists yet.
+- **Bootstrap** pages through the user's sessions by id, **tombstones included as deletes**, each as a change without a sequence (its current version and detail). `cursor` is the clock read **before** the rows: the client keeps the first page's and pulls from it afterwards; changes written meanwhile replay harmlessly because clients apply by version. Sessions only: workspaces join when the extension stores them.
+
+**Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f):
+
+1. No cursor (first sync of the account) or a rebuild in progress: bootstrap pages. Progress (`syncState.bootstrap`: first cursor + `after`) is stored with each page, so a stopped worker continues.
+2. Otherwise pull pages after `syncState.cursor`. `CURSOR_EXPIRED` or `INVALID_CURSOR` clears the cursor and rebuilds; queued changes are untouched.
+3. **Each page and its new cursor (or bootstrap progress) commit in one IndexedDB transaction**; a failure keeps neither (tested).
+4. Each change goes through `reconcileRemoteChange`:
+   - a record in another scope (this browser's own sessions, another account's) is never touched
+   - a session with outbox operations (any status) is not overwritten: the newest server state is kept in `serverCopies`
+   - a local tombstone is never undone, and the server's delete purges it
+   - anything not newer than the stored `serverVersion` is ignored (this covers its own uploads coming back)
+   - otherwise the session is written as `synced` or removed
+   - workspace changes and payloads that don't validate are skipped, so one bad change never blocks a page
+5. **Echo reconciliation:** when a push is accepted, `reconcileHeldCopy` settles a held copy:
+   - not newer than the accepted version: it was this device's own change, so it is dropped (an own delete also ends its tombstone)
+   - newer, with nothing else waiting: it is applied now, because the cursor already passed it
+   - newer, with more local changes waiting: it is kept
+   - after a conflict it stays for review beside the local change
+6. Up to 20 pages per run, then a follow-up run is scheduled. Triggers: as 13f, plus a 10-minute `sync-periodic` alarm and the `sync.now` command (push then pull, which replaces `sync.pushNow`).
+7. A pull never opens, closes or navigates tabs: it touches only IndexedDB (verified on both profiles of the two-profile E2E around every pull).
+
+**Local fields not stored:** description, workspace, pinned and archived stay on the server (an upload doesn't change them). Pulled sessions keep the server's `sourceDeviceId`/`sourceDeviceName`.
 
 ## 14. References
 

@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) in progress: **extension pairing, device credentials, local account scope, outbox and push done**; pull next. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) in progress: **pairing, local account scope and outbox, push and pull done; a session syncs between two real profiles**. Left: opt-in/upload preview, sync status UI, conflict review. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -14,10 +14,10 @@
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
-| Sync | **Upload works end to end:** account-scoped records (`account:<id>`), durable outbox and tombstones (Dexie v4); `POST /api/v1/sync/push` with receipts; extension uploader with backoff. Gated on local consent (`syncState.enabledAt`), which nothing sets yet, so no session data leaves a browser in normal use. **No pull** (`packages/sync` still not created; planned with pull's reconciliation logic) |
+| Sync | **Upload and download work end to end** (two-profile E2E): outbox and tombstones (Dexie v4), `serverCopies` (v5); `POST /api/v1/sync/push` with receipts, `GET /api/v1/sync/pull` with HMAC-bound cursors, `GET /api/v1/sync/bootstrap`; `packages/sync` reconciliation rules; extension `sync.now` (push then pull), backoff, retry and 10-minute alarms. Gated on local consent (`syncState.enabledAt`), which no UI sets yet, so nothing syncs in normal use. No conflict review or sync status UI |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). **`feature/m4-sync-push`** (off #6, uncommitted at the end of the 2026-10-16 push session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (base `feature/m4-local-outbox`, `236b64a`, CI green). **`feature/m4-sync-pull`** (off #7, uncommitted at the end of the 2026-10-16 pull session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -116,6 +116,29 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M4 sync pull slice) / Claude Code (Opus 5.5) / `feature/m4-sync-pull` (macOS laptop)
+
+**Goal:** `GET /api/v1/sync/pull` with safe cursors and a `CURSOR_EXPIRED` bootstrap path, the extension pull following SYNC_PROTOCOL.md 13e, and `packages/sync` for the reconciliation rules (user's scope). Decisions in SYSTEM_DESIGN.md 14 and SYNC_PROTOCOL.md 13g.
+
+**Implemented:**
+
+- `packages/sync` (new): `reconcile.ts` (`reconcileRemoteChange`, `reconcileHeldCopy`, `toLocalSession`) + tests.
+- Contracts: pull/bootstrap query and response schemas, `SYNC_PULL_LIMITS`, error code `CURSOR_EXPIRED`.
+- Web: `src/server/sync/cursor.ts` (HMAC cursors), `pull.ts` (`pullPage`, `bootstrapPage`, 4 MB page budget), `device-reader.ts` (Bearer + confirmed email), routes `api/v1/sync/pull`, `api/v1/sync/bootstrap`; `CURSOR_EXPIRED` maps to 410.
+- Extension: Dexie **v5** `serverCopies`; `syncState.bootstrap`; `account-api.ts` pull/bootstrap calls; `sync-apply.ts` (performs decisions inside the page transaction), `sync-downloader.ts` (`pullNow`), `sync-gate.ts` (gate, backoff, success shared with push), `sync-runner.ts` (`syncNow`: push then pull); uploader settles held copies after acceptance; `sync.now` replaces `sync.pushNow`; `sync-periodic` alarm (10 min).
+- E2E: `apps/web/e2e/sync-flow.ts` (helpers), `sync-two-profiles.spec.ts` (new), `sync-push.spec.ts` moved onto the helpers and `sync.now`.
+- Docs: SYNC_PROTOCOL 13e/13f/new 13g, DATA_MODEL, SECURITY_PRIVACY 5a item 10, SYSTEM_DESIGN 14 (eight rows), ROADMAP (M1 packages, four M4 items), README.
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit):**
+
+- `pnpm check --force`: **pass** (17 tasks). `sync` **9**, contracts 36, core 84, extension **144** (+12: 11 download, 1 v4 -> v5 upgrade), web 61.
+- `pnpm build`: **pass** (routes include `/api/v1/sync/pull` and `/api/v1/sync/bootstrap`).
+- `pnpm --filter @sessionhub/web test:db`: **47/47** (+4: ordered pages with signed cursors incl. workspaces and deletes; other account's/edited/malformed cursors refused; `CURSOR_EXPIRED` after pruning and for a cursor ahead of the clock; bootstrap by id with tombstones and a pre-read cursor).
+- `sync-two-profiles.spec.ts` (two real extension profiles, one account): **1/1**, then **2/2** repeated: Windows uploads, the Mac bootstraps it into its manager list, a rename on the Mac reaches Windows, a delete on Windows disappears on the Mac; tab URLs unchanged around every pull. `sync-push.spec.ts` + two-profile: **9/9** over `--repeat-each 3`.
+- Full web E2E **37/38**, extension E2E **8/9**: only the two pre-existing macOS failures (password reset, mid-restore retry). Note: these two runs (and the DB run) were piped through `grep` in one command, against the repo rules; their summary lines are what is reported here.
+
+**Known gaps:** no opt-in/upload preview (E2E seeds `enabledAt` and the account-scoped session directly); every session still shows "Local only", which is wrong for pulled sessions; no conflict review UI (conflicts keep the local operation and the server copy); workspaces are pulled but skipped by the extension; description/pinned/archived aren't stored locally; reads aren't rate-limited; receipts and the change log are never pruned.
 
 ### 2026-10-16 (M4 sync push slice) / Claude Code (Opus 5.5) / `feature/m4-sync-push` (macOS laptop)
 
@@ -593,9 +616,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push `feature/m4-sync-push`, open its PR on top of #6. Then the stack merges in order #1 -> #2 -> #3 -> #4 -> #6 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
-2. M4 next slice: `GET /api/v1/sync/pull` with safe cursors (+ `CURSOR_EXPIRED` bootstrap), and the extension pull that applies pages and the cursor in one transaction, never overwrites entities with pending operations or tombstones, purges tombstones once passed, and ignores its own echoes (SYNC_PROTOCOL.md 6, 7, 11, 13e). Create `packages/sync` for the pure reconciliation rules there.
-3. Then: opt-in + upload preview (sets `syncState.enabledAt`, moves or copies chosen local sessions) and the sync status UI; conflict review.
+1. Commit and push `feature/m4-sync-pull`, open its PR on top of #7. The stack merges in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+2. M4 next slice: opt-in + upload preview + sync status UI (UI_UX_DESIGN.md section 13 states): the consent step that sets `syncState.enabledAt` (with the SECURITY_PRIVACY.md disclosure copy), choosing local sessions to upload (copy or move: decide with the user), per-session status instead of the hardcoded "Local only", a "Sync now" action, last sync time and errors.
+3. Then conflict review (keep mine / keep server / save both) using the held server copy and the conflicting operation.
 4. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures.
 
 ## Open questions / architecture validations

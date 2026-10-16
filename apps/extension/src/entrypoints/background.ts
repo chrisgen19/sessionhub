@@ -7,7 +7,7 @@ import { API_ORIGIN } from "../lib/api-config";
 import { getDb } from "../lib/db";
 import { runCheckpoint } from "../lib/recovery-checkpoint";
 import { runRestoreHousekeeping } from "../lib/restore-job-repository";
-import { pushNow } from "../lib/sync-uploader";
+import { syncNow } from "../lib/sync-runner";
 import {
   ensurePeriodicAlarm,
   onBrowserChange,
@@ -39,11 +39,20 @@ const deps = (): HandlerDeps => ({
 });
 
 const SYNC_RETRY_ALARM = "sync-retry";
+/** Remote changes arrive without a local trigger: check every 10 minutes (exits at once when sync is off). */
+const SYNC_PERIODIC_ALARM = "sync-periodic";
+const SYNC_PERIODIC_MINUTES = 10;
 /** Commands after which the outbox may hold something new to upload. */
 const SYNC_AFTER = new Set(["session.rename", "session.delete"]);
 
-/** Uploads in the background; exits at once when disconnected, sync is off or nothing is queued. */
-const syncSoon = () => void pushNow(toSyncDeps(deps())).catch(() => undefined);
+/** Syncs in the background (upload, then download); exits at once when disconnected or sync is off. */
+const syncSoon = () => void syncNow(toSyncDeps(deps())).catch(() => undefined);
+
+const ensureSyncAlarm = async () => {
+  if (!(await browser.alarms.get(SYNC_PERIODIC_ALARM))) {
+    await browser.alarms.create(SYNC_PERIODIC_ALARM, { delayInMinutes: SYNC_PERIODIC_MINUTES, periodInMinutes: SYNC_PERIODIC_MINUTES });
+  }
+};
 
 const changed = () => void onBrowserChange(getDb(), new Date()).catch(() => undefined);
 
@@ -90,7 +99,7 @@ export default defineBackground(() => {
   });
 
   browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === SYNC_RETRY_ALARM) return syncSoon();
+    if (alarm.name === SYNC_RETRY_ALARM || alarm.name === SYNC_PERIODIC_ALARM) return syncSoon();
     if (alarm.name !== RECOVERY_DEBOUNCE_ALARM && alarm.name !== RECOVERY_PERIODIC_ALARM) return;
     void runCheckpoint(deps(), { force: false, reason: "automatic" }).then((result) =>
       // After an error, leave the retry to the periodic alarm instead of re-arming every 30s.
@@ -104,5 +113,6 @@ export default defineBackground(() => {
   void ensurePeriodicAlarm().catch(() => undefined);
   void runRestoreHousekeeping(getDb(), workerStartedAt, new Date());
   // A previous worker may have been stopped mid-upload: its `sending` operations go out again.
+  void ensureSyncAlarm().catch(() => undefined);
   syncSoon();
 });

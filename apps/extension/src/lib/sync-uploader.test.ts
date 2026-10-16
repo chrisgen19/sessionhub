@@ -8,7 +8,8 @@ import type { SessionHubDb } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { deleteSession, getSession, updateSession } from "./session-repository";
 import { toSyncPayload } from "./sync-batch";
-import { pushNow, type SyncDeps } from "./sync-uploader";
+import { pushNow } from "./sync-uploader";
+import type { SyncDeps } from "./sync-gate";
 import { connectAs, freshDb, idFactory, sampleSession, sampleWindows, seedAccountSession } from "./test-fixtures";
 
 const ALICE = "AliceAccount00000000000000000000";
@@ -30,7 +31,11 @@ const setup = async (...handlers: Handler[]) => {
   const clock = { now: T0 };
   const calls: { body: PushBody; authorization: string | null }[] = [];
   const fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-    if (new URL(String(input)).pathname !== "/api/v1/sync/push") throw new TypeError("fetch failed");
+    const path = new URL(String(input)).pathname;
+    // An empty account to download, for runs that also pull (sync.now).
+    if (path === "/api/v1/sync/bootstrap") return json(200, { protocolVersion: 1, cursor: "c1.0.AAAAAAAAAAAAAAAAAAAAAA", nextAfter: null, hasMore: false, items: [] });
+    if (path === "/api/v1/sync/pull") return json(200, { protocolVersion: 1, cursor: "c1.0.AAAAAAAAAAAAAAAAAAAAAA", nextCursor: "c1.0.AAAAAAAAAAAAAAAAAAAAAA", hasMore: false, changes: [] });
+    if (path !== "/api/v1/sync/push") throw new TypeError("fetch failed");
     const body = JSON.parse(String(init?.body)) as PushBody;
     calls.push({ body, authorization: new Headers(init?.headers).get("authorization") });
     const handler = handlers.length > 1 ? handlers.shift()! : handlers[0]!;
@@ -224,14 +229,20 @@ describe("sync uploader", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("is reachable from the worker as the `sync.pushNow` command", async () => {
+  it("runs as part of the worker's `sync.now` command, before the download", async () => {
     const { db, deps } = await setup(acceptAll);
     const session = await queuedEdit(db, 2);
     const response = await handleCommand(
-      { type: "sync.pushNow" },
+      { type: "sync.now" },
       { db, readWindows: async () => sampleWindows(), restoreWindow: async () => [], now: deps.now, createId: ids, account: deps.account, sync: { random: deps.random, scheduleRetry: deps.scheduleRetry } },
     );
-    expect(response).toEqual({ ok: true, data: { status: "done", accepted: 1, conflicts: 0, rejected: 0, remaining: 0 } });
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        push: { status: "done", accepted: 1, conflicts: 0, rejected: 0, remaining: 0 },
+        pull: { status: "done", applied: 0, held: 0, skipped: 0, bootstrapped: true },
+      },
+    });
     expect((await getSession(db, session.id))?.name).toBe("Edited");
     expect((await db.sessions.get(session.id))?.sync).toEqual({ serverVersion: 3, state: "synced" });
   });
