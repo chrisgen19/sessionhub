@@ -18,6 +18,7 @@ import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
 import type { SyncDeps } from "./sync-gate";
+import { resolveReview, ReviewGoneError } from "./review-repository";
 import { disableSync, enableSync, SyncUnavailableError } from "./sync-consent";
 import { syncNow } from "./sync-runner";
 import { getSnapshot } from "./recovery-repository";
@@ -87,6 +88,7 @@ const NOT_DONE: Record<Command["type"], string> = {
   "sync.now": "nothing was synced",
   "sync.enable": "sync wasn't turned on and nothing was moved",
   "sync.disable": "sync wasn't turned off",
+  "sync.resolve": "nothing was changed",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
@@ -94,7 +96,7 @@ const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse
   if (isQuotaError(error)) return fail("storage-full", `Storage for SessionHub is full, so ${NOT_DONE[type]}. ${STORAGE_FULL_HINT}`);
   if (error instanceof VersionConflictError || error instanceof SessionExistsError) return fail("conflict", error.message);
   if (error instanceof SessionNotFoundError || error instanceof RestoreJobNotFoundError) return fail("not-found", error.message);
-  if (error instanceof RestoreJobNotRetryableError) return fail("conflict", error.message);
+  if (error instanceof RestoreJobNotRetryableError || error instanceof ReviewGoneError) return fail("conflict", error.message);
   if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError || error instanceof SessionImportError) {
     return fail("invalid-input", error.message);
   }
@@ -267,6 +269,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
       case "sync.disable":
         await disableSync(deps.db);
         return { ok: true, data: {} };
+      case "sync.resolve":
+        return { ok: true, data: await resolveReview(deps.db, command.sessionId, command.choice, { now: deps.now(), createId: deps.createId }) };
       default:
         return await runAccountCommand(command, deps);
     }

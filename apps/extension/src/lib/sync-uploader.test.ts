@@ -116,6 +116,8 @@ describe("sync uploader", () => {
       { entityId: a.id, status: "queued", expectedVersion: 4, lastError: null },
     ]);
     expect((await db.sessions.get(a.id))?.sync?.state).toBe("conflict");
+    // What conflict review needs: why it was refused, and the version it can build on.
+    expect((await listOutbox(db, SCOPE))[0]).toMatchObject({ lastErrorCode: "VERSION_CONFLICT", conflictServerVersion: 4 });
     expect((await db.sessions.get(b.id))?.sync).toEqual({ serverVersion: 2, state: "synced" });
   });
 
@@ -206,7 +208,10 @@ describe("sync uploader", () => {
     await deleteSession(db, gone.id, { now: T0, createId: ids });
 
     expect(await pushNow(deps)).toEqual({ status: "done", accepted: 1, conflicts: 0, rejected: 2, remaining: 0 });
-    expect((await listOutbox(db, SCOPE)).map(({ entityId, status }) => [entityId, status])).toEqual([[taken.id, "rejected"], [invalid.id, "rejected"]]);
+    expect((await listOutbox(db, SCOPE)).map(({ entityId, status, lastErrorCode }) => [entityId, status, lastErrorCode])).toEqual([
+      [taken.id, "rejected", "ID_IN_USE"],
+      [invalid.id, "rejected", "VALIDATION_ERROR"],
+    ]);
     expect((await db.sessions.get(taken.id))?.sync?.state).toBe("conflict");
     expect((await db.sessions.get(invalid.id))?.sync?.state).toBe("error");
     expect(await db.sessionTombstones.get(gone.id)).toBeDefined();
@@ -229,7 +234,7 @@ describe("sync uploader", () => {
 
     expect(await pushNow(deps)).toMatchObject({ status: "done", accepted: 1 });
     expect(calls[0]!.body.operations.map((op) => op.entityId)).toEqual([small.id]);
-    expect(await listOutbox(db, SCOPE)).toMatchObject([{ entityId: huge.id, status: "rejected", lastError: expect.stringMatching(/too large/) }]);
+    expect(await listOutbox(db, SCOPE)).toMatchObject([{ entityId: huge.id, status: "rejected", lastErrorCode: "TOO_LARGE", lastError: expect.stringMatching(/too large/) }]);
     expect((await db.sessions.get(huge.id))?.sync?.state).toBe("error");
   });
 

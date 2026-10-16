@@ -186,7 +186,7 @@ Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 | `syncState` (v4) | `scope` | Per account: `enabledAt` (local consent; nothing uploads without it), `cursor` (pull slice), `lastSyncAt` (last completed run, upload and download), `lastError` and `lastErrorCode` (NETWORK = offline), `failures` and `nextAttemptAt` (backoff). Field additions need no new Dexie version (no index change). `bootstrap` (`{ cursor, after }`) while a full rebuild is in progress |
 | `serverCopies` (v5) | `id`, `scope` | The newest server state (`action`, `version`, `payload` = server detail or null) of a session whose local changes are still waiting; settled when they are accepted (`SYNC_PROTOCOL.md` 13g) |
 
-Not yet created: `sessionVersions`, `workspaces`, `conflictDrafts` (for now the conflicting operation keeps the local payload and `serverCopies` the server's), `localPreferences`. Add them as new Dexie versions; never edit an existing version.
+Not yet created: `sessionVersions`, `workspaces`, `localPreferences`. `conflictDrafts` isn't needed: the held operation keeps the local payload and `serverCopies` the server's (`SYNC_PROTOCOL.md` 13i). Add them as new Dexie versions; never edit an existing version.
 
 **Account scope and outbox (implemented, v4):**
 
@@ -202,7 +202,7 @@ Not yet created: `sessionVersions`, `workspaces`, `conflictDrafts` (for now the 
 - **Tombstones** are kept until the server's delete has been pulled back (purged by the pull slice), so a pull can't resurrect a session before its delete is uploaded. They hold no tabs or URLs.
 - **Upload (implemented, `SYNC_PROTOCOL.md` 13f):** session `sync.state` becomes `synced` after the server accepts the last pending operation, `conflict` after a version conflict or a rejection to review, `error` when a change can never be uploaded as is (invalid or too large).
 - **Download (implemented, `SYNC_PROTOCOL.md` 13g):** pulled and bootstrapped sessions are written into the account scope as `synced` (local `version` = previous + 1; the server version in `sync.serverVersion`), following `packages/sync/src/reconcile.ts`.
-- **Not yet:** conflict review and any UI for these states. Every session still shows "Local only", which is wrong for pulled sessions; they exist only once sync is enabled, which no UI does yet.
+- **Review (implemented, `SYNC_PROTOCOL.md` 13i):** held operations carry `lastErrorCode` and `conflictServerVersion`; a resolution removes the session's operations and applies the chosen outcome in one transaction.
 
 Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are pruned on every worker start (`RESTORE_JOB_RETENTION`: newest 50 within 30 days; the newest job and any `running` job are never pruned).
 

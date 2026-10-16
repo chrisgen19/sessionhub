@@ -5,7 +5,8 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./reconcile": "./src/reconcile.ts"
+    "./reconcile": "./src/reconcile.ts",
+    "./review": "./src/review.ts"
   },
   "scripts": {
     "lint": "eslint .",

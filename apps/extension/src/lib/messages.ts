@@ -51,6 +51,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   // The user turned sync on (consent) and chose which of this browser's sessions move into the account.
   z.object({ type: z.literal("sync.enable"), sessionIds: z.array(z.uuid()).max(10_000) }),
   z.object({ type: z.literal("sync.disable") }),
+  // The user's choice for a change the server didn't accept (conflict review).
+  z.object({ type: z.literal("sync.resolve"), sessionId: z.uuid(), choice: z.enum(["keep-mine", "keep-server", "save-both", "local-only"]) }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -78,6 +80,8 @@ export interface CommandResults {
   "sync.now": SyncSummary;
   "sync.enable": { enabledAt: string; moved: number };
   "sync.disable": Record<string, never>;
+  /** The session to show next: a new id when this browser's version became a separate session. */
+  "sync.resolve": { sessionId: string };
 }
 
 export type ErrorCode =

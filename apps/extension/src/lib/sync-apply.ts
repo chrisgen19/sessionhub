@@ -25,8 +25,8 @@ const readLocalEntity = async (db: SessionHubDb, scope: AccountScope, id: string
   return { entity, record };
 };
 
-/** Stores the server's session as a synced local record; false if it doesn't fit the local schema. */
-const writeServerSession = async (db: SessionHubDb, scope: AccountScope, detail: ApiSessionDetail, version: number, previous?: LocalSessionRecord): Promise<boolean> => {
+/** Stores the server's session as a synced local record (dropping its held copy); false if it doesn't fit the local schema. */
+export const writeServerSession = async (db: SessionHubDb, scope: AccountScope, detail: ApiSessionDetail, version: number, previous?: LocalSessionRecord): Promise<boolean> => {
   const session = savedSessionSchema.safeParse(toLocalSession(detail, previous?.scope === scope ? previous.version : null));
   if (!session.success) return false;
   await db.sessions.put({ ...session.data, scope, sync: { serverVersion: version, state: "synced" } });

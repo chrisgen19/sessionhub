@@ -23,7 +23,13 @@ export function SessionsView({ sessionId, onSelect }: { sessionId: string | null
       emptyDetail="Select a session to see its windows and tabs."
       detail={
         selected && state.status === "ready" ? (
-          <SessionInspector session={selected} syncLabel={state.syncLabels[selected.id] ?? "local"} onBack={() => onSelect(null)} onDeleted={() => onSelect(null)} />
+          <SessionInspector
+            session={selected}
+            syncLabel={state.syncLabels[selected.id] ?? "local"}
+            onBack={() => onSelect(null)}
+            onDeleted={() => onSelect(null)}
+            onOpen={onSelect}
+          />
         ) : null
       }
       list={

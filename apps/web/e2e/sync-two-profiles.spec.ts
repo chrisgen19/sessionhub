@@ -68,3 +68,51 @@ test("a session saved in one profile appears in another; edits and deletes follo
     await mac.close();
   }
 });
+
+test("a real conflict between two profiles is reviewed in the extension, and both versions are kept everywhere", async () => {
+  test.setTimeout(120_000);
+  const windows = await launchWithExtension({ "x-forwarded-for": randomIp() });
+  const mac = await launchWithExtension({ "x-forwarded-for": randomIp() });
+  try {
+    const { email } = await signUp(windows.context);
+    const onWindows = await connectExtension(windows.context, windows.extensionId);
+    await signInProfile(mac.context, email);
+    const onMac = await connectExtension(mac.context, mac.extensionId);
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const sessionId = await captureAllWindows(onWindows);
+    await sendCommand(onWindows, { type: "session.rename", sessionId, expectedVersion: 1, name: "Shared plan" });
+    await turnOnSync(onWindows, windows.extensionId, 1);
+    const server = () => prisma.savedSession.findMany({ where: { userId: user.id, deletedAt: null }, orderBy: { name: "asc" } });
+    await expect.poll(async () => (await server()).map((row) => row.name), { timeout: 15_000 }).toEqual(["Shared plan"]);
+    await turnOnSync(onMac, mac.extensionId, 0);
+    const local = async (manager: typeof onMac, id = sessionId) => (await readStore<Stored>(manager, "sessions")).find((stored) => stored.id === id);
+    await expect.poll(async () => (await local(onMac))?.sync?.state, { timeout: 15_000 }).toBe("synced");
+
+    // Both rename it. The Mac's reaches the server first; Windows hasn't pulled it, so its upload conflicts.
+    await sendCommand(onMac, { type: "session.rename", sessionId, expectedVersion: (await local(onMac))!.version, name: "Mac's plan" });
+    await expect.poll(async () => (await server()).map((row) => row.name), { timeout: 15_000 }).toEqual(["Mac's plan"]);
+    await sendCommand(onWindows, { type: "session.rename", sessionId, expectedVersion: (await local(onWindows))!.version, name: "Windows' plan" });
+    await expect.poll(async () => (await local(onWindows))?.sync?.state, { timeout: 15_000 }).toBe("conflict");
+    await expect.poll(async () => (await readStore(onWindows, "serverCopies")).length, { timeout: 15_000 }).toBe(1);
+
+    // Windows reviews it in the inspector and keeps both.
+    await onWindows.goto(`chrome-extension://${windows.extensionId}/manager.html#session=${sessionId}`);
+    const inspector = onWindows.getByRole("article", { name: /session details/i });
+    await inspector.getByRole("button", { name: "Review…" }).click();
+    const dialog = onWindows.getByRole("dialog", { name: `Review "Windows' plan"` });
+    await expect(dialog.getByText("Mac's plan")).toBeVisible();
+    await dialog.getByRole("button", { name: /^Keep both/ }).click();
+    await expect(dialog).toBeHidden();
+
+    // The server has both; the Mac gets both at its next sync, and nothing is waiting anywhere.
+    await expect.poll(async () => (await server()).map((row) => row.name), { timeout: 15_000 }).toEqual(["Mac's plan", "Windows' plan (this browser's version)"]);
+    expect(await local(onWindows)).toMatchObject({ name: "Mac's plan", sync: { state: "synced" } });
+    await sendCommand(onMac, { type: "sync.now" });
+    const onMacNames = (await readStore<Stored>(onMac, "sessions")).map((stored) => stored.name).sort();
+    expect(onMacNames).toEqual(["Mac's plan", "Windows' plan (this browser's version)"]);
+    await expect.poll(async () => (await readStore(onWindows, "outbox")).length, { timeout: 15_000 }).toBe(0);
+  } finally {
+    await windows.close();
+    await mac.close();
+  }
+});
