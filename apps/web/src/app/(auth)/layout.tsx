@@ -12,7 +12,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </Link>
       <main className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 shadow-sm sm:p-8">{children}</main>
       <p className="mt-6 max-w-sm text-center text-xs leading-relaxed text-fg-muted">
-        An account is optional. The extension works fully without one; accounts are for the cloud sync that's coming next.
+        An account is optional. The extension works fully without one; an account lets you sync saved sessions between your browsers.
       </p>
     </div>
   );

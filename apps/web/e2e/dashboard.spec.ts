@@ -2,8 +2,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { createPrismaClient } from "@sessionhub/database/client";
 
-// Seeds rows directly in the test database: sync doesn't exist yet, so this is the only way
-// to exercise lists with data. Each test uses fresh users.
+// Seeds rows directly in the test database, which is quicker than syncing them from a real
+// extension (sync-*.spec.ts do that). Each test uses fresh users.
 const prisma = createPrismaClient(process.env.TEST_DATABASE_URL);
 test.afterAll(async () => {
   await prisma.$disconnect();
@@ -63,7 +63,9 @@ test("shell navigation and honest empty states for a new account", async ({ page
   const nav = page.getByRole("navigation", { name: "Dashboard" }).first();
   await expect(nav.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Welcome, Chris" })).toBeVisible();
-  await expect(page.getByRole("main").getByText("Cloud sync isn't available yet.")).toBeVisible();
+  await expect(page.getByRole("main").getByText("No browser is connected yet.")).toBeVisible();
+  await expect(page.getByRole("complementary")).toContainText("No browser connected");
+  await expect(page.getByText(/isn't available yet/)).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Summary" }).getByText("0")).toHaveCount(3);
   await expect(page.getByText("No synced sessions yet")).toBeVisible();
 
@@ -76,7 +78,7 @@ test("shell navigation and honest empty states for a new account", async ({ page
   await expect(page.getByText("No devices connected yet")).toBeVisible();
 
   await nav.getByRole("link", { name: "Settings" }).click();
-  await expect(page.getByRole("region", { name: "Sync" })).toContainText("Off.");
+  await expect(page.getByRole("region", { name: "Sync" })).toContainText("No browser connected.");
 });
 
 test("lists and search show only the signed-in user's sessions", async ({ page }) => {
@@ -123,6 +125,16 @@ test("devices show last seen and revoked state, never 'online'", async ({ page }
   await expect(list).toContainText("last seen 5m ago");
   await expect(list.getByRole("listitem").nth(1)).toContainText("Access revoked");
   await expect(page.getByText(/online/i)).toHaveCount(0);
+  // The revoked browser doesn't count; the sidebar never claims sync is on or off.
+  await expect(page.getByRole("complementary")).toContainText("1 browser connected");
+  await expect(page.getByRole("complementary")).toContainText("Last activity: 5m ago. Turn sync on or off in each browser's extension.");
+  // Pairing doesn't tell the server whether sync is on: nothing may claim it is.
+  await expect(page.getByText(/sync is (turned )?(on|off)\b/i)).toHaveCount(0);
+  await page.goto("/app");
+  await expect(page.getByText("No browser is connected yet.")).toHaveCount(0);
+  await page.goto("/app/settings");
+  await expect(page.getByRole("region", { name: "Sync" })).toContainText("1 browser connected. Turn sync on or off in each browser's SessionHub extension");
+  await expect(page.getByText(/sync is (turned )?(on|off)\b/i)).toHaveCount(0);
 });
 
 test("mobile: bottom navigation, no sidebar, no horizontal overflow", async ({ page }) => {

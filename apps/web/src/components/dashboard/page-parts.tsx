@@ -23,15 +23,15 @@ export function EmptyState({ icon: Icon, title, children }: { icon: LucideIcon; 
   );
 }
 
-/** States plainly that cloud sync doesn't exist yet, so empty lists aren't mistaken for data loss. */
+/** Shown while no browser is connected, so an empty account isn't mistaken for lost sessions. */
 export function SyncNotice() {
   return (
     <div className="mb-7 flex items-start gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
       <CloudOff aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
       <p className="leading-relaxed text-fg-muted">
-        <span className="font-semibold text-fg">Cloud sync isn&apos;t available yet.</span> Sessions you save stay in the extension on
-        that computer, so they don&apos;t appear here. When sync arrives, you&apos;ll turn it on in the extension, see exactly what
-        gets uploaded, and can turn it off at any time.
+        <span className="font-semibold text-fg">No browser is connected yet.</span> Sessions you save stay in the SessionHub extension
+        on that computer until you connect it to this account and turn on sync there (Account, then Sync). You see exactly what
+        uploads before anything is sent, and can turn sync off at any time.
       </p>
     </div>
   );
