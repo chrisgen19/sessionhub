@@ -106,13 +106,15 @@ const absorbFields = (next: OutboxRecord, refused: OutboxRecord): OutboxRecord =
     ? { ...next, payload: { ...refused.payload, ...next.payload } }
     : next;
 
-export type WorkspaceOutcome = "accepted" | "requeued" | "rejected" | "retryable";
+/** `requeued` goes out again in the next round; `dropped` needs nothing more (not counted as uploaded). */
+export type WorkspaceOutcome = "accepted" | "requeued" | "dropped" | "rejected" | "retryable";
 
 /**
  * Applies the push result of one workspace operation (docs/SYNC_PROTOCOL.md 13j). Nothing here
  * needs the user: a conflict is merged and sent again, a workspace deleted elsewhere is forgotten,
- * a refused delete brings the workspace back. Only a create the account refuses (limit reached)
- * stays as `rejected`, shown on the workspace until the user removes it.
+ * a refused delete brings the workspace back, and a refused change of a workspace deleted here
+ * meanwhile gives way to that delete. Only a create the account refuses (limit reached) stays as
+ * `rejected`, shown on the workspace until the user removes it.
  */
 export const applyWorkspaceResult = async (
   db: SessionHubDb,
@@ -147,6 +149,18 @@ export const applyWorkspaceResult = async (
     const record = await db.workspaces.get(id);
     if (record?.scope === scope) await db.workspaces.update(id, { deletedAt: null, sync: { ...record.sync, state: rest.length > 0 ? "pending" : "synced" } });
     return "accepted";
+  }
+  // Deleted here while this change was on its way: the delete wins over the refused change. A
+  // refused create means the account never had the workspace, so there is nothing to delete there.
+  const later = (await entityOperations(db, scope, id)).filter((other) => other.id !== operation.id);
+  if (later.some((other) => other.action === "delete")) {
+    if (operation.expectedVersion > 0) {
+      await requeueRefused(db, operation, operation.expectedVersion, operation, absorbFields, context);
+      return "requeued";
+    }
+    await db.outbox.delete(operation.seq ?? 0);
+    await forgetWorkspace(db, scope, id);
+    return "dropped";
   }
   const message = result.message;
   await db.outbox.put({

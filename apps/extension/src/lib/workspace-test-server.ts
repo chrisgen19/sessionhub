@@ -28,7 +28,12 @@ export const createTestServer = () => {
   const sessions = new Map<string, ServerSession>();
   const changes: Change[] = [];
   const pushes: Operation[][] = [];
-  const options = { refuseWorkspaceCreates: false };
+  const options: {
+    /** Refuses chosen operations with a rejected code, or VALIDATION_ERROR. */
+    refuse: (operation: Operation) => string | null;
+    /** Runs while a push is in flight (its operations are already `sending` in the browser). */
+    duringPush: (() => Promise<void>) | null;
+  } = { refuse: () => null, duringPush: null };
 
   const detail = (id: string): ApiSessionDetail => {
     const session = must(sessions.get(id), `session ${id}`);
@@ -88,6 +93,9 @@ export const createTestServer = () => {
     const accepted = (serverVersion: number) => ({ ...base, status: "accepted", serverVersion, serverSequence: String(changes.length) });
     const conflict = (serverVersion: number) => ({ ...base, status: "conflict", code: "VERSION_CONFLICT", expectedVersion: operation.expectedVersion, serverVersion, message: "Changed elsewhere." });
     const rejected = (code: string) => ({ ...base, status: "rejected", code, message: `Refused: ${code}` });
+    const refusal = options.refuse(operation);
+    if (refusal === "VALIDATION_ERROR") return { status: "validation_error", clientOperationId: operation.clientOperationId, message: "Refused: VALIDATION_ERROR", issues: [] };
+    if (refusal) return rejected(refusal);
     const payload = operation.payload ?? {};
     if (operation.entityType === "workspace") {
       const current = workspaces.get(operation.entityId);
@@ -101,7 +109,7 @@ export const createTestServer = () => {
       }
       if (operation.expectedVersion === 0) {
         if (current) return rejected("ID_IN_USE");
-        if (options.refuseWorkspaceCreates) return rejected("LIMIT_REACHED");
+        if ([...workspaces.values()].filter((workspace) => !workspace.deleted).length >= 100) return rejected("LIMIT_REACHED");
         elsewhere.addWorkspace(operation.entityId, payload);
         return accepted(1);
       }
@@ -130,6 +138,9 @@ export const createTestServer = () => {
     if (url.pathname === "/api/v1/sync/push") {
       const body = JSON.parse(String(init?.body)) as { operations: Operation[] };
       pushes.push(body.operations);
+      const during = options.duringPush;
+      options.duringPush = null;
+      await during?.();
       return json(200, { protocolVersion: 1, results: body.operations.map(pushOne) });
     }
     if (url.pathname === "/api/v1/sync/pull") {

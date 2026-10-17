@@ -75,9 +75,16 @@ export const createWorkspace = (db: SessionHubDb, input: { name: string; color: 
   db.transaction("rw", [db.account, db.workspaces, db.outbox], async () => {
     const scope = await requireScope(db);
     const name = parseName(input.name);
-    const live = (await db.workspaces.where("scope").equals(scope).toArray()).filter((record) => !record.deletedAt);
-    if (live.length >= WORKSPACE_LIMITS.perUserMax) {
-      throw new InvalidWorkspaceError(`You can have up to ${WORKSPACE_LIMITS.perUserMax} workspaces. Delete one you don't use first.`);
+    // A workspace deleted here still counts until the account accepts the delete, which may wait for
+    // its sessions to move out: a create sent meanwhile would pass the account's limit.
+    const records = await db.workspaces.where("scope").equals(scope).toArray();
+    if (records.length >= WORKSPACE_LIMITS.perUserMax) {
+      const live = records.filter((record) => !record.deletedAt).length;
+      throw new InvalidWorkspaceError(
+        live >= WORKSPACE_LIMITS.perUserMax
+          ? `You can have up to ${WORKSPACE_LIMITS.perUserMax} workspaces. Delete one you don't use first.`
+          : `You can have up to ${WORKSPACE_LIMITS.perUserMax} workspaces, and one you deleted hasn't been removed from your account yet. Try again after it syncs.`,
+      );
     }
     const id = context.createId();
     const now = context.now.toISOString();

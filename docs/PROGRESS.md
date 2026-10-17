@@ -61,6 +61,11 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - A delete refused with `WORKSPACE_NOT_EMPTY` brings the workspace back without a message.
 - PR #18 open; CI not yet seen.
 
+**PR #18 review (Codex, 2 P2 findings), both valid and fixed:**
+- *Delete while a create is in flight, then the create is refused:* reproduced. The refused create held the queued delete back forever, and the workspace was hidden (deleted here), so "Needs review" showed with nothing to review. Now a refused change gives way to a delete queued behind it: a refused create forgets the workspace, a refused edit moves the delete onto its base version (`workspace-sync.ts`).
+- *Replacement create at the 100 limit while a delete waits for its sessions:* reproduced. The create went out in the same push as the unassignment, before the delete, and was refused `LIMIT_REACHED` for good. Now workspaces deleted here count toward the local limit until the account accepts the delete, with a message saying so (`workspace-repository.ts`).
+- Tests: `workspaces.test.ts` +3 (both refusals, and the limit); the test server gained a refusal hook, a during-push hook and the 100 limit. `pnpm check --force` 17/17, extension tests 218.
+
 **Next step:** watch CI on PR #18 and address review, then the next M5 item from ROADMAP.md (workspaces on the web dashboard, or the side panel).
 
 ### 2026-10-17 (M5 workspaces, part 1: sync server side) / Claude Code (Opus 5.5) / `feature/m5-workspaces` (macOS laptop)

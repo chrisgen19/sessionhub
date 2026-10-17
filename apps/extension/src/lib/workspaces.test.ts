@@ -240,7 +240,7 @@ describe("workspace sync with the account", () => {
 
   it("keeps a create the account refuses on the workspace, holds its sessions back, and lets the user remove it", async () => {
     const { db, server, deps } = await setup();
-    server.options.refuseWorkspaceCreates = true;
+    server.options.refuse = (operation) => (operation.entityType === "workspace" && operation.expectedVersion === 0 ? "LIMIT_REACHED" : null);
     const session = await syncedSession(db, 2, 1, null);
     server.elsewhere.seedSession(session, 1);
     const { workspaceId } = await createWorkspace(db, { name: "Too many", color: null }, context);
@@ -256,6 +256,61 @@ describe("workspace sync with the account", () => {
     expect(server.sessions.get(session.id)).toMatchObject({ version: 2, workspaceId: null });
     expect(await listOutbox(db, SCOPE)).toEqual([]);
     expect(await readSyncOverview(db)).toMatchObject({ state: "synced" });
+  });
+});
+
+describe("review fixes (PR #18)", () => {
+  it("drops a workspace deleted here while its create was in flight, when the account refuses that create", async () => {
+    const { db, server, deps } = await setup();
+    server.options.refuse = (operation) => (operation.entityType === "workspace" && operation.expectedVersion === 0 ? "LIMIT_REACHED" : null);
+    const { workspaceId } = await createWorkspace(db, { name: "Short-lived", color: null }, context);
+    server.options.duringPush = async () => {
+      expect(await listOutbox(db, SCOPE)).toMatchObject([{ entityId: workspaceId, status: "sending" }]);
+      await deleteWorkspace(db, workspaceId, context);
+    };
+
+    await syncNow(deps);
+    expect(await db.workspaces.get(workspaceId)).toBeUndefined();
+    expect(await listOutbox(db, SCOPE)).toEqual([]);
+    expect(await readSyncOverview(db)).toMatchObject({ state: "synced", review: 0, waiting: 0 });
+  });
+
+  it("still deletes a workspace deleted here while a refused edit of it was in flight", async () => {
+    const { db, server, deps } = await setup();
+    const id = ids();
+    server.elsewhere.addWorkspace(id);
+    await syncedWorkspace(db, id, 1);
+    await db.syncState.update(SCOPE, { cursor: syncCursor(1) });
+    await updateWorkspace(db, id, { name: "Renamed" }, context);
+    server.options.refuse = (operation) => (operation.entityType === "workspace" && operation.action === "upsert" ? "VALIDATION_ERROR" : null);
+    server.options.duringPush = () => deleteWorkspace(db, id, context).then(() => undefined);
+
+    await syncNow(deps);
+    expect(server.workspaces.get(id)).toMatchObject({ deleted: true });
+    expect(await db.workspaces.get(id)).toBeUndefined();
+    expect(await listOutbox(db, SCOPE)).toEqual([]);
+  });
+
+  it("refuses a new workspace at the limit until a delete made here has reached the account", async () => {
+    const { db, server, deps } = await setup();
+    const full = Array.from({ length: 100 }, () => ids());
+    for (const id of full) {
+      server.elsewhere.addWorkspace(id);
+      await syncedWorkspace(db, id, 1);
+    }
+    await db.syncState.update(SCOPE, { cursor: syncCursor(100) });
+    const session = await syncedSession(db, 2, 1, full[0]);
+    server.elsewhere.seedSession(session, 1, full[0]);
+
+    // The delete waits for its session to move out, so a create sent meanwhile would pass the limit.
+    await deleteWorkspace(db, full[0]!, context);
+    await expect(createWorkspace(db, { name: "Replacement", color: null }, context)).rejects.toThrow(/one you deleted hasn't been removed from your account yet/);
+    await syncNow(deps);
+    expect(server.workspaces.get(full[0]!)).toMatchObject({ deleted: true });
+
+    const { workspaceId } = await createWorkspace(db, { name: "Replacement", color: null }, context);
+    await syncNow(deps);
+    expect(await db.workspaces.get(workspaceId)).toMatchObject({ sync: { serverVersion: 1, state: "synced" } });
   });
 });
 
