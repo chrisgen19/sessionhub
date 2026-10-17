@@ -5,16 +5,23 @@ import type { LocalScope, LocalSessionRecord, SessionHubDb } from "./db";
 import { enqueueSessionDelete, enqueueSessionUpsert, type OutboxContext } from "./outbox-repository";
 import { sessionSyncLabel, type SessionSyncLabel } from "./sync-status";
 
-const stripLocalFields = ({ scope: _scope, sync: _sync, ...session }: LocalSessionRecord): SavedSession => session;
+const stripLocalFields = ({ scope: _scope, sync: _sync, workspaceId: _workspaceId, ...session }: LocalSessionRecord): SavedSession => session;
 
 const scopeRecords = (db: SessionHubDb, scope: LocalScope): Promise<LocalSessionRecord[]> =>
   db.sessions.where("[scope+updatedAt]").between([scope, Dexie.minKey], [scope, Dexie.maxKey]).reverse().toArray();
 
+export interface SessionListing {
+  sessions: SavedSession[];
+  syncLabels: Record<string, SessionSyncLabel>;
+  /** Each session's account workspace (null: none, or only in this browser). */
+  workspaceIds: Record<string, string | null>;
+}
+
 /**
- * Visible sessions plus each one's sync label, for lists. Same liveQuery rules as below: direct
- * Dexie awaits only (connection, then each scope, then the account's sync state).
+ * Visible sessions plus each one's sync label and workspace, for lists. Same liveQuery rules as
+ * below: direct Dexie awaits only (connection, then each scope, then the account's sync state).
  */
-export const listSessionsWithSync = async (db: SessionHubDb): Promise<{ sessions: SavedSession[]; syncLabels: Record<string, SessionSyncLabel> }> => {
+export const listSessionsWithSync = async (db: SessionHubDb): Promise<SessionListing> => {
   const connection = await db.account.get("connection");
   const records: LocalSessionRecord[] = [];
   for (const scope of visibleScopes(connection)) records.push(...(await scopeRecords(db, scope)));
@@ -24,6 +31,7 @@ export const listSessionsWithSync = async (db: SessionHubDb): Promise<{ sessions
   return {
     sessions: records.map(stripLocalFields),
     syncLabels: Object.fromEntries(records.map((record) => [record.id, sessionSyncLabel(record, syncEnabled)])),
+    workspaceIds: Object.fromEntries(records.map((record) => [record.id, record.workspaceId ?? null])),
   };
 };
 
@@ -99,9 +107,9 @@ export const saveNewSession = async (db: SessionHubDb, session: SavedSession, co
   try {
     return await db.transaction("rw", [db.sessions, db.outbox, db.account, db.syncState], async () => {
       const scope = await newSessionScope(db);
-      const record: LocalSessionRecord = isAccountScope(scope) ? { ...valid, scope, sync: { serverVersion: null, state: "pending" } } : { ...valid, scope };
+      const record: LocalSessionRecord = isAccountScope(scope) ? { ...valid, scope, sync: { serverVersion: null, state: "pending" }, workspaceId: null } : { ...valid, scope };
       await (replace ? db.sessions.put(record) : db.sessions.add(record));
-      if (isAccountScope(scope)) await enqueueSessionUpsert(db, scope, valid, null, context);
+      if (isAccountScope(scope)) await enqueueSessionUpsert(db, scope, { ...valid, workspaceId: null }, null, context);
       return scope;
     });
   } catch (error) {
@@ -145,10 +153,12 @@ export const updateSession = async (
       return valid;
     }
     const serverVersion = record.sync?.serverVersion ?? null;
-    await enqueueSessionUpsert(db, record.scope, valid, serverVersion, context);
+    // The workspace goes along once known; absent leaves the server's as it is.
+    const workspace = record.workspaceId === undefined ? {} : { workspaceId: record.workspaceId };
+    await enqueueSessionUpsert(db, record.scope, { ...valid, ...workspace }, serverVersion, context);
     // An unresolved conflict stays visible until the user resolves it.
     const state = record.sync?.state === "conflict" ? "conflict" : "pending";
-    await db.sessions.put({ ...valid, scope: record.scope, sync: { serverVersion, state } });
+    await db.sessions.put({ ...valid, ...workspace, scope: record.scope, sync: { serverVersion, state } });
     return valid;
   });
 

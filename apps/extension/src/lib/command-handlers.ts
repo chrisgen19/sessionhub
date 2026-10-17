@@ -33,6 +33,7 @@ import {
   RestoreJobNotFoundError,
   RestoreJobNotRetryableError,
 } from "./restore-job-repository";
+import { assignSession, createWorkspace, deleteWorkspace, InvalidWorkspaceError, updateWorkspace, WorkspaceNotFoundError } from "./workspace-repository";
 import {
   deleteSession,
   getSession,
@@ -89,15 +90,19 @@ const NOT_DONE: Record<Command["type"], string> = {
   "sync.enable": "sync wasn't turned on and nothing was moved",
   "sync.disable": "sync wasn't turned off",
   "sync.resolve": "nothing was changed",
+  "workspace.create": "the workspace wasn't created",
+  "workspace.update": "the workspace wasn't changed",
+  "workspace.delete": "the workspace wasn't deleted",
+  "session.assign": "the session wasn't moved",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
   if (error instanceof RestoreRecordingError) return fail("storage-full", error.message);
   if (isQuotaError(error)) return fail("storage-full", `Storage for SessionHub is full, so ${NOT_DONE[type]}. ${STORAGE_FULL_HINT}`);
   if (error instanceof VersionConflictError || error instanceof SessionExistsError) return fail("conflict", error.message);
-  if (error instanceof SessionNotFoundError || error instanceof RestoreJobNotFoundError) return fail("not-found", error.message);
+  if (error instanceof SessionNotFoundError || error instanceof RestoreJobNotFoundError || error instanceof WorkspaceNotFoundError) return fail("not-found", error.message);
   if (error instanceof RestoreJobNotRetryableError || error instanceof ReviewGoneError) return fail("conflict", error.message);
-  if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError || error instanceof SessionImportError) {
+  if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError || error instanceof SessionImportError || error instanceof InvalidWorkspaceError) {
     return fail("invalid-input", error.message);
   }
   if (error instanceof BrowserError) return fail("browser-error", error.message);
@@ -271,6 +276,16 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         return { ok: true, data: {} };
       case "sync.resolve":
         return { ok: true, data: await resolveReview(deps.db, command.sessionId, command.choice, { now: deps.now(), createId: deps.createId }) };
+      case "workspace.create":
+        return { ok: true, data: await createWorkspace(deps.db, { name: command.name, color: command.color }, { now: deps.now(), createId: deps.createId }) };
+      case "workspace.update":
+        await updateWorkspace(deps.db, command.workspaceId, { name: command.name, color: command.color }, { now: deps.now(), createId: deps.createId });
+        return { ok: true, data: {} };
+      case "workspace.delete":
+        return { ok: true, data: await deleteWorkspace(deps.db, command.workspaceId, { now: deps.now(), createId: deps.createId }) };
+      case "session.assign":
+        await assignSession(deps.db, command.sessionId, command.workspaceId, { now: deps.now(), createId: deps.createId });
+        return { ok: true, data: {} };
       default:
         return await runAccountCommand(command, deps);
     }

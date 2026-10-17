@@ -74,7 +74,8 @@ export const reconcileHeldCopy = (
 /**
  * The local record for a server session. The local `version` only guards edits between this
  * device's pages, so it moves past the previous one instead of copying the server version.
- * Web-only fields (description, workspace, pinned, archived) stay on the server.
+ * Web-only fields (description, pinned, archived) stay on the server; a device that stores the
+ * workspace keeps it beside the session (the extension's `workspaceId`).
  */
 export const toLocalSession = (detail: ApiSessionDetail, previousLocalVersion: number | null): SavedSession => ({
   id: detail.id,

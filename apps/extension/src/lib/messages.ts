@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { SESSION_LIMITS } from "@sessionhub/contracts/session";
+import { WORKSPACE_LIMITS } from "@sessionhub/contracts/api-workspaces";
+import { SESSION_LIMITS, tabGroupColorSchema } from "@sessionhub/contracts/session";
 import type { CaptureReport } from "@sessionhub/core/capture";
 import { IMPORT_MAX_BYTES, type ImportReport } from "@sessionhub/core/session-import";
 import type { AccountStatus, PairingOutcome } from "./account-service";
@@ -53,6 +54,16 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("sync.disable") }),
   // The user's choice for a change the server didn't accept (conflict review).
   z.object({ type: z.literal("sync.resolve"), sessionId: z.uuid(), choice: z.enum(["keep-mine", "keep-server", "save-both", "local-only"]) }),
+  // Account workspaces (names are re-validated by the worker).
+  z.object({ type: z.literal("workspace.create"), name: z.string().max(WORKSPACE_LIMITS.nameMax * 2), color: tabGroupColorSchema.nullable() }),
+  z.object({
+    type: z.literal("workspace.update"),
+    workspaceId: z.uuid(),
+    name: z.string().max(WORKSPACE_LIMITS.nameMax * 2).optional(),
+    color: tabGroupColorSchema.nullable().optional(),
+  }),
+  z.object({ type: z.literal("workspace.delete"), workspaceId: z.uuid() }),
+  z.object({ type: z.literal("session.assign"), sessionId: z.uuid(), workspaceId: z.uuid().nullable() }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -82,6 +93,11 @@ export interface CommandResults {
   "sync.disable": Record<string, never>;
   /** The session to show next: a new id when this browser's version became a separate session. */
   "sync.resolve": { sessionId: string };
+  "workspace.create": { workspaceId: string };
+  "workspace.update": Record<string, never>;
+  /** Sessions that were in it, now in no workspace. */
+  "workspace.delete": { moved: number };
+  "session.assign": Record<string, never>;
 }
 
 export type ErrorCode =

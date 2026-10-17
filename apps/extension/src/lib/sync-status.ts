@@ -39,7 +39,7 @@ export type SyncOverview =
       nextAttemptAt: string | null;
       /** Changes queued or being sent. */
       waiting: number;
-      /** Changes the server refused, kept for review. */
+      /** Changes the server refused, kept for review (sessions) or shown on the workspace. */
       review: number;
       /** Sessions still only in this browser (can be uploaded). */
       localSessions: number;

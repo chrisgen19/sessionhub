@@ -2,6 +2,7 @@ import type { BootstrapItem } from "@sessionhub/contracts/api-sync";
 import { AccountApiError, fetchSyncBootstrap, fetchSyncPull } from "./account-api";
 import type { AccountScope, SessionHubDb, SyncStateRecord } from "./db";
 import { applyRemoteChange, type ApplyOutcome } from "./sync-apply";
+import { dropMissingWorkspaces } from "./workspace-sync";
 import { isRunAccount, openSync, recordFailure, recordSuccess, stillOpen, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
 
 export type PullSummary = GateClosed | SyncFailure | { status: "done"; applied: number; held: number; skipped: number; bootstrapped: boolean };
@@ -16,7 +17,8 @@ type Tally = Record<ApplyOutcome, number>;
  * Applies a page and moves the stored position in one transaction (docs/SYNC_PROTOCOL.md section 3,
  * invariant 7): if anything fails, neither the changes nor the cursor are kept and the page is
  * fetched again. `expect` guards against another run having moved the position meanwhile, and
- * a page is dropped if a different account was connected while it was in flight.
+ * a page is dropped if a different account was connected while it was in flight. `liveWorkspaces`
+ * (the first bootstrap page only) is the account's complete set of workspaces.
  */
 const commitPage = (
   db: SessionHubDb,
@@ -25,11 +27,13 @@ const commitPage = (
   items: BootstrapItem[],
   next: Partial<SyncStateRecord>,
   now: string,
+  liveWorkspaces?: Set<string>,
 ): Promise<Tally | null> =>
-  db.transaction("rw", [db.sessions, db.outbox, db.sessionTombstones, db.serverCopies, db.syncState, db.account], async () => {
+  db.transaction("rw", [db.sessions, db.outbox, db.sessionTombstones, db.serverCopies, db.workspaces, db.syncState, db.account], async () => {
     if (!isRunAccount(await db.account.get("connection"), scope) || !expect(await db.syncState.get(scope))) return null;
     const tally: Tally = { applied: 0, held: 0, skipped: 0 };
     for (const item of items) tally[await applyRemoteChange(db, scope, item, now)] += 1;
+    if (liveWorkspaces) await dropMissingWorkspaces(db, scope, liveWorkspaces);
     await db.syncState.update(scope, next);
     return tally;
   });
@@ -45,7 +49,10 @@ const pullStep = async (deps: SyncDeps, scope: AccountScope, cursor: string, tot
 
 /**
  * One bootstrap page. Progress is durable, so a worker stopped mid-rebuild continues where it was.
- * The first page's cursor is kept: pulling resumes from it after the last page.
+ * The first page's cursor is kept: pulling resumes from it after the last page. The first page also
+ * holds every live workspace of the account, so workspaces missing from it are dropped right there:
+ * pushes and pulls never overlap (sync-runner), so nothing accepted after the server read that set
+ * can be mistaken for deleted, and the server never lists a session in a deleted workspace.
  */
 const bootstrapStep = async (deps: SyncDeps, scope: AccountScope, progress: SyncStateRecord["bootstrap"], total: Tally): Promise<void> => {
   const page = await withRunToken(deps, scope, (token, origin) => fetchSyncBootstrap(deps.account.fetch, origin, token, progress?.after ?? null));
@@ -53,7 +60,8 @@ const bootstrapStep = async (deps: SyncDeps, scope: AccountScope, progress: Sync
   const cursor = progress?.cursor ?? page.cursor;
   const next = page.hasMore ? { bootstrap: { cursor, after: page.nextAfter } } : { cursor, bootstrap: null, lastSyncAt: now };
   const same = (state: SyncStateRecord | undefined) => (state?.bootstrap?.after ?? null) === (progress?.after ?? null) && (state?.bootstrap?.cursor ?? null) === (progress?.cursor ?? null);
-  const tally = await commitPage(deps.db, scope, same, page.items, next, now);
+  const live = progress ? undefined : new Set(page.items.filter((item) => item.entityType === "workspace").map((item) => item.entityId));
+  const tally = await commitPage(deps.db, scope, same, page.items, next, now, live);
   if (tally) for (const key of Object.keys(total) as ApplyOutcome[]) total[key] += tally[key];
 };
 

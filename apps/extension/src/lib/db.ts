@@ -1,6 +1,7 @@
 import { Dexie, type EntityTable, type Table } from "dexie";
 import type { ApiSessionDetail } from "@sessionhub/contracts/api-sessions";
-import type { SavedSession } from "@sessionhub/contracts/session";
+import type { SyncWorkspacePayload } from "@sessionhub/contracts/api-sync";
+import type { SavedSession, TabGroupColor } from "@sessionhub/contracts/session";
 import type { RestorePlan } from "@sessionhub/core/restore-plan";
 
 /** Cached data of one SessionHub account (`account:<account id>`). */
@@ -25,7 +26,41 @@ export interface SessionSyncRecord {
   state: "pending" | "synced" | "conflict" | "error";
 }
 
-export type LocalSessionRecord = SavedSession & { scope: LocalScope; sync?: SessionSyncRecord };
+export type LocalSessionRecord = SavedSession & {
+  scope: LocalScope;
+  sync?: SessionSyncRecord;
+  /**
+   * The account workspace it is in (account scope only; null: none). Absent until known: sessions
+   * cached before v6 learn it from the next download, and their uploads leave the server's as it is.
+   */
+  workspaceId?: string | null;
+};
+
+/**
+ * One of the connected account's workspaces (docs/SYNC_PROTOCOL.md 13j). Account scope only: sessions
+ * only in this browser can't be put in a workspace. Edits upload only the fields they change.
+ */
+export interface LocalWorkspaceRecord {
+  id: string;
+  scope: AccountScope;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: TabGroupColor | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  sync: {
+    /** The server version this record's fields are based on (null until the create is accepted). */
+    serverVersion: number | null;
+    /** `error`: the account refused to add it, for a reason that won't go away by retrying. */
+    state: "pending" | "synced" | "error";
+    /** Why the account refused it (state `error`). */
+    lastError?: string | null;
+  };
+  /** Deleted here: hidden until the account accepts the delete, shown again if it refuses. */
+  deletedAt: string | null;
+}
 
 export interface DeviceRecord {
   key: "this-device";
@@ -137,7 +172,6 @@ export type OutboxRecord = {
   /** clientOperationId, stable across retries. */
   id: string;
   scope: AccountScope;
-  entityType: "savedSession";
   entityId: string;
   /** Server version this operation applies to (0 = create). Each accepted operation adds 1. */
   expectedVersion: number;
@@ -151,7 +185,17 @@ export type OutboxRecord = {
   lastErrorCode?: string | null;
   /** The server version a conflict reported, so "keep mine" can build on it before the server copy arrives. */
   conflictServerVersion?: number | null;
-} & ({ action: "upsert"; payload: SavedSession } | { action: "delete"; payload: null });
+} & (
+  | { entityType: "savedSession"; action: "upsert"; payload: SessionUpload }
+  | { entityType: "savedSession"; action: "delete"; payload: null }
+  /** Only the fields changed here (a per-field merge); a create carries the name. */
+  | { entityType: "workspace"; action: "upsert"; payload: SyncWorkspacePayload }
+  /** `waitFor`: sessions moved out by this delete, whose earlier operations must be accepted first. */
+  | { entityType: "workspace"; action: "delete"; payload: null; waitFor?: string[] }
+);
+
+/** What a session upload carries: the session and, once known, its workspace (absent keeps the server's). */
+export type SessionUpload = SavedSession & { workspaceId?: string | null };
 
 /**
  * A deleted account-scoped session the server may still list. Kept until the server's delete has
@@ -210,6 +254,7 @@ export type SessionHubDb = Dexie & {
   sessionTombstones: EntityTable<SessionTombstoneRecord, "id">;
   syncState: EntityTable<SyncStateRecord, "scope">;
   serverCopies: EntityTable<ServerCopyRecord, "id">;
+  workspaces: EntityTable<LocalWorkspaceRecord, "id">;
 };
 
 export const DB_NAME = "sessionhub";
@@ -237,6 +282,19 @@ export const createDb = (name: string = DB_NAME): SessionHubDb => {
   });
   // v5: server copies held while local changes wait (pull). Additive only.
   db.version(5).stores({ serverCopies: "id, scope" });
+  // v6: account workspaces. Every account rebuilds once from a full copy (bootstrap), because
+  // earlier downloads skipped workspaces and sessions' workspace assignments.
+  db.version(6)
+    .stores({ workspaces: "id, scope" })
+    .upgrade((tx) =>
+      tx
+        .table<SyncStateRecord, AccountScope>("syncState")
+        .toCollection()
+        .modify((state) => {
+          state.cursor = null;
+          state.bootstrap = null;
+        }),
+    );
   return db;
 };
 

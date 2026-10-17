@@ -36,13 +36,37 @@ describe("database migration", () => {
 
     const db = createDb(name);
     expect(await getSession(db, session.id)).toEqual(session);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
     expect(await db.recoverySnapshots.count()).toBe(0);
     expect(await db.account.count()).toBe(0);
     expect(await db.outbox.count()).toBe(0);
   });
 
-  it("upgrades a version 4 database (queued uploads, sync state) to version 5 without losing them", async () => {
+  it("upgrades a version 5 database to version 6: account sessions stay, and each account rebuilds once to learn its workspaces", async () => {
+    const name = `migration-v5-${Date.now()}`;
+    const v5 = new Dexie(name);
+    v5.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
+    v5.version(2).stores({ recoverySnapshots: "id, capturedAt, [capturedAt+tabCount]", recoveryState: "key" });
+    v5.version(3).stores({ account: "key" });
+    v5.version(4).stores({ outbox: "++seq, &id, [scope+seq], entityId", sessionTombstones: "id, scope", syncState: "scope" });
+    v5.version(5).stores({ serverCopies: "id, scope" });
+    const session = sampleSession();
+    const scope = "account:Alice";
+    await v5.table("sessions").put({ ...session, scope, sync: { serverVersion: 3, state: "synced" } });
+    await v5.table("syncState").put({ scope, enabledAt: session.createdAt, cursor: "c1.7.AAAAAAAAAAAAAAAAAAAAAA", bootstrap: { cursor: "c1.5.AAAAAAAAAAAAAAAAAAAAAA", after: session.id }, lastSyncAt: session.createdAt, lastError: null, failures: 0, nextAttemptAt: null });
+    v5.close();
+
+    const db = createDb(name);
+    expect(db.verno).toBe(6);
+    // Consent and history stay; only the download position is cleared, so the next sync bootstraps.
+    expect(await db.syncState.get(scope)).toMatchObject({ enabledAt: session.createdAt, lastSyncAt: session.createdAt, cursor: null, bootstrap: null });
+    const record = await db.sessions.get(session.id);
+    expect(record).toMatchObject({ scope, sync: { serverVersion: 3, state: "synced" } });
+    expect(record?.workspaceId).toBeUndefined();
+    expect(await db.workspaces.count()).toBe(0);
+  });
+
+  it("upgrades a version 4 database (queued uploads, sync state) without losing them", async () => {
     const name = `migration-v4-${Date.now()}`;
     const v4 = new Dexie(name);
     v4.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
@@ -57,9 +81,9 @@ describe("database migration", () => {
     v4.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
     expect(await db.outbox.toArray()).toMatchObject([{ entityId: session.id, status: "sending", attempts: 1, seq: 1 }]);
-    expect(await db.syncState.get(scope)).toMatchObject({ cursor: "c1.7.AAAAAAAAAAAAAAAAAAAAAA" });
+    expect(await db.syncState.get(scope)).toMatchObject({ enabledAt: session.createdAt, cursor: null });
     expect(await db.serverCopies.count()).toBe(0);
   });
 
@@ -76,7 +100,7 @@ describe("database migration", () => {
     v3.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
     expect(await db.account.get("connection")).toEqual(connection);
     // No account id yet, so only this browser's sessions are visible (the next account check adds it).
     expect(await listSessions(db)).toEqual([session]);
@@ -96,7 +120,7 @@ describe("database migration", () => {
     v2.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
     expect(await getSession(db, session.id)).toEqual(session);
     expect(await db.recoveryState.get("state")).toMatchObject({ dirty: true });
     expect(await db.account.count()).toBe(0);

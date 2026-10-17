@@ -1,10 +1,11 @@
 import { SYNC_PROTOCOL_VERSION, type PushResult } from "@sessionhub/contracts/api-sync";
 import { AccountApiError, pushChanges } from "./account-api";
 import type { AccountScope, OutboxRecord, SessionHubDb, SessionSyncRecord } from "./db";
-import { listOutbox } from "./outbox-repository";
+import { listOutbox, type OutboxContext } from "./outbox-repository";
 import { settleHeldCopy } from "./sync-apply";
 import { selectPushBatch, toPushOperation } from "./sync-batch";
 import { openSync, recordFailure, stillOpen, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
+import { applyWorkspaceResult, requeueWithoutWorkspace } from "./workspace-sync";
 
 export type PushSummary = GateClosed | SyncFailure | { status: "done"; accepted: number; conflicts: number; rejected: number; remaining: number };
 
@@ -51,19 +52,27 @@ const settleSession = async (db: SessionHubDb, scope: AccountScope, id: string, 
 type Tally = { accepted: number; conflicts: number; rejected: number; retryable: number };
 
 /** Applies one push's results in one transaction. A missing result counts as retryable (stays `sending`). */
-const applyResults = (db: SessionHubDb, scope: AccountScope, claimed: OutboxRecord[], results: PushResult[], now: string): Promise<Tally> =>
-  db.transaction("rw", [db.outbox, db.sessions, db.serverCopies, db.sessionTombstones], async () => {
+const applyResults = (db: SessionHubDb, scope: AccountScope, claimed: OutboxRecord[], results: PushResult[], context: OutboxContext): Promise<Tally> =>
+  db.transaction("rw", [db.outbox, db.sessions, db.serverCopies, db.sessionTombstones, db.workspaces], async () => {
     const byId = new Map(results.map((result) => [result.clientOperationId, result]));
     const tally: Tally = { accepted: 0, conflicts: 0, rejected: 0, retryable: 0 };
+    const now = context.now.toISOString();
     for (const operation of claimed) {
       const result = byId.get(operation.id);
-      if (!result || result.status === "retryable_error") {
+      if (operation.entityType === "workspace") {
+        // Resolved without the user (13j); a requeued change goes out in the next round.
+        const outcome = await applyWorkspaceResult(db, scope, operation, result, context);
+        if (outcome === "accepted" || outcome === "rejected" || outcome === "retryable") tally[outcome] += 1;
+      } else if (!result || result.status === "retryable_error") {
         tally.retryable += 1;
       } else if (result.status === "accepted" || (result.status === "rejected" && result.code === "NOT_FOUND" && operation.action === "delete")) {
         // A delete of something the server doesn't have is done too.
         await db.outbox.where("id").equals(operation.id).delete();
         await settleSession(db, scope, operation.entityId, result.status === "accepted" ? result.serverVersion : undefined);
         tally.accepted += 1;
+      } else if (result.status === "rejected" && result.code === "INVALID_WORKSPACE") {
+        // Its workspace was deleted elsewhere meanwhile: the session goes up again without it.
+        await requeueWithoutWorkspace(db, scope, operation, context);
       } else {
         const conflict = result.status === "conflict" || result.status === "rejected";
         await db.outbox.put({
@@ -97,7 +106,7 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PushSummary> => {
     let tally: Tally;
     try {
       const response = await withRunToken(deps, scope, (token, origin) => pushChanges(deps.account.fetch, origin, token, request));
-      tally = await applyResults(deps.db, scope, claimed, response.results, deps.now().toISOString());
+      tally = await applyResults(deps.db, scope, claimed, response.results, { now: deps.now(), createId: deps.account.createId });
     } catch (error) {
       if (!(error instanceof AccountApiError)) throw error;
       return recordFailure(deps, scope, error);

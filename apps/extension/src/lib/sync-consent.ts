@@ -38,9 +38,10 @@ export const enableSync = (db: SessionHubDb, sessionIds: string[], context: Outb
     for (const id of new Set(sessionIds)) {
       const record = await db.sessions.get(id);
       if (!record || record.scope !== "local") continue;
-      const { scope: _scope, sync: _sync, ...session } = record;
-      await db.sessions.put({ ...session, scope, sync: { serverVersion: null, state: "pending" } });
-      await enqueueSessionUpsert(db, scope, session, null, context);
+      const { scope: _scope, sync: _sync, workspaceId: _workspaceId, ...session } = record;
+      // It enters the account in no workspace (sessions only in this browser can't be in one).
+      await db.sessions.put({ ...session, scope, sync: { serverVersion: null, state: "pending" }, workspaceId: null });
+      await enqueueSessionUpsert(db, scope, { ...session, workspaceId: null }, null, context);
       moved += 1;
     }
     return { enabledAt, moved };
