@@ -2,7 +2,7 @@ import { Dexie, type EntityTable, type Table } from "dexie";
 import type { ApiSessionDetail } from "@sessionhub/contracts/api-sessions";
 import type { SyncWorkspacePayload } from "@sessionhub/contracts/api-sync";
 import type { SavedSession, TabGroupColor } from "@sessionhub/contracts/session";
-import type { RestorePlan } from "@sessionhub/core/restore-plan";
+import type { RestoreDestination, RestorePlan } from "@sessionhub/core/restore-plan";
 
 /** Cached data of one SessionHub account (`account:<account id>`). */
 export type AccountScope = `account:${string}`;
@@ -87,6 +87,8 @@ export interface RestoreJobRecord {
   attempts?: number;
   /** Set when a later worker found this job still `running` and settled it (the run was cut off). */
   interruptedAt?: string;
+  /** Where the first run opened its tabs (absent on older records: new windows). Retries use new windows. */
+  target?: RestoreDestination;
 }
 
 /**

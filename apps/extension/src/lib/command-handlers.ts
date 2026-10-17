@@ -1,6 +1,6 @@
 import { buildSavedSession, CaptureLimitError, type CaptureWindowInput } from "@sessionhub/core/capture";
 import { defaultSessionName, selectionSessionName } from "@sessionhub/core/naming";
-import { planRestore, planRetry, type RestorePlan } from "@sessionhub/core/restore-plan";
+import { planRestore, planRetry, withoutOpenTabs, type RestorePlan } from "@sessionhub/core/restore-plan";
 import { InvalidSessionNameError, normalizeSessionName, renameSession } from "@sessionhub/core/session-edit";
 import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { SavedSession } from "@sessionhub/contracts/session";
@@ -49,13 +49,20 @@ export interface HandlerDeps {
   db: SessionHubDb;
   readWindows: (scope: Extract<Command, { type: "session.capture" }>["scope"]) => Promise<CaptureWindowInput[]>;
   /**
-   * Opens one planned window and never touches existing windows. Passes each tab's outcome
-   * to `record` as soon as it is known (before opening the next tab) and returns them all.
+   * Opens one planned window as a new window, or appends its tabs to the open window `into`;
+   * existing tabs are never moved, closed or navigated. Passes each tab's outcome to `record`
+   * as soon as it is known (before opening the next tab) and returns them all.
    */
   restoreWindow: (
     window: RestorePlan["windows"][number],
     record: (outcome: RestoreTabOutcome) => Promise<void>,
+    options?: { into?: number },
   ) => Promise<RestoreTabOutcome[]>;
+  /**
+   * URLs open in a normal, non-private window, for restoring into it; throws `BrowserError` when it
+   * can't take tabs. Absent in tests that don't restore into an open window.
+   */
+  inspectWindow?: (windowId: number) => Promise<{ openUrls: string[] }>;
   now: () => Date;
   createId: () => string;
   /** Network and tab access for account commands; absent in tests that don't need them. */
@@ -152,12 +159,16 @@ const importSession = async (command: Extract<Command, { type: "session.import" 
  * loses at most the tab it was opening (a retry reopens any opened tab it lost). Outcomes
  * it returned without reporting are written when the window is done.
  */
-const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["windows"][number], deps: HandlerDeps) => {
+const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["windows"][number], deps: HandlerDeps, into?: number) => {
   const recorded = new Set<string>();
-  const outcomes = await deps.restoreWindow(window, async (outcome) => {
-    await appendRestoreOutcomes(deps.db, jobId, [outcome], deps.now());
-    recorded.add(outcome.sourceTabId);
-  });
+  const outcomes = await deps.restoreWindow(
+    window,
+    async (outcome) => {
+      await appendRestoreOutcomes(deps.db, jobId, [outcome], deps.now());
+      recorded.add(outcome.sourceTabId);
+    },
+    { into },
+  );
   const unrecorded = outcomes.filter((outcome) => !recorded.has(outcome.sourceTabId));
   if (unrecorded.length > 0) await appendRestoreOutcomes(deps.db, jobId, unrecorded, deps.now());
 };
@@ -167,10 +178,10 @@ const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["window
  * from recorded outcomes, even if a step throws, so a job never stays "running" and
  * blocks retry. (A worker killed mid-run can't settle it; the next worker start does.)
  */
-const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps) => {
+const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps, into?: number) => {
   let failure: unknown = null;
   try {
-    for (const window of plan.windows) await restoreAndRecordWindow(jobId, window, deps);
+    for (const window of plan.windows) await restoreAndRecordWindow(jobId, window, deps, into);
   } catch (error) {
     // Once a tab has been opened, a full disk means its outcome couldn't be recorded:
     // stop opening more tabs and say so, rather than claiming nothing happened.
@@ -184,23 +195,39 @@ const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps
   return finishRestoreJob(deps.db, jobId, deps.now());
 };
 
-const restoreFrom = async (session: SavedSession, tabIds: string[] | undefined, deps: HandlerDeps) => {
-  const plan = planRestore(session, tabIds ? { tabIds: new Set(tabIds) } : {});
-  const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now() });
-  return { job: await runRestoreJob(job.id, plan, deps) };
+type RestoreCommand = Extract<Command, { type: "restore.start" | "recovery.restore" }>;
+
+/**
+ * Plans the chosen tabs for the chosen target and opens them. For the current window, the window
+ * is checked (and its URLs read) before the job exists, so a closed window opens nothing.
+ */
+const restoreFrom = async (session: SavedSession, { tabIds, target = { kind: "new-windows" } }: RestoreCommand, deps: HandlerDeps) => {
+  let plan = planRestore(session, {
+    ...(tabIds ? { tabIds: new Set(tabIds) } : {}),
+    layout: target.kind === "new-windows" ? "original" : "single",
+  });
+  let into: number | undefined;
+  if (target.kind === "this-window") {
+    if (!deps.inspectWindow) throw new BrowserError("Opening tabs in this window isn't available here");
+    const { openUrls } = await deps.inspectWindow(target.windowId);
+    if (target.skipOpen) plan = withoutOpenTabs(plan, new Set(openUrls));
+    into = target.windowId;
+  }
+  const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now(), target: target.kind });
+  return { job: await runRestoreJob(job.id, plan, deps, into) };
 };
 
 const restore = async (command: Extract<Command, { type: "restore.start" }>, deps: HandlerDeps) => {
   const session = await getSession(deps.db, command.sessionId);
   if (!session) throw new SessionNotFoundError("Session no longer exists");
-  return restoreFrom(session, command.tabIds, deps);
+  return restoreFrom(session, command, deps);
 };
 
 /** Recovery checkpoints restore through the same planner, job and retry flow as sessions. */
 const restoreCheckpoint = async (command: Extract<Command, { type: "recovery.restore" }>, deps: HandlerDeps) => {
   const snapshot = await getSnapshot(deps.db, command.snapshotId);
   if (!snapshot) throw new SessionNotFoundError("This checkpoint was removed by retention");
-  return restoreFrom(snapshot.session, command.tabIds, deps);
+  return restoreFrom(snapshot.session, command, deps);
 };
 
 /** Re-runs only tabs that never opened, in new windows. Works from the stored plan, not the session. */

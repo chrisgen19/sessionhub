@@ -8,6 +8,18 @@ import type { SyncSummary } from "./sync-runner";
 import type { RestoreJobRecord } from "./db";
 
 /**
+ * Where a restore opens its tabs. Absent means `new-windows` (the behaviour before targets existed).
+ * `this-window` names the window by Chrome's runtime id, valid for this command only and never stored;
+ * `skipOpen` leaves out tabs whose exact URL is already open there.
+ */
+const restoreTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("new-windows") }),
+  z.object({ kind: z.literal("one-window") }),
+  z.object({ kind: z.literal("this-window"), windowId: z.int(), skipOpen: z.boolean() }),
+]);
+export type RestoreTarget = z.infer<typeof restoreTargetSchema>;
+
+/**
  * Commands from extension pages to the background worker. The worker is the single
  * writer for sessions so a closing popup can never interrupt a save or restore.
  */
@@ -37,12 +49,14 @@ export const commandSchema = z.discriminatedUnion("type", [
     type: z.literal("restore.start"),
     sessionId: z.uuid(),
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
+    target: restoreTargetSchema.optional(),
   }),
   z.object({ type: z.literal("restore.retry"), jobId: z.uuid() }),
   z.object({
     type: z.literal("recovery.restore"),
     snapshotId: z.uuid(),
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
+    target: restoreTargetSchema.optional(),
   }),
   z.object({ type: z.literal("recovery.checkpointNow") }),
   // Account connection (pairing). None of these send saved sessions anywhere.
