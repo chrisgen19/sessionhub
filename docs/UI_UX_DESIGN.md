@@ -525,6 +525,16 @@ Built under `/app` with a shared signed-in layout: 240 px sidebar (Overview, Sav
 - Empty states say plainly that sync isn't available yet and where sessions live meanwhile. A skeleton (`loading.tsx`) and a generic error boundary with Try again (`error.tsx`) cover slow and failed loads.
 - Verified at 1440, 900 and 390 px and in dark mode.
 
+## 18c-update. Dashboard sync wording (2026-10-17)
+
+Sync shipped in M4, so the dashboard no longer says it "isn't available yet". The website can't know whether sync is on, because that is a per-browser choice in the extension. So it reports what the server knows: connected (not revoked) browsers and their latest activity.
+
+- **Sidebar:** "No browser connected" (sessions stay in the extension until you connect a browser and turn on sync there), or "N browsers connected" with "Last activity: <relative>" and "Sync is turned on in each browser's extension". Never "Sync on/off", never "online".
+- **Overview:** the notice ("No browser is connected yet...") shows only while no browser is connected; the empty state says to turn on sync in the extension (Account, then Sync).
+- **Settings, Sync section:** the connected-browser count, where sync is turned on, and a pointer to Devices. Privacy says synced data *is* readable by the server operator.
+- **Sign-in pages:** "an account lets you sync saved sessions between your browsers".
+- **Landing page:** workspaces moved from "Coming next" to what works today.
+
 ## 18e. Extension sync opt-in and status (2026-10-16)
 
 Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `upload-preview.tsx`), `components/sync-status-chip.tsx`, `lib/sync-status.ts` (pure, unit-tested).

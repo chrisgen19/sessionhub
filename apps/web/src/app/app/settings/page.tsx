@@ -4,7 +4,10 @@ import { signOutAction } from "@/app/(auth)/actions";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { ResendVerificationButton } from "@/components/auth/resend-verification-button";
 import { PageHeader } from "@/components/dashboard/page-parts";
+import { getPrisma } from "@sessionhub/database/client";
+import { plural } from "@/lib/format";
 import { isMailEnabled } from "@/server/mail/deliver";
+import { getConnectionStatus } from "@/server/queries/dashboard";
 import { requireSession } from "@/server/session";
 
 export const metadata: Metadata = { title: "Settings · SessionHub" };
@@ -22,6 +25,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export default async function SettingsPage() {
   const { user } = await requireSession("/app/settings");
+  const { connectedBrowsers } = await getConnectionStatus(getPrisma(), user.id);
   const memberSince = user.createdAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
   return (
@@ -50,14 +54,16 @@ export default async function SettingsPage() {
         </Section>
         <Section title="Sync">
           <p>
-            <span className="font-semibold text-fg">Off.</span> Cloud sync isn&apos;t available yet, so nothing from your browsers is
-            stored on this account.
+            <span className="font-semibold text-fg">
+              {connectedBrowsers > 0 ? `${plural(connectedBrowsers, "browser")} connected.` : "No browser connected."}
+            </span>{" "}
+            Sync is turned on in each browser, in the SessionHub extension (Account, then Sync), and you see which titles and links
+            upload before anything is sent. Manage connected browsers on the Devices page.
           </p>
-          <p>When it arrives, sync is opt-in per browser and you&apos;ll see which titles and links are uploaded before anything is sent.</p>
         </Section>
         <Section title="Privacy">
           <p>Automatic recovery checkpoints stay on each computer and are never uploaded.</p>
-          <p>SessionHub doesn&apos;t offer end-to-end encryption, so synced data will be readable by the server operator.</p>
+          <p>SessionHub doesn&apos;t offer end-to-end encryption, so synced data is readable by the server operator.</p>
         </Section>
         <Section title="Security">
           <ChangePasswordForm />

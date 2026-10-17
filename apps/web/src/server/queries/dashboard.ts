@@ -109,6 +109,23 @@ export const listWorkspaceFilters = async (prisma: PrismaClient, userId: string,
   return { workspaces: workspaces.map((workspace) => ({ ...workspace, sessionCount: counts.get(workspace.id) ?? 0 })), unassigned: counts.get(null) ?? 0 };
 };
 
+export interface ConnectionStatus {
+  /** Browsers paired with the account and not revoked. */
+  connectedBrowsers: number;
+  /** The most recent time any of them reached the server (null: none has yet). */
+  lastSeenAt: Date | null;
+}
+
+/**
+ * What the website can truthfully say about sync: which browsers are connected and when one was
+ * last seen. Whether sync is on is a choice made in each browser's extension, which the server
+ * doesn't know.
+ */
+export const getConnectionStatus = async (prisma: PrismaClient, userId: string): Promise<ConnectionStatus> => {
+  const result = await prisma.device.aggregate({ where: { userId, revokedAt: null }, _count: { _all: true }, _max: { lastSeenAt: true } });
+  return { connectedBrowsers: result._count._all, lastSeenAt: result._max.lastSeenAt };
+};
+
 export const listDevices = (prisma: PrismaClient, userId: string): Promise<DeviceListItem[]> =>
   prisma.device.findMany({
     where: { userId },

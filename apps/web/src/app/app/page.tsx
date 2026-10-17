@@ -18,7 +18,7 @@ export default async function OverviewPage() {
   return (
     <>
       <PageHeader title={`Welcome, ${firstName}`} description="Your saved sessions and devices, across browsers." />
-      <SyncNotice />
+      {stats.deviceCount === 0 && <SyncNotice />}
       <section aria-label="Summary" className="mb-8 grid gap-3 sm:grid-cols-3">
         <StatTile label="Saved sessions" value={stats.sessionCount} foot="Synced to your account" />
         <StatTile label="Saved tabs" value={stats.tabCount} foot="Across synced sessions" />
@@ -39,7 +39,8 @@ export default async function OverviewPage() {
           <SessionList sessions={recent} />
         ) : (
           <EmptyState icon={Layers} title="No synced sessions yet">
-            Save sessions with the SessionHub extension. They&apos;ll show up here after you turn on sync, which isn&apos;t available yet.
+            Save sessions with the SessionHub extension and turn on sync there (Account, then Sync). They show up here after their
+            first sync.
           </EmptyState>
         )}
       </section>

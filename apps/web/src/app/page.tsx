@@ -27,11 +27,12 @@ const WORKS_TODAY = [
   "Rename, delete with confirmation, and export or import sessions as JSON",
   "Automatic local recovery checkpoints you can inspect and restore",
   "Account sign-in, device pairing and opt-in saved-session sync between computers",
+  "Workspaces that group sessions, synced between browsers and filterable on the web",
 ];
 
 const COMING_NEXT = [
   "Side panel for navigating open tabs",
-  "Workspace organization and richer session filters",
+  "Richer session filters, tags and bulk actions",
 ];
 
 function StatusList({ title, icon, items }: { title: string; icon: ReactNode; items: string[] }) {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { getPrisma } from "@sessionhub/database/client";
 import { NO_WORKSPACE } from "@/lib/workspace-filter";
-import { getOverviewStats, listDevices, listSessions, listWorkspaceChoices, listWorkspaceFilters } from "./dashboard";
+import { getConnectionStatus, getOverviewStats, listDevices, listSessions, listWorkspaceChoices, listWorkspaceFilters } from "./dashboard";
 
 const prisma = getPrisma();
 afterAll(async () => {
@@ -103,5 +103,8 @@ describe("dashboard queries", () => {
     await make("Windows desktop", new Date("2026-10-16"));
     expect((await listDevices(prisma, user.id)).map((d) => d.displayName)).toEqual(["Windows desktop", "Never seen", "Revoked laptop"]);
     expect((await getOverviewStats(prisma, user.id)).deviceCount).toBe(2);
+    // Revoked browsers neither count nor set the last activity.
+    expect(await getConnectionStatus(prisma, user.id)).toEqual({ connectedBrowsers: 2, lastSeenAt: new Date("2026-10-16") });
+    expect(await getConnectionStatus(prisma, (await createUser()).id)).toEqual({ connectedBrowsers: 0, lastSeenAt: null });
   });
 });

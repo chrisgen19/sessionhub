@@ -24,6 +24,21 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (stale sync copy on the dashboard) / Claude Code (Opus 5.5) / `bugfix/web-sync-copy` (macOS laptop)
+
+**Goal (user's scope):** fix the out-of-date sync wording in the sidebar and on Overview. Branched off `main` at `4cd07de` (PR #19 merged at the user's request while its `check` and `docker` jobs were still running).
+
+**Done:**
+- The sidebar said "Sync off / Cloud sync isn't available yet". Whether sync is on is a per-browser choice the server can't see, so it now shows connected browsers and their latest activity instead (`getConnectionStatus` in `server/queries/dashboard.ts`, read by `app/app/layout.tsx`; `components/dashboard/app-shell.tsx`).
+- Overview: the sync notice shows only while no browser is connected, with current wording; the empty state no longer says sync isn't available (`page-parts.tsx`, `app/app/page.tsx`).
+- Same stale claim fixed in two more places (scope stated to the user): Settings' Sync section and Privacy line (`settings/page.tsx`), and the sign-in pages' footnote (`(auth)/layout.tsx`). The landing page lists workspaces as working (`app/page.tsx`).
+- Tests: `dashboard.db.test.ts` (connection status: revoked browsers don't count), `e2e/dashboard.spec.ts` (new-account wording, no "isn't available yet" anywhere; connected-browser sidebar, Overview and Settings).
+- Docs: UI_UX_DESIGN.md 18c-update.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54369/58065):** `pnpm check --force` 17/17; web DB tests **67/67**; full web E2E **54/54**; Overview, sidebar and Settings checked at 1440 px in both states and Overview at 390 px in dark mode.
+
+**Next step:** push `bugfix/web-sync-copy` and open the PR; then workspace management on the web (`/app/workspaces`) or the side panel.
+
 ### 2026-10-17 (M5 workspaces, part 3: web dashboard filter and assignment) / Claude Code (Opus 5.5) / `feature/web-workspaces-filter` (macOS laptop)
 
 **Goal (user's scope):** workspace filter and assignment on `/app/sessions`. Branched off `main` at `5afefe2` (PR #18 merged; its `check` job was still running at merge time, at the user's request).

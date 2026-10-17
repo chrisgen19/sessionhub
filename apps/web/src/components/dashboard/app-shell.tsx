@@ -1,8 +1,9 @@
-import { CloudOff, LogOut } from "lucide-react";
+import { Cloud, CloudOff, LogOut } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOutAction } from "@/app/(auth)/actions";
-import { initials } from "@/lib/format";
+import { formatRelative, initials, plural } from "@/lib/format";
+import type { ConnectionStatus } from "@/server/queries/dashboard";
 import { BottomNav, SidebarNav } from "./nav-links";
 import { TopSearch } from "./top-search";
 import { VerifyEmailBanner } from "./verify-email-banner";
@@ -11,6 +12,7 @@ interface AppShellProps {
   user: { name: string; email: string };
   /** Show the "confirm your email" banner (unconfirmed email and email delivery set up). */
   askToVerify: boolean;
+  connection: ConnectionStatus;
   children: ReactNode;
 }
 
@@ -25,8 +27,30 @@ function Brand() {
   );
 }
 
+/**
+ * Connected browsers, never "Sync on" or "Sync off": sync is turned on in each browser's extension,
+ * which the server doesn't know. "Last activity", never "online": there is no heartbeat.
+ */
+function ConnectionNote({ connection }: { connection: ConnectionStatus }) {
+  const connected = connection.connectedBrowsers > 0;
+  const Icon = connected ? Cloud : CloudOff;
+  return (
+    <div className="space-y-1">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
+        <Icon aria-hidden="true" className="size-3.5" />
+        {connected ? `${plural(connection.connectedBrowsers, "browser")} connected` : "No browser connected"}
+      </p>
+      <p className="text-[11px] leading-relaxed text-fg-muted">
+        {connected
+          ? `${connection.lastSeenAt ? `Last activity: ${formatRelative(connection.lastSeenAt)}. ` : ""}Sync is turned on in each browser's extension.`
+          : "Sessions stay in the extension until you connect a browser and turn on sync there."}
+      </p>
+    </div>
+  );
+}
+
 /** Signed-in dashboard frame (docs/UI_UX_DESIGN.md section 8 and 14). */
-export function AppShell({ user, askToVerify, children }: AppShellProps) {
+export function AppShell({ user, askToVerify, connection, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-canvas text-fg lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
       <aside className="hidden border-r border-line bg-surface px-3.5 py-6 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:gap-7">
@@ -35,11 +59,7 @@ export function AppShell({ user, askToVerify, children }: AppShellProps) {
         </div>
         <SidebarNav />
         <div className="mt-auto space-y-3 border-t border-line px-2 pt-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
-            <CloudOff aria-hidden="true" className="size-3.5" />
-            Sync off
-          </p>
-          <p className="text-[11px] leading-relaxed text-fg-muted">Cloud sync isn&apos;t available yet. Nothing has been uploaded.</p>
+          <ConnectionNote connection={connection} />
           <form action={signOutAction}>
             <button type="submit" className="flex items-center gap-2 text-xs font-semibold text-fg-muted hover:text-fg">
               <LogOut aria-hidden="true" className="size-3.5" />
