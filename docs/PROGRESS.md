@@ -16,12 +16,69 @@
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (each based on the previous; the whole stack was rebased on 2026-10-17 onto the PR #1 checkpoint eviction fix, so these are the current tips): #1 `feature/m1-monorepo-local-slice` -> `main` (`c4bbc1f`), #2 `feature/m3-web-docker` (`d40d946`), #3 `feature/m3-email-auth` (`9239287`), #4 `feature/m4-device-pairing` (`99045de`), #6 `feature/m4-local-outbox` (`4074da5`), #7 `feature/m4-sync-push` (`3da2461`), #8 `feature/m4-sync-pull` (`e4ead3e`), #9 `feature/m4-sync-ui` (`82dd1ea`), #10 `feature/m4-conflict-review` (`d554eea`), #11 **`feature/m6-hardening`** (rate limits `4f85a1b`, observability and resource limits `ccc3ff7`, CI green; the trusted proxy and TLS slice is uncommitted at the end of its 2026-10-17 session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). Every open PR runs `check` (lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services) and, from #2 up, `docker`. Results after the 2026-10-17 restack: latest session entry and the PRs. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive) and #2 (2 findings in the Docker slice, not identified from the API): user's call |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, **restacked 2026-10-17 after the review fixes**; merge bottom-up with merge commits (not squash or rebase): #1 `feature/m1-monorepo-local-slice` -> `main` (`fb0feb8`), #2 `feature/m3-web-docker` (`d5627a4`), #3 `feature/m3-email-auth` (`328d5f9`), #4 `feature/m4-device-pairing` (`c6724fe`), #6 `feature/m4-local-outbox` (`880486d`), #7 `feature/m4-sync-push` (`ce13869`), #8 `feature/m4-sync-pull` (`e602712`), #9 `feature/m4-sync-ui` (`d9f9ba3`), #10 `feature/m4-conflict-review` (`e87f3d4`), #11 **`feature/m6-hardening`** (this progress update on top of `0799082`). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (review fixes on every open PR, then one restack) / Claude Code (Opus 5.5) / all stack branches (macOS laptop)
+
+**Goal:** fix every open Codex review finding on PRs #1 to #11, restack the chain once, and get every PR's `check` and `docker` jobs green (user's request). Several sessions plus one review-fix agent in this session each fixed findings on that PR's own branch; then #2 to #11 were rebased bottom-up.
+
+**Review findings:**
+
+| PR | Finding | Outcome | Commit after the restack |
+|---|---|---|---|
+| #1 | per-tab restore outcomes before retry (P2) | fixed: each tab's outcome is written before the next tab opens; a killed worker can reopen at most one tab | `fb0feb8` |
+| #1 | checkpoint eviction reporting (P2) | fixed | `9e21181` |
+| #2 | `BETTER_AUTH_URL` ignored `WEB_PORT` (P2) | fixed | `cb67190` |
+| #2 | stale "not committed" status in this file (P2) | fixed | `d5627a4` |
+| #3 | `/email-verified` claimed success without checking (P2) | fixed | `4963f62` |
+| #4 | atomic successor claim (P1), single-use lost-response retry (P2) | fixed | `d482118` |
+| #6 | (no review) | - | - |
+| #7 | round cap left sendable work unscheduled (P2) | fixed | `2ca812c` |
+| #7 | idempotency across re-pairing (P2) | not valid: re-pairing keeps the device id | - |
+| #8 | pull bound to the gate's account (P1), backoff cleared by the upload (P2) | fixed | `90b5d7a` |
+| #9 | stop transfers when sync is turned off (P1), honest "Last synced" (P2) | fixed | `ecbfef1` |
+| #10 | keep the account session holding a taken id (P2); deleted refused sessions can leave review (P2) | fixed: new "Drop this change" choice | `e87f3d4` |
+| #11 | credential-shaped `X-Request-Id` kept (P2) | fixed: replaced by a UUID | `b6e5339` |
+| #11 | idle bucket sweep could fail the request (P2) | fixed: at most 500 rows, `FOR UPDATE SKIP LOCKED`, best effort, logged `rate_limit_sweep_failed` | `0799082` |
+
+The #4 and #8 fixes were written by other sessions and committed and pushed from their worktrees by this session (user's choice). Decisions for #1, #10 and #11 are in their commit bodies and in `SYSTEM_DESIGN.md`, `SYNC_PROTOCOL.md`, `UI_UX_DESIGN.md` and `SECURITY_PRIVACY.md`.
+
+**Restack:**
+- #1 unchanged, because `main` didn't move.
+- #2 to #11 were each rebased with `git rebase --onto <new parent> <old base>` and pushed with `--force-with-lease` against the recorded remote SHAs.
+- Conflicts:
+  - `PROGRESS.md` at most levels and `SYSTEM_DESIGN.md` decision rows: both sides kept.
+  - `compose.yaml`:
+    - #3: #2's `WEB_PORT` default plus #3's mail settings
+    - #11: plus `TRUSTED_PROXY_COUNT` and the https note; `.env.example` likewise
+  - `sync-uploader.ts` at #8: #7's round-cap retry kept through #8's `recordSuccess` move and its removal.
+  - `sync-runner.ts` at #9: #9's queued-run structure plus #8's JSDoc sentence.
+  - #9's fix against #8's fix (`sync-gate.ts`, `sync-uploader.ts`, `sync-downloader.ts`, `sync-uploader.test.ts`, `SYNC_PROTOCOL.md`): both kept.
+    - `withRunToken` binds every request's token to the run's account.
+    - `stillOpen` checks consent and account before every round and page, and now reuses `isRunAccount`.
+    - All tests of both fixes are kept.
+- Per level: the new branch differs from its old version only by the fixes below it (`git diff --name-only`), with no conflict markers and no duplicate session entries.
+
+**Validated:** macOS, temporary `docker run` PostgreSQL + Mailpit on 54339/58035.
+- #8 and #9 levels: extension and sync lint, typecheck and tests pass. The #9 merge was tested before the rebase continued.
+- Top (#11):
+  - `pnpm check --force` 17/17; `pnpm --filter @sessionhub/web test:db` 60/60; `pnpm build`.
+  - Web E2E **44/44**. The password-reset test passes here now that PR #3's fix reaches the top.
+  - Extension E2E 8/9: only the pre-existing macOS mid-restore retry failure, failing at the same assertion as before the #1 restore fix.
+- CI after the push: not known when this entry was written; see the PRs.
+
+**Known gaps (seen during the reviews, not fixed):**
+- `browser-restore.ts`: if pinning the first tab fails after the window was created, the whole window is reported failed, so Retry reopens it.
+- "Keep in this browser only" for a refused edit of an already-synced session with no held server copy keeps the same id, so the account's version stays hidden in the extension.
+- Restore now writes one IndexedDB record per tab; large-restore speed is not re-measured (`test:perf` not run).
+- The "Drop this change" button is not checked at mobile width (it uses the same component as the other choices).
+- Pull pages still move `lastSyncAt` per page.
+- The worktrees `sessionhub-pr2-fix`, `-pr3-fix`, `-pr4-fix`, `-pr7-fix`, `-pr8-fix` and `-pr9-fix` still point at pre-restack history; remove them once those sessions are closed.
 
 ### 2026-10-17 (PR #2 review fixes: compose auth URL, progress log) / Claude Code (Opus 5.5) / `feature/m3-web-docker` (macOS laptop)
 
@@ -864,13 +921,13 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push the trusted proxy and TLS slice to `feature/m6-hardening` (PR #11), check CI, then merge the stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+1. Once every PR's `check` and `docker` jobs are green after the 2026-10-17 restack, merge bottom-up #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 with **Create a merge commit** (not squash or rebase), deleting each head branch so GitHub retargets the next PR to `main`. Decide GitGuardian on #1 and #2 first (mark as false positives or move the placeholders to CI variables). After that, branch each slice off `main` as a small PR.
 2. Next M6 items:
    - framing protection (`frame-ancestors 'none'` / `X-Frame-Options: DENY`), at least for `/app/pair` (clickjacking of the approval button)
    - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
    - CI builds of the production extension ZIP
    - permissions review and privacy policy
-3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures.
+3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the macOS-only extension E2E failure (mid-restore retry). The web password-reset failure no longer reproduces at the top of the stack.
 
 ## Open questions / architecture validations
 
