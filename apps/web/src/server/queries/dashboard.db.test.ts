@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { getPrisma } from "@sessionhub/database/client";
-import { getOverviewStats, listDevices, listSessions } from "./dashboard";
+import { NO_WORKSPACE } from "@/lib/workspace-filter";
+import { getOverviewStats, listDevices, listSessions, listWorkspaceChoices, listWorkspaceFilters } from "./dashboard";
 
 const prisma = getPrisma();
 afterAll(async () => {
@@ -49,6 +50,48 @@ describe("dashboard queries", () => {
     expect(await listSessions(prisma, user.id, { take: 1000 })).toHaveLength(3);
     expect(await listSessions(prisma, user.id, { take: 2 })).toHaveLength(2);
     expect(await getOverviewStats(prisma, (await createUser()).id)).toEqual({ sessionCount: 0, tabCount: 0, deviceCount: 0 });
+  });
+
+  it("filters sessions by workspace and counts each workspace's sessions per view, for the caller only", async () => {
+    const [user, other] = await Promise.all([createUser(), createUser()]);
+    const workspace = (userId: string, name: string, position = 0, deletedAt: Date | null = null) =>
+      prisma.workspace.create({ data: { userId, name, position, color: name === "Alpha" ? "blue" : "not-a-color", deletedAt } });
+    const beta = await workspace(user.id, "Beta", 1);
+    const alpha = await workspace(user.id, "Alpha", 0);
+    await workspace(user.id, "Deleted", 0, new Date());
+    const theirs = await workspace(other.id, "Theirs");
+    await seed(user.id, ["In alpha", "Archived in alpha", "In beta", "Loose"]);
+    const assign = (name: string, workspaceId: string, isArchived = false) =>
+      prisma.savedSession.updateMany({ where: { userId: user.id, name }, data: { workspaceId, isArchived } });
+    await assign("In alpha", alpha.id);
+    await assign("Archived in alpha", alpha.id, true);
+    await assign("In beta", beta.id);
+    await seed(other.id, ["Their session"]);
+    await prisma.savedSession.updateMany({ where: { userId: other.id }, data: { workspaceId: theirs.id } });
+
+    const names = async (options: Parameters<typeof listSessions>[2]) => (await listSessions(prisma, user.id, options)).map((session) => session.name);
+    expect(await names({ workspace: alpha.id })).toEqual(["In alpha"]);
+    expect(await names({ workspace: alpha.id, archived: true })).toEqual(["Archived in alpha"]);
+    expect(await names({ workspace: NO_WORKSPACE })).toEqual(["Loose"]);
+    // Assigning above bumped updatedAt, so compare without the newest-first order.
+    expect((await names({ workspace: null })).sort()).toEqual(["In alpha", "In beta", "Loose"]);
+    // Scoped by the caller even when handed another user's workspace id.
+    expect(await names({ workspace: theirs.id })).toEqual([]);
+    expect((await listSessions(prisma, user.id, { workspace: alpha.id }))[0]).toMatchObject({ workspaceId: alpha.id });
+
+    // Display order (position), live only, the caller's only; unknown stored colors read as none.
+    expect(await listWorkspaceChoices(prisma, user.id)).toEqual([
+      { id: alpha.id, name: "Alpha", color: "blue" },
+      { id: beta.id, name: "Beta", color: null },
+    ]);
+    expect(await listWorkspaceFilters(prisma, user.id)).toEqual({
+      workspaces: [
+        { id: alpha.id, name: "Alpha", color: "blue", sessionCount: 1 },
+        { id: beta.id, name: "Beta", color: null, sessionCount: 1 },
+      ],
+      unassigned: 1,
+    });
+    expect(await listWorkspaceFilters(prisma, user.id, { archived: true })).toMatchObject({ workspaces: [{ sessionCount: 1 }, { sessionCount: 0 }], unassigned: 0 });
   });
 
   it("lists active devices before revoked ones, most recently seen first", async () => {

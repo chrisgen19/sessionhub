@@ -8,14 +8,9 @@ import { apiFetch } from "@/lib/api-client";
 import { plural } from "@/lib/format";
 import { downloadSessionExport, openableUrls, openLinks } from "@/lib/session-files";
 import { ConfirmDialog } from "./confirm-dialog";
+import { NoticeLine } from "./notice-line";
 import { RenameForm } from "./rename-form";
-import { useSessionMutation, type Notice } from "./use-session-mutation";
-
-const NOTICE_STYLE: Record<Notice["tone"], string> = {
-  ok: "bg-brand-soft text-brand",
-  error: "bg-danger-soft text-danger",
-  conflict: "bg-warning-soft text-warning",
-};
+import { useSessionMutation } from "./use-session-mutation";
 
 function ActionButton({ onClick, disabled, danger, children }: { onClick: () => void; disabled?: boolean; danger?: boolean; children: ReactNode }) {
   return (
@@ -83,20 +78,11 @@ export function SessionActions({ detail }: { detail: ApiSessionDetail }) {
           <ActionButton danger onClick={() => setDialog("delete")} disabled={pending}><Trash2 aria-hidden="true" className="size-4" />Delete</ActionButton>
         </div>
       )}
-      <div aria-live="polite">
-        {notice && (
-          <p className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 text-[13px] ${NOTICE_STYLE[notice.tone]}`}>
-            <span>{notice.text}</span>
-            {notice.tone === "conflict" && (
-              <button type="button" onClick={loadLatest} className="font-semibold underline">Load latest version</button>
-            )}
-          </p>
-        )}
-      </div>
+      <NoticeLine notice={notice} onLoadLatest={loadLatest} />
       {dialog === "delete" && (
         <ConfirmDialog title={`Delete "${detail.name}"?`} confirmLabel="Delete session" tone="danger" busy={pending} onConfirm={() => void remove()} onClose={() => setDialog(null)}>
-          <p>This removes the session and its {plural(detail.tabCount, "tab")} from your account. When sync is available, it will also leave your other devices&apos; libraries.</p>
-          <p>Tabs you have open right now and sessions saved in an extension on a computer aren&apos;t affected.</p>
+          <p>This removes the session and its {plural(detail.tabCount, "tab")} from your account. Browsers with sync on remove it at their next sync.</p>
+          <p>Tabs you have open right now aren&apos;t affected, and neither are sessions kept only in a browser.</p>
         </ConfirmDialog>
       )}
       {dialog === "open" && (

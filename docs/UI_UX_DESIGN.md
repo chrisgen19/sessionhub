@@ -586,6 +586,17 @@ Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `uplo
 - **Deviations:** native selects (not the customizable `base-select` picker); no workspace in the popup or side panel yet; no "move sessions to..." target on delete (they go to No workspace, user's choice); new saves are not put in the selected workspace.
 - Verified at 1280 and 390 px (list, dialog, delete confirmation, inspector) and the Sync card in dark mode at 390 px: no horizontal overflow.
 
+## 18h. Web workspaces on Saved sessions (2026-10-17)
+
+`apps/web/src/app/app/sessions/page.tsx`, `[id]/page.tsx`; `components/dashboard/workspace-filter.tsx`, `components/sessions/workspace-select.tsx`; queries in `server/queries/dashboard.ts`.
+
+- **Filter:** a "Workspace" select to the right of the Active/Archived tabs, shown once the account has a workspace: All sessions, each workspace with its count in the current view, and No workspace. It lives in the URL (`?workspace=<id|none>`) and combines with `view` and `q`; the tabs keep it. An id that isn't one of the user's live workspaces shows all sessions. The description reads "Sessions in “<name>”." (or "Results for “q” in “<name>”").
+- **Rows** name their workspace (color dot + name) under the session name while All sessions is shown.
+- **Empty states:** "No sessions in “<name>”" ("Open a session and choose this workspace for it, here or in the SessionHub extension."), "No archived sessions in no workspace" and so on. The no-sessions state now says to turn on sync in the extension (Account, then Sync) instead of "once cloud sync is available".
+- **Session page:** a "Workspace" select (No workspace + workspaces) above the actions. It saves with the version the page loaded: a change made elsewhere first shows the usual conflict notice with **Load latest version**, and the select goes back to the saved value. Success reads "Moved to “<name>”." or "Moved out of its workspace." Without workspaces it says to create them in the extension's manager (the web has no workspace management yet).
+- The delete dialog now says browsers with sync on remove the session at their next sync (it said "when sync is available").
+- Verified at 1440 and 390 px and in dark mode at 390 px; E2E checks no horizontal overflow at 390 px on the list, the filtered list and the session page.
+
 ## 18d. Web session detail (2026-10-16)
 
 `/app/sessions/[id]` (list rows link to it; the list has Active / Archived views). Layout: breadcrumb, name with Pinned/Archived badges, "From <source> · N windows · N tabs · updated ... · version N", an action row, a restore note, and the window tree (groups as labelled runs in saved order, pinned icon, "Won't open" badge with a screen-reader reason).

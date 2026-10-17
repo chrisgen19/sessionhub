@@ -1,12 +1,8 @@
-import type { SavedGroup, SavedTab, SavedWindow, TabGroupColor } from "@sessionhub/contracts/session";
+import type { SavedGroup, SavedTab, SavedWindow } from "@sessionhub/contracts/session";
 import { classifyUrl, displayUrl } from "@sessionhub/core/url-classification";
 import { Globe, Pin } from "lucide-react";
 import { plural } from "@/lib/format";
-
-const GROUP_COLORS: Record<TabGroupColor, string> = {
-  grey: "#8a948f", blue: "#3b78e7", red: "#d93b30", yellow: "#e8a500", green: "#1f8b4c",
-  pink: "#d63c86", purple: "#8a4fd8", cyan: "#0f8a9d", orange: "#e5711c",
-};
+import { GROUP_COLORS } from "@/lib/group-colors";
 
 /** Consecutive tabs sharing a group, in saved order. */
 const segments = (window: SavedWindow) => {
