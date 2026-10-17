@@ -4,7 +4,7 @@ import type { AccountScope, OutboxRecord, SessionHubDb, SessionSyncRecord } from
 import { listOutbox } from "./outbox-repository";
 import { settleHeldCopy } from "./sync-apply";
 import { selectPushBatch, toPushOperation } from "./sync-batch";
-import { openSync, recordFailure, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
+import { openSync, recordFailure, stillOpen, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
 
 export type PushSummary = GateClosed | SyncFailure | { status: "done"; accepted: number; conflicts: number; rejected: number; remaining: number };
 
@@ -82,6 +82,8 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PushSummary> => {
   const { connection, scope } = gate;
   const total = { accepted: 0, conflicts: 0, rejected: 0 };
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    const closed = await stillOpen(deps.db, scope);
+    if (closed) return closed;
     const claimed = await claimBatch(deps.db, scope, deps.now().toISOString());
     if (claimed.length === 0) break;
     const request = { protocolVersion: SYNC_PROTOCOL_VERSION, deviceId: connection.deviceId, operations: claimed.map(toPushOperation) };
@@ -98,7 +100,7 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PushSummary> => {
     total.rejected += tally.rejected;
     if (tally.retryable > 0) return recordFailure(deps, scope, new AccountApiError("INTERNAL_ERROR", "Some changes couldn't be saved yet. They will be sent again."));
   }
-  // The backoff is cleared by the pull that follows (recordSuccess), once the whole run worked.
+  // No recordSuccess here: the download that completes the run records it (sync-runner).
   const outbox = await listOutbox(deps.db, scope);
   // The round cap ended this run with sendable work left: the retry alarm continues it instead of
   // waiting for the next edit or worker start. Work held back behind a conflict doesn't count.

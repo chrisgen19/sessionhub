@@ -2,10 +2,11 @@ import { AlertTriangle, ArrowLeft, Download, RotateCcw, Trash2 } from "lucide-re
 import { useState } from "react";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
-import { SyncStatusChip } from "../../components/brand";
+import { SessionSyncBadge } from "../../components/sync-status-chip";
 import { buttonClass } from "../../components/modal";
 import { downloadSessionExport } from "../../lib/export-download";
 import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
+import type { SessionSyncLabel } from "../../lib/sync-status";
 import { DeleteDialog } from "./delete-dialog";
 import { LastRestore } from "./last-restore";
 import { RenameTitle } from "./rename-title";
@@ -14,11 +15,12 @@ import { WindowTree } from "./window-tree";
 
 interface SessionInspectorProps {
   session: SavedSession;
+  syncLabel: SessionSyncLabel;
   onBack: () => void;
   onDeleted: () => void;
 }
 
-export function SessionInspector({ session, onBack, onDeleted }: SessionInspectorProps) {
+export function SessionInspector({ session, syncLabel, onBack, onDeleted }: SessionInspectorProps) {
   const [dialog, setDialog] = useState<"restore" | "delete" | null>(null);
   const summary = summarizeSession(session);
   const notRestorable = summary.tabCount - summary.restorableTabCount;
@@ -39,7 +41,7 @@ export function SessionInspector({ session, onBack, onDeleted }: SessionInspecto
           <span className="font-semibold tabular-nums">
             {plural(summary.windowCount, "window")} · {plural(summary.tabCount, "tab")}
           </span>
-          <SyncStatusChip />
+          <SessionSyncBadge label={syncLabel} />
         </div>
       </div>
 
@@ -79,6 +81,7 @@ export function SessionInspector({ session, onBack, onDeleted }: SessionInspecto
       {dialog === "delete" && (
         <DeleteDialog
           session={session}
+          inAccount={syncLabel !== "local"}
           onClose={() => setDialog(null)}
           onDeleted={() => {
             setDialog(null);

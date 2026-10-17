@@ -1,5 +1,3 @@
-import { HardDrive } from "lucide-react";
-
 export function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <span
@@ -9,22 +7,6 @@ export function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
       }`}
     >
       S
-    </span>
-  );
-}
-
-/**
- * Sync state indicator (docs/UI_UX_DESIGN.md section 13). Cloud sync doesn't exist yet,
- * so the only truthful state is "Local only".
- */
-export function SyncStatusChip() {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-fg-muted"
-      title="Sessions are saved in this browser only. Cloud sync isn't available yet."
-    >
-      <HardDrive aria-hidden="true" className="size-3.5" />
-      Local only
     </span>
   );
 }

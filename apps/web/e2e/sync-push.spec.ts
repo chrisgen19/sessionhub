@@ -4,7 +4,7 @@ import { createPrismaClient } from "@sessionhub/database/client";
 import { BASE_URL } from "../playwright.config";
 import { launchWithExtension } from "./extension";
 import { randomIp, signUp } from "./pairing-flow";
-import { connectExtension, enableSync, localSession, readStore, sendCommand } from "./sync-flow";
+import { captureAllWindows, connectExtension, readStore, sendCommand, turnOnSync } from "./sync-flow";
 
 const prisma = createPrismaClient(process.env.TEST_DATABASE_URL);
 test.afterAll(async () => {
@@ -55,36 +55,35 @@ test("push takes only this device's Bearer token and one operation per session, 
   expect(await code(await push([upsert()]))).toEqual([403, "EMAIL_NOT_CONFIRMED"]);
 });
 
-test("the real extension uploads a queued session once, then pushes a rename and a delete made through its commands", async () => {
+test("the real extension uploads what the user chose when turning sync on, then edits, deletes and new saves", async () => {
   const { context, extensionId, close } = await launchWithExtension({ "x-forwarded-for": randomIp() });
   try {
     const { email } = await signUp(context);
     const manager = await connectExtension(context, extensionId);
     const user = await prisma.user.findUniqueOrThrow({ where: { email }, include: { devices: true } });
 
-    const session = localSession("Uploaded from the extension");
-    await enableSync(manager, `account:${user.id}`, session);
-
-    expect(await sendCommand(manager, { type: "sync.now" })).toMatchObject({ ok: true, data: { push: { status: "done", accepted: 1, conflicts: 0, rejected: 0, remaining: 0 } } });
-    expect(await prisma.savedSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({
-      userId: user.id,
-      name: "Uploaded from the extension",
-      version: 1,
-      tabCount: 2,
-      sourceDeviceId: user.devices[0]!.id,
-    });
+    // Saved before sync existed: local only until the user picks it in the upload preview.
+    const sessionId = await captureAllWindows(manager);
+    await turnOnSync(manager, extensionId, 1);
+    const server = (id: string) => prisma.savedSession.findUnique({ where: { id } });
+    await expect.poll(async () => (await server(sessionId))?.version, { timeout: 15_000 }).toBe(1);
+    expect(await server(sessionId)).toMatchObject({ userId: user.id, sourceDeviceId: user.devices[0]!.id });
+    await expect(manager.getByRole("region", { name: "Sync" }).getByTitle(/./).first()).toHaveText("Synced", { timeout: 15_000 });
 
     // Ordinary commands: the worker uploads on its own afterwards.
-    const rename = await manager.evaluate((id) => chrome.runtime.sendMessage({ type: "session.rename", sessionId: id, expectedVersion: 1, name: "Renamed in the extension" }), session.id);
+    const rename = await sendCommand(manager, { type: "session.rename", sessionId, expectedVersion: 1, name: "Renamed in the extension" });
     expect(rename).toEqual({ ok: true, data: { version: 2 } });
-    const server = () => prisma.savedSession.findUniqueOrThrow({ where: { id: session.id } });
-    await expect.poll(async () => (await server()).name, { timeout: 15_000 }).toBe("Renamed in the extension");
-    await manager.evaluate((id) => chrome.runtime.sendMessage({ type: "session.delete", sessionId: id }), session.id);
-    await expect.poll(async () => (await server()).deletedAt !== null, { timeout: 15_000 }).toBe(true);
+    await expect.poll(async () => (await server(sessionId))?.name, { timeout: 15_000 }).toBe("Renamed in the extension");
+    await sendCommand(manager, { type: "session.delete", sessionId });
+    await expect.poll(async () => (await server(sessionId))?.deletedAt !== null, { timeout: 15_000 }).toBe(true);
+    expect((await server(sessionId))?.version).toBe(3);
 
-    expect(await prisma.savedSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({ version: 3 });
-    expect(await prisma.syncOperationReceipt.count({ where: { userId: user.id, resultStatus: "accepted" } })).toBe(3);
-    expect(await readStore(manager, "outbox")).toEqual([]);
+    // With sync on, a new save goes to the account by itself (docs/USER_FLOWS.md Flow 2).
+    const later = await captureAllWindows(manager);
+    await expect.poll(async () => (await server(later))?.userId, { timeout: 15_000 }).toBe(user.id);
+
+    expect(await prisma.syncOperationReceipt.count({ where: { userId: user.id, resultStatus: "accepted" } })).toBe(4);
+    await expect.poll(async () => (await readStore(manager, "outbox")).length, { timeout: 15_000 }).toBe(0);
   } finally {
     await close();
   }

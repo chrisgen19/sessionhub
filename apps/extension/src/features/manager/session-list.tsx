@@ -3,6 +3,7 @@ import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
 import type { SessionsState } from "../../hooks/use-sessions";
 import { formatListDate, plural, sessionSourceLabel } from "../../lib/format";
+import { SESSION_SYNC_TEXT, type SessionSyncLabel } from "../../lib/sync-status";
 
 interface SessionListProps {
   state: SessionsState;
@@ -13,7 +14,10 @@ interface SessionListProps {
   onRetry: () => void;
 }
 
+const PROBLEM = new Set<SessionSyncLabel>(["conflict", "error"]);
+
 export function SessionList({ state, sessions, selectedId, searching, onSelect, onRetry }: SessionListProps) {
+  const label = (id: string): SessionSyncLabel => (state.status === "ready" ? (state.syncLabels[id] ?? "local") : "local");
   if (state.status === "loading") {
     return (
       <div aria-busy="true" aria-label="Loading sessions" className="space-y-2 p-4">
@@ -67,10 +71,14 @@ export function SessionList({ state, sessions, selectedId, searching, onSelect, 
                   {session.name}
                 </span>
                 <span className="block truncate text-xs text-fg-muted">
-                  {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)} · Local only
+                  {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)}
                 </span>
               </span>
-              <span className="shrink-0 text-xs tabular-nums text-fg-muted">{formatListDate(session.updatedAt)}</span>
+              {/* Sync status keeps its own line so narrow widths never truncate it away. */}
+              <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                <span className="text-xs tabular-nums text-fg-muted">{formatListDate(session.updatedAt)}</span>
+                <span className={`text-[11px] font-semibold ${PROBLEM.has(label(session.id)) ? "text-warning" : "text-fg-muted"}`}>{SESSION_SYNC_TEXT[label(session.id)]}</span>
+              </span>
             </button>
           </li>
         );

@@ -15,7 +15,7 @@ beforeEach(async () => {
 describe("PopupApp", () => {
   it("shows the local-only state, save actions and an empty state", async () => {
     render(<PopupApp />);
-    expect(screen.getByText("Local only")).toBeTruthy();
+    expect(await screen.findByText("Local only")).toBeTruthy();
     expect(screen.getByRole("button", { name: /save window/i })).toBeTruthy();
     expect(await screen.findByText(/no saved sessions yet/i)).toBeTruthy();
   });

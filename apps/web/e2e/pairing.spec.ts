@@ -28,7 +28,7 @@ test("pair, see the device on the web, revoke from the web, pair again, disconne
     // The extension's next poll (every 5 s) picks up the approval.
     await expect(manager.getByText("Connected", { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(manager.getByText(`Pat Pairing (${email})`)).toBeVisible();
-    await expect(manager.getByText("Off. Nothing is uploaded yet.")).toBeVisible();
+    await expect(manager.getByText(/^Sync is off\. Nothing is uploaded or downloaded/)).toBeVisible();
 
     // Stored hashed on the server; the device appears on the web.
     const user = await prisma.user.findUniqueOrThrow({ where: { email }, include: { devices: true, deviceCredentials: true } });
@@ -74,7 +74,7 @@ test("pair, see the device on the web, revoke from the web, pair again, disconne
 
     // Disconnect from the extension revokes on the server too.
     await manager.getByRole("button", { name: "Disconnect" }).click();
-    await expect(manager.getByText("Disconnected. Sessions saved in this browser are still here.")).toBeVisible();
+    await expect(manager.getByText(/^Disconnected\. Sessions saved only in this browser are still here/)).toBeVisible();
     await expect.poll(async () => (await prisma.device.findFirstOrThrow({ where: { userId: user.id } })).revokedAt).not.toBeNull();
   } finally {
     await close();

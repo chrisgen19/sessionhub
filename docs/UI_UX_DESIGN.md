@@ -501,7 +501,7 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 - Popup has no workspace selector, side-panel button or settings entry yet: those features don't exist, and the UI must not expose actions a surface can't perform.
 - Restore modal offers only "Open in new windows" (stated as text, no radio). "Add to current window" is not implemented.
 - Manager nav shows Saved sessions and Recovery (a horizontal row under the top bar below 1024 px). Below 1280 px the inspector replaces the list with a Back link; below 1024 px the sidebar collapses to a top bar.
-- Sync status is always "Local only" because sync doesn't exist.
+- Sync status: see 18e (it was always "Local only" before sync existed).
 - The window tree is not virtualized yet (fine at hundreds of tabs; M5 item).
 - Restore summary lists tabs that didn't open with a plain-language reason (Chrome's raw "No window with id" errors are mapped), notes tabs never reached, and offers **Retry N tabs**, explaining that only those tabs open, in a new window. After a retry the summary shows "Opened X of Y tabs after N attempts"; the Retry button disappears when nothing is left. A refused retry (for example another manager tab already finished it) keeps the summary and shows the reason.
 - Recovery view (`manager.html#view=recovery`): explanation (automatic, local-only, links and groups only), last checkpoint time, last error if any, "Checkpoint now" with a result message, timeline grouped Today / Yesterday / Previous 7 days / Older with "N opened, M closed" against the previous checkpoint and a Manual badge. The inspector shows the window tree, Restore (same safe preview and retry) and Export JSON, and explains that checkpoints are replaced over time (export + import to keep one). No retention settings UI yet; no delete for individual checkpoints.
@@ -524,6 +524,37 @@ Built under `/app` with a shared signed-in layout: 240 px sidebar (Overview, Sav
 - Session rows aren't links yet (no session detail route). Devices show "last seen ..." (or "not seen yet") and "Access revoked", never "Online".
 - Empty states say plainly that sync isn't available yet and where sessions live meanwhile. A skeleton (`loading.tsx`) and a generic error boundary with Try again (`error.tsx`) cover slow and failed loads.
 - Verified at 1440, 900 and 390 px and in dark mode.
+
+## 18e. Extension sync opt-in and status (2026-10-16)
+
+Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `upload-preview.tsx`), `components/sync-status-chip.tsx`, `lib/sync-status.ts` (pure, unit-tested).
+
+- **Status chip** (popup header, manager sidebar, Account view's Sync card): the section 13 labels `Local only` (not connected), `Sync off` (connected, not turned on), `Synced`, `Waiting to sync`, `Needs review`, `Sync failed`, `Offline` (last failure was a network error).
+  - Priority: failure, then review, then waiting.
+  - The tooltip always says when the last sync was, so an old sync never looks current.
+  - The chip renders nothing until the state is known (no guessed "Local only" flash).
+- **Per session:** every list row shows its own status on a separate line under the date (`Local only`, `Waiting to sync`, `Synced`, `Needs review`, `Sync failed`, or `Sync off` when the account's session is here but sync is off), so narrow widths never truncate it. Problems are in the warning color. The inspector shows the same badge.
+- **Opt-in** lives in the Account view (no extension Settings page yet), below the connection card.
+  - Off: one paragraph and **Turn on sync...**
+  - On:
+    - last synced time, waiting and needs-review counts
+    - the last error with the next retry time ("Saving and restoring still work")
+    - **Sync now**
+    - **Upload sessions from this browser (N)** when local sessions remain
+    - **Turn off sync**
+  - Results appear in a polite live region (`syncNowMessage`: what moved, or "Everything is up to date"; refused changes are called out).
+- **Upload preview** (dialog):
+  - The disclosure follows SECURITY_PRIVACY.md section 2 without promising site exclusions, which don't exist yet. It names the server host and says that recovery checkpoints are never uploaded.
+  - Then a list of this browser's sessions, **all ticked** (user's choice), with tab counts, a live "N sessions · M tabs selected" summary and Select all/none.
+  - It explains that uploaded sessions **move** to the account (user's choice): hidden here while disconnected, back on reconnect. Non-restorable tabs go along as reference, and unticked sessions stay local.
+  - Confirm: "Turn on sync and upload N sessions" / "Turn on sync" / "Upload N sessions".
+- **Delete** of an account session says it is removed from the account and from other connected browsers at their next sync. Open tabs anywhere are unaffected.
+- **Popup save** says "Saved: N tabs in M windows. It will sync to your account." while sync is on, otherwise "Saved locally: ...".
+- **Deviations:**
+  - no per-row "Syncing..." state (a run is in worker memory, not IndexedDB)
+  - no first-run sync banner in the popup yet
+  - conflict review isn't built: "Needs review" explains that both versions are kept
+- Verified at 390 and 1280 px (and dark mode at 390 px) with no horizontal overflow.
 
 ## 18d. Web session detail (2026-10-16)
 

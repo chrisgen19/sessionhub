@@ -7,11 +7,13 @@ import { sendCommand } from "../../lib/message-client";
 
 interface DeleteDialogProps {
   session: SavedSession;
+  /** In the account: deleting removes it from the other connected browsers too. */
+  inAccount: boolean;
   onClose: () => void;
   onDeleted: () => void;
 }
 
-export function DeleteDialog({ session, onClose, onDeleted }: DeleteDialogProps) {
+export function DeleteDialog({ session, inAccount, onClose, onDeleted }: DeleteDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { tabCount } = summarizeSession(session);
@@ -27,8 +29,11 @@ export function DeleteDialog({ session, onClose, onDeleted }: DeleteDialogProps)
   return (
     <Modal title={`Delete "${session.name}"?`} onClose={onClose} dismissible={!busy}>
       <p className="text-[13px] text-fg-muted">
-        This removes the saved session and its {plural(tabCount, "tab")} from this browser. Tabs you have open right now are not
-        affected. This can't be undone, so export it first if you might need it.
+        {inAccount
+          ? `This removes the saved session and its ${plural(tabCount, "tab")} from your account: your other connected browsers remove it at their next sync.`
+          : `This removes the saved session and its ${plural(tabCount, "tab")} from this browser.`}{" "}
+        Tabs you have open right now are not affected, here or anywhere else. This can&apos;t be undone, so export it first if you might
+        need it.
       </p>
       {error && (
         <p role="alert" className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">

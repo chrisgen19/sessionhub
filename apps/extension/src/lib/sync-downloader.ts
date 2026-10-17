@@ -2,7 +2,7 @@ import type { BootstrapItem } from "@sessionhub/contracts/api-sync";
 import { AccountApiError, fetchSyncBootstrap, fetchSyncPull } from "./account-api";
 import type { AccountScope, SessionHubDb, SyncStateRecord } from "./db";
 import { applyRemoteChange, type ApplyOutcome } from "./sync-apply";
-import { isRunAccount, openSync, recordFailure, recordSuccess, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
+import { isRunAccount, openSync, recordFailure, recordSuccess, stillOpen, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
 
 export type PullSummary = GateClosed | SyncFailure | { status: "done"; applied: number; held: number; skipped: number; bootstrapped: boolean };
 
@@ -65,6 +65,8 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PullSummary> => {
   let bootstrapped = false;
   let finished = false;
   for (let page = 0; page < MAX_PAGES && !finished; page += 1) {
+    const closed = await stillOpen(deps.db, scope);
+    if (closed) return closed;
     const state = await deps.db.syncState.get(scope);
     try {
       if (!state?.cursor || state.bootstrap) {

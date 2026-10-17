@@ -21,7 +21,11 @@ export function SessionsView({ sessionId, onSelect }: { sessionId: string | null
     <MasterDetail
       label="Saved sessions"
       emptyDetail="Select a session to see its windows and tabs."
-      detail={selected ? <SessionInspector session={selected} onBack={() => onSelect(null)} onDeleted={() => onSelect(null)} /> : null}
+      detail={
+        selected && state.status === "ready" ? (
+          <SessionInspector session={selected} syncLabel={state.syncLabels[selected.id] ?? "local"} onBack={() => onSelect(null)} onDeleted={() => onSelect(null)} />
+        ) : null
+      }
       list={
         <>
           <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6">

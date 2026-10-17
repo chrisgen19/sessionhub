@@ -2,15 +2,16 @@ import { liveQuery } from "dexie";
 import { useCallback, useEffect, useState } from "react";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { getDb } from "../lib/db";
-import { listSessions } from "../lib/session-repository";
+import { listSessionsWithSync } from "../lib/session-repository";
+import type { SessionSyncLabel } from "../lib/sync-status";
 
 export type SessionsState =
   | { status: "loading" }
-  | { status: "ready"; sessions: SavedSession[] }
+  | { status: "ready"; sessions: SavedSession[]; syncLabels: Record<string, SessionSyncLabel> }
   | { status: "error"; message: string };
 
 /**
- * Live list of saved sessions. Dexie's liveQuery re-runs when IndexedDB changes in
+ * Live list of saved sessions with each one's sync label. Dexie's liveQuery re-runs when IndexedDB changes in
  * any extension context (including writes made by the background worker).
  */
 export function useSessions(): { state: SessionsState; retry: () => void } {
@@ -18,8 +19,8 @@ export function useSessions(): { state: SessionsState; retry: () => void } {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    const subscription = liveQuery(() => listSessions(getDb())).subscribe({
-      next: (sessions) => setState({ status: "ready", sessions }),
+    const subscription = liveQuery(() => listSessionsWithSync(getDb())).subscribe({
+      next: ({ sessions, syncLabels }) => setState({ status: "ready", sessions, syncLabels }),
       error: (error: unknown) =>
         setState({ status: "error", message: error instanceof Error ? error.message : "Couldn't load sessions" }),
     });

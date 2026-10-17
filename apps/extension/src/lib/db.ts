@@ -168,6 +168,8 @@ export interface SyncStateRecord {
   cursor: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  /** API error code of `lastError` (NETWORK means offline); absent on older records. */
+  lastErrorCode?: string | null;
   /** Consecutive failed uploads, for backoff. */
   failures: number;
   /** No automatic upload before this time (backoff or Retry-After). */

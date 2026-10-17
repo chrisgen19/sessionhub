@@ -3,6 +3,7 @@ import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
 import type { SessionsState } from "../../hooks/use-sessions";
 import { formatListDate, plural, sessionSourceLabel } from "../../lib/format";
+import { SESSION_SYNC_TEXT } from "../../lib/sync-status";
 
 interface RecentSessionsProps {
   state: SessionsState;
@@ -58,7 +59,7 @@ export function RecentSessions({ state, sessions, searching, onOpen, onRetry }: 
                   {session.name}
                 </span>
                 <span className="block text-[11px] text-fg-muted">
-                  {formatListDate(session.updatedAt)} · {sessionSourceLabel(session)}
+                  {formatListDate(session.updatedAt)} · {sessionSourceLabel(session)} · {SESSION_SYNC_TEXT[state.syncLabels[session.id] ?? "local"]}
                 </span>
               </span>
               <span className="text-[11px] tabular-nums text-fg-muted">{plural(summary.tabCount, "tab")}</span>

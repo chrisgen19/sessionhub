@@ -1,13 +1,31 @@
 import { Dexie } from "dexie";
 import { savedSessionSchema, type SavedSession } from "@sessionhub/contracts/session";
-import { isAccountScope, visibleScopes } from "./account-scope";
+import { activeAccountScope, isAccountScope, visibleScopes } from "./account-scope";
 import type { LocalScope, LocalSessionRecord, SessionHubDb } from "./db";
 import { enqueueSessionDelete, enqueueSessionUpsert, type OutboxContext } from "./outbox-repository";
+import { sessionSyncLabel, type SessionSyncLabel } from "./sync-status";
 
 const stripLocalFields = ({ scope: _scope, sync: _sync, ...session }: LocalSessionRecord): SavedSession => session;
 
 const scopeRecords = (db: SessionHubDb, scope: LocalScope): Promise<LocalSessionRecord[]> =>
   db.sessions.where("[scope+updatedAt]").between([scope, Dexie.minKey], [scope, Dexie.maxKey]).reverse().toArray();
+
+/**
+ * Visible sessions plus each one's sync label, for lists. Same liveQuery rules as below: direct
+ * Dexie awaits only (connection, then each scope, then the account's sync state).
+ */
+export const listSessionsWithSync = async (db: SessionHubDb): Promise<{ sessions: SavedSession[]; syncLabels: Record<string, SessionSyncLabel> }> => {
+  const connection = await db.account.get("connection");
+  const records: LocalSessionRecord[] = [];
+  for (const scope of visibleScopes(connection)) records.push(...(await scopeRecords(db, scope)));
+  const active = activeAccountScope(connection);
+  const syncEnabled = Boolean(active && (await db.syncState.get(active))?.enabledAt);
+  records.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return {
+    sessions: records.map(stripLocalFields),
+    syncLabels: Object.fromEntries(records.map((record) => [record.id, sessionSyncLabel(record, syncEnabled)])),
+  };
+};
 
 /**
  * Visible sessions (this browser's and the connected account's), most recently updated first.
@@ -61,6 +79,33 @@ export const addSession = async (db: SessionHubDb, session: SavedSession): Promi
     if (error instanceof Error && error.name === "ConstraintError") {
       throw new SessionExistsError("A session with this id already exists");
     }
+    throw error;
+  }
+};
+
+/** Where a new save goes: the connected account once sync is on for it (docs/USER_FLOWS.md Flow 2), else this browser. */
+const newSessionScope = (db: SessionHubDb): Promise<LocalScope> =>
+  db.account.get("connection").then((connection) => {
+    const scope = activeAccountScope(connection);
+    return scope ? db.syncState.get(scope).then((state): LocalScope => (state?.enabledAt ? scope : "local")) : "local";
+  });
+
+/**
+ * Saves a new session (capture or import) where new saves belong, with its upload queued in the
+ * same transaction when that is the account. `replace: false` refuses an existing id.
+ */
+export const saveNewSession = async (db: SessionHubDb, session: SavedSession, context: OutboxContext, { replace = false } = {}): Promise<LocalScope> => {
+  const valid = savedSessionSchema.parse(session);
+  try {
+    return await db.transaction("rw", [db.sessions, db.outbox, db.account, db.syncState], async () => {
+      const scope = await newSessionScope(db);
+      const record: LocalSessionRecord = isAccountScope(scope) ? { ...valid, scope, sync: { serverVersion: null, state: "pending" } } : { ...valid, scope };
+      await (replace ? db.sessions.put(record) : db.sessions.add(record));
+      if (isAccountScope(scope)) await enqueueSessionUpsert(db, scope, valid, null, context);
+      return scope;
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "ConstraintError") throw new SessionExistsError("A session with this id already exists");
     throw error;
   }
 };
