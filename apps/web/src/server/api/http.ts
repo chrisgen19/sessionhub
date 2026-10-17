@@ -5,6 +5,8 @@ import { getAuth } from "@/server/auth";
 import { authenticateAccessToken, type DevicePrincipal } from "@/server/devices/credentials";
 import { bearerToken } from "@/server/devices/tokens";
 import { getServerEnv } from "@/server/env";
+import { log } from "@/server/observability/logger";
+import { observeRequest, readBodyText } from "@/server/observability/request";
 import { ServiceError } from "@/server/service-errors";
 import { API_READ_LIMIT, API_WRITE_LIMIT, DEVICE_TOKEN_LIMIT, PAIRING_START_LIMIT, takeTokens, type RateLimitPolicy } from "./rate-limit";
 
@@ -63,21 +65,23 @@ const toResponse = (error: unknown): Response => {
     if (bearer) headers["www-authenticate"] = bearer;
     return json({ error: { code: error.code, message: error.message, ...error.details } }, SERVICE_STATUS[error.code] ?? 400, headers);
   }
-  // Class name only: never log request bodies, URLs or user data.
-  console.error(`[api] unexpected ${error instanceof Error ? error.name : typeof error}`);
+  // Class (and Prisma code) only: never request bodies, URLs or user data.
+  const code = (error as { code?: unknown } | null)?.code;
+  log("error", "api_unexpected_error", { errorClass: error instanceof Error ? error.name : typeof error, prismaCode: typeof code === "string" && /^P\d{4}$/.test(code) ? code : undefined });
   return json({ error: { code: "INTERNAL_ERROR", message: "Something went wrong. Try again." } }, 500);
 };
 
-/** Wraps a route handler so every failure becomes a typed JSON error. */
+/** Wraps a route handler: every failure becomes a typed JSON error, and the request gets an id and an access log line. */
 export const handle =
   <C>(fn: (request: Request, context: C) => Promise<Response>) =>
-  async (request: Request, context: C): Promise<Response> => {
-    try {
-      return await fn(request, context);
-    } catch (error) {
-      return toResponse(error);
-    }
-  };
+  (request: Request, context: C): Promise<Response> =>
+    observeRequest(request, async () => {
+      try {
+        return await fn(request, context);
+      } catch (error) {
+        return toResponse(error);
+      }
+    });
 
 /** The signed-in user (Better Auth session cookie). Device tokens for the extension arrive in M4. */
 export const authenticate = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
@@ -169,10 +173,9 @@ export const readJson = async <T extends z.ZodType>(request: Request, schema: T)
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Send the body as application/json.");
   }
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > API_LIMITS.requestBytesMax) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The request body is too large.");
-  const text = await request.text();
-  if (Buffer.byteLength(text) > API_LIMITS.requestBytesMax) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The request body is too large.");
+  // Bounded read: stops at the limit even without (or with a false) Content-Length.
+  const text = await readBodyText(request, API_LIMITS.requestBytesMax);
+  if (text === null) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The request body is too large.");
   let data: unknown;
   try {
     data = JSON.parse(text);

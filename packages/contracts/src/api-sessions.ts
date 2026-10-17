@@ -16,6 +16,8 @@ export const API_LIMITS = {
   pageSizeDefault: 50,
   /** Request body cap enforced before JSON parsing. */
   requestBytesMax: 2 * 1024 * 1024,
+  /** Live (not deleted) sessions one account can keep; creating more answers LIMIT_REACHED. */
+  sessionsPerAccountMax: 5000,
 } as const;
 
 const tabInputSchema = z.object({

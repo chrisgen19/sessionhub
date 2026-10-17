@@ -70,8 +70,8 @@ export const pushResultSchema = z.discriminatedUnion("status", [
     status: z.literal("rejected"),
     clientOperationId: z.uuid(),
     entityId: z.uuid(),
-    /** NOT_FOUND: missing, deleted or another account's; ID_IN_USE: a create collided. */
-    code: z.enum(["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE"]),
+    /** NOT_FOUND: missing, deleted or another account's; ID_IN_USE: a create collided; LIMIT_REACHED: the account holds the maximum number of sessions. */
+    code: z.enum(["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE", "LIMIT_REACHED"]),
     message: z.string(),
     replayed: z.boolean(),
   }),

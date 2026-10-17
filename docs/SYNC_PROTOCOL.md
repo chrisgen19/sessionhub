@@ -247,7 +247,7 @@ The web dashboard's API and the shared mutation service that `sync/push` will re
 | `PATCH /api/v1/sessions/:id` `{ expectedVersion, ...fields }` | 200 detail (version + 1) | 404, 409 `VERSION_CONFLICT` with `expectedVersion`, `serverVersion`, `serverState`, 422 |
 | `DELETE /api/v1/sessions/:id?expectedVersion=N` | 200 `{ id, version, deletedAt }` (tombstone); repeating it returns the same tombstone | 404, 409 |
 
-All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-Control: no-store`; errors are `{ error: { code, message, issues?, expectedVersion?, serverVersion?, serverState? } }`. Writes also require `Origin` equal to the app origin (403 `FORBIDDEN_ORIGIN`), `Content-Type: application/json` (415) and a body of at most 2 MB checked before parsing (413); unknown fields are rejected (400 with field `issues`). Limits: 200 windows, 2,000 tabs per window, 5,000 tabs per session.
+All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-Control: no-store`; errors are `{ error: { code, message, issues?, expectedVersion?, serverVersion?, serverState? } }`. Writes also require `Origin` equal to the app origin (403 `FORBIDDEN_ORIGIN`), `Content-Type: application/json` (415) and a body of at most 2 MB, read with a hard cap that stops at the limit even without `Content-Length` (413); unknown fields are rejected (400 with field `issues`). Limits: 200 windows, 2,000 tabs per window, 5,000 tabs per session, **5,000 live sessions per account** (creating more: 422 `LIMIT_REACHED`; deleted sessions don't count). Every response carries `X-Request-Id` (SECURITY_PRIVACY.md 8a).
 
 **Rate limits (shared across web instances since 2026-10-16):** token buckets in PostgreSQL (`rate_limit_buckets`, `apps/web/src/server/api/rate-limit.ts`). Each check is one atomic `INSERT ... ON CONFLICT DO UPDATE` that refills by the time elapsed on the database clock and takes the tokens only if they are all there. Over a limit: `429 RATE_LIMITED`, `Retry-After: <seconds>` and `retryAfterSeconds` in the body; nothing is changed.
 
@@ -351,7 +351,7 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
 |---|---|---|
 | `accepted` | `serverVersion`, `serverSequence` (null when the service's own idempotent repeat changed nothing: same create content again, delete of a tombstone) | yes, in the mutation's transaction (none for the service's idempotent repeat) |
 | `conflict` | `code: VERSION_CONFLICT`, `expectedVersion`, `serverVersion` (no server state: the pull brings it) | yes |
-| `rejected` | `NOT_FOUND` (missing, tombstoned or another account's: indistinguishable), `ID_IN_USE` (create collided), `INVALID_WORKSPACE` | yes |
+| `rejected` | `NOT_FOUND` (missing, tombstoned or another account's: indistinguishable), `ID_IN_USE` (create collided), `INVALID_WORKSPACE`, `LIMIT_REACHED` (the account already holds 5,000 live sessions; the extension offers "keep in this browser only") | yes |
 | `validation_error` | `issues`; `clientOperationId` null if it wasn't a UUID | no (recomputed identically) |
 | `retryable_error` | unexpected server failure; send the same operation again | no |
 

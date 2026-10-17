@@ -97,7 +97,7 @@ flowchart LR
 - [ ] Validate required Chrome permissions and MV3 compliance.
 - [ ] Complete privacy policy/user-data disclosures and store copy.
 - [ ] Run abuse/security, race/concurrency and restore failure tests.
-- [ ] Add rate limiting, observability with URL redaction, resource limits. (rate limiting done 2026-10-16: writes, reads, per-IP device endpoints and Better Auth, all in shared PostgreSQL buckets; observability and resource limits pending)
+- [x] Add rate limiting, observability with URL redaction, resource limits. (2026-10-16/17: shared PostgreSQL rate limits incl. reads and Better Auth; structured redacted JSON logs with request ids; bounded body reads, database timeouts, 5,000 sessions per account; SECURITY_PRIVACY.md 8a)
 - [ ] Production Dockerfile and Coolify deployment checklist. (Dockerfile: done, `infra/docker/web.Dockerfile`; Coolify checklist: pending.)
 - [ ] Verify TLS, trusted proxy, DB migration and off-host backup restore.
 - [ ] CI production extension ZIP and web build.

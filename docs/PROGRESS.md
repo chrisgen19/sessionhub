@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 hardening started: rate limits for reads and shared (multi-instance) limiter storage done. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 hardening started: rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -17,7 +17,7 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (`236b64a`, CI green), #8 **`feature/m4-sync-pull`** (`13b468b`, CI green), #9 **`feature/m4-sync-ui`** (`e887bf9`, CI green), #10 **`feature/m4-conflict-review`** (`6b444f5`, CI green). **`feature/m6-hardening`** (off #10, uncommitted at the end of the 2026-10-17 rate-limit session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (each based on the previous; the whole stack was rebased on 2026-10-17 onto the PR #1 checkpoint eviction fix, so these are the current tips): #1 `feature/m1-monorepo-local-slice` -> `main` (`c4bbc1f`), #2 `feature/m3-web-docker` (`d40d946`), #3 `feature/m3-email-auth` (`9239287`), #4 `feature/m4-device-pairing` (`99045de`), #6 `feature/m4-local-outbox` (`4074da5`), #7 `feature/m4-sync-push` (`3da2461`), #8 `feature/m4-sync-pull` (`e4ead3e`), #9 `feature/m4-sync-ui` (`82dd1ea`), #10 `feature/m4-conflict-review` (`d554eea`), #11 **`feature/m6-hardening`** (rate limits `4f85a1b`, then observability and resource limits). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -141,6 +141,48 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 **Known gaps:** the stale-connection window narrows to the moment between the gate check and `withAccessToken` reading the connection; passing the expected account into `withAccessToken` would close it fully. Pull pages still move `lastSyncAt` per page, so a later page failing leaves the time of the last page that arrived.
 
 **Next step:** after PR #9 takes this fix, carry it up the stack (#10, #11). `sync-uploader.ts` `run` also changes in the PR #7 fix (`51b0582`, round-cap continuation), so the rebase of #8 and #9 onto the new #7 meets this code too.
+### 2026-10-17 (M6 observability and resource limits slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
+
+**Goal:** observability with URL redaction (structured logs, request ids, no URLs or tokens) and resource limits (user's scope). Same branch as PR #11. Decisions in SYSTEM_DESIGN.md 14 (five rows); behavior in SECURITY_PRIVACY.md 8a.
+
+**Implemented:**
+
+- `apps/web/src/server/observability/` (new):
+  - `redact.ts`: `redactText` (URLs of any scheme, emails, `shd_*` tokens, `Bearer` values), `redactPath` (query dropped, ids and opaque segments to `:id`), `redactFields` (drops content and secret field names)
+  - `logger.ts`: JSON lines (info stdout, warn/error stderr), request id from AsyncLocalStorage, `captureLogs` for tests, `errorFields`
+  - `request.ts`: `observeRequest` (request id in and out as `X-Request-Id`, one `http_request` access line) and `readBodyText` (hard byte cap while streaming)
+- `http.ts`: `handle()` runs every `/api/v1` route through `observeRequest`; unexpected errors log class plus Prisma code; `readJson` uses the bounded reader (the old code trusted `Content-Length`, then read everything).
+- `/api/auth/[...all]`: request ids and access logs; POST bodies capped at 64 KB before Better Auth sees them (413 `PAYLOAD_TOO_LARGE`). `auth.ts`: Better Auth's logger goes through the redacting logger (debug dropped, arguments by type only).
+- `sync/push.ts` and `mail/deliver.ts`: `console.error` replaced with structured events.
+- `packages/database/src/client.ts`: `DATABASE_LIMITS` on the pg pool (statement 15 s, idle in transaction 30 s, connection wait 10 s).
+- 5,000 live sessions per account: `API_LIMITS.sessionsPerAccountMax`, checked in `createSessionInTx` after the clock lock; `LIMIT_REACHED` is 422 on the web API and a `rejected` push result (contract enum extended), which the extension already shows in review as "Can't be uploaded" with "Keep in this browser only".
+- Tests:
+  - `observability.test.ts` (9)
+  - `limits.db.test.ts` (2)
+  - `e2e/observability.spec.ts` (request ids, a proxy's id kept, a forged one replaced, 413 on a 70 KB sign-in body)
+  - `deliver.test.ts` now asserts on the structured line
+- Docs: SECURITY_PRIVACY 8a and section 10, SYNC_PROTOCOL 13a and push results, SYSTEM_DESIGN 14, ROADMAP (M6 item done).
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit):**
+
+- `pnpm check --force`: **pass** (17 tasks). Web unit tests **64** (+9).
+- `pnpm --filter @sessionhub/web test:db`: **56/56** (+2): the session cap for web creates and sync uploads (deleted sessions don't count, other accounts unaffected), and `SHOW statement_timeout` / `idle_in_transaction_session_timeout` = 15s / 30s on pooled connections.
+- `pnpm build`: pass.
+- Full web E2E **40/41**: only the pre-existing macOS password-reset failure.
+- Extension E2E **8/9**: only the pre-existing macOS restore-retry failure.
+- Leak check against the production standalone build: a scratch script sent sign-up, a wrong password, a list with a token-like cursor and URL query, a create with a private URL and title, an unknown id, a bearer token and a reset-token link. It got 8 JSON log lines; none contained the email, name, title, URLs, cursor, tokens or the client IP.
+- Not run: `pnpm test:docker` (no Compose here; CI's `docker` job covers it) and the database package `test:db` (resets `sessionhub_test`, which Prisma blocks for agents).
+
+**Production note:** no migration. After deploying:
+- every API request writes one log line
+- statements over 15 s are cancelled (the slowest measured query is far below that)
+- auth bodies over 64 KB and the 5,001st live session are refused
+
+**Known gaps:**
+- no log shipping or metrics backend yet (stdout/stderr only)
+- a `LIMIT_REACHED` upload stays in review until the user picks "Keep in this browser only"; there is no retry after deleting sessions elsewhere
+- client-side (extension) logs not reviewed
+- per-IP limits still trust `X-Forwarded-For`
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
@@ -160,7 +202,6 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - Manual verification in Chrome: Not run (message text only, no layout change).
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
-
 
 ### 2026-10-17 (M6 rate limits slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
 
@@ -758,9 +799,8 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push `feature/m6-hardening`, open its PR on top of #10, then merge the stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+1. Commit and push the observability slice to `feature/m6-hardening` (PR #11), check CI, then merge the stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
 2. Next M6 items:
-   - observability with URL redaction (structured logs, request ids, no URLs or tokens) and resource limits (body sizes are bounded; add timeouts, page and connection limits where missing)
    - trusted proxy / `X-Forwarded-For` overwrite and TLS (Coolify deployment checklist)
    - CI builds of the production extension ZIP
    - permissions review and privacy policy
