@@ -149,4 +149,4 @@ Set up with the `coolify` CLI (and the Coolify API for the three settings CLI 1.
 - The PostgreSQL 17 instance is shared with other apps; SessionHub's migrations use nothing newer than 17 (CI tests on 18).
 - The shared instance also has a public port (used by Debt Tracker). SessionHub never uses it; the role and database were created through it once, as the superuser, from the operator's machine.
 - Point the extension at this server: `WXT_API_BASE_URL=https://sessionhub.cgdev.site` (repository variable `EXTENSION_API_BASE_URL`, section 6).
-- Run every **Check** in sections 2 and 3 after the first deploy and record the results in `PROGRESS.md`.
+- Sections 2 and 3 checked on 2026-10-17 against `83cdd15` (results in `PROGRESS.md`): all pass except that plain http answers **307** (Coolify's non-permanent redirect) instead of 301/308. HSTS makes browsers use https after the first visit. Still to check by hand: the `__Secure-` session cookie after signing in.
