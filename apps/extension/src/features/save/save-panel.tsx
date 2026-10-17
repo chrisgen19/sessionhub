@@ -71,11 +71,12 @@ export function SavePanel({ variant }: { variant: "popup" | "page" }) {
     setCustomName(null);
   };
 
+  // `relative` makes the popup's scroll box clip the badges' absolutely positioned sr-only text, which otherwise stretches the page.
   const picker =
     open.windows.length === 0 ? (
       <p className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-fg-muted">No open tabs to save.</p>
     ) : (
-      <div className={variant === "popup" ? "max-h-[260px] overflow-y-auto pr-1" : ""}>
+      <div className={variant === "popup" ? "relative max-h-[260px] overflow-y-auto pr-1" : ""}>
         <TabPicker windows={open.windows} currentWindowId={open.currentWindowId} selection={selection} onChange={setSelection} expandAll={variant === "page"} />
       </div>
     );

@@ -24,6 +24,33 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (popup empty space below the footer) / Claude Code (Opus 5.5) / `bugfix/popup-picker-scroll` (macOS laptop)
+
+**Why:** the user saw the popup scroll far past its content into empty space.
+
+**Cause (confirmed in Chromium, see Validated):**
+- Each "Won't reopen" badge in the save picker has an `sr-only` reason (`features/save/tab-picker.tsx:38`). `sr-only` is `position: absolute`.
+- No ancestor up to the page was positioned, so the page was the spans' containing block. The popup's picker scroll box (`max-h-[260px] overflow-y-auto`) didn't clip them.
+- Each browser-page tab (new tab, `chrome://`, files) in an expanded window therefore stretched the page to where its row would sit in the unclipped list.
+
+**Changed:** `features/save/save-panel.tsx`: the popup's scroll box is now `relative`, so it clips those spans. The full-page picker has no scroll box and is unchanged.
+
+**Validated:**
+- Extension lint, typecheck, unit tests 249/249.
+- Playwright Chromium, a throwaway script (not in the repo): `popup.html` in a 380x600 tab whose window also holds 14 browser pages (6 `chrome://` pages, 8 new tabs), each build in a fresh profile. `main` was built with `main`'s `save-panel.tsx` swapped in, the only source difference.
+
+  | Build | `documentElement.scrollHeight` | Content height | Empty space |
+  |---|---|---|---|
+  | `main` | 837 px | 752 px | 85 px |
+  | this branch | 752 px | 752 px | 0 |
+
+  On `main` the page ended exactly at the lowest escaped `sr-only` span (837 px), and the full-page screenshot shows an empty band below the footer; each extra browser-page tab should add about one row height (~48 px, estimated from the picker's 719 px for 14 rows). Scrolling the picker's own list doesn't change it.
+- Not run: extension E2E.
+
+**Still open:** the popup's real content (save picker, save bar, recent sessions, footer) is about 950 px against Chrome's 600 px cap, so it still scrolls, with the picker's own scrollbar inside. That belongs to the popup rework planned with the open/restore picker (Session Buddy-style restore choices: per window, per tab, new or current window).
+
+**Next step:** commit, push and open the PR. Then finish the open/restore picker plan.
+
 ### 2026-10-17 (one folder for the unpacked extension) / Claude Code (Opus 5.5) / `feature/unpacked-extension-folder` (macOS laptop)
 
 **Why:** the user's unpacked SessionHub was loaded from a different folder than the builds. Chrome derives an unpacked extension's ID from its folder path, and IndexedDB and localStorage belong to that ID, so loading a new folder starts with no saved sessions. The user wants one folder that updates overwrite.
