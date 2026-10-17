@@ -64,6 +64,7 @@ export function SessionsView({ sessionId, workspace, onSelect, onWorkspace }: Se
             onBack={() => onSelect(null)}
             onDeleted={() => onSelect(null)}
             onOpen={onSelect}
+            query={query}
           />
         ) : null
       }

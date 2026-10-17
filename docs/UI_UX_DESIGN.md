@@ -411,7 +411,7 @@ Clarify that revoking a device blocks new cloud sync but does not remotely erase
 - Large jobs display `X of Y restored`; cancellation applies only to not-yet-started actions. Describe unavoidable partial outcomes honestly.
 - Never automatically close existing windows. Destructive "replace session" is out of MVP.
 
-**Update 2026-10-17 (user's decision, after research into Session Buddy v4):** the modal is being replaced by an in-place open picker. The worker side is built (PR `feature/restore-targets`); the picker UI and popup opening are planned (`feature/open-picker`, `feature/popup-open-save-tabs`).
+**Update 2026-10-17 (user's decision, after research into Session Buddy v4):** the modal is replaced by an in-place open picker in the manager's session and checkpoint inspectors (section 18j). Popup opening is planned (`feature/popup-open-save-tabs`).
 
 - Destinations: **Open in new windows** (one per saved window, default), **Open in one new window**, **Open in this window** (appended after its tabs; "Skip tabs already open here" on by default). Still additive: nothing is closed or replaced, and there is no "replace this window".
 - Selection: tick windows and single tabs in the session's own tree (tri-state window boxes, Shift ranges); tabs that can't reopen are listed and can't be ticked.
@@ -491,7 +491,7 @@ Loading UI uses subtle skeletons with stable layout, not endless full-screen spi
 
 **Global:** AppShell, NavSidebar, TopSearch, CommandPalette, UserMenu, SyncStatus, DeviceBadge, EmptyState, InlineError, ConfirmDialog, Toast, Skeleton, ResponsiveDrawer.
 
-**Domain:** SessionList, SessionRow, SessionInspector, SessionVersions, WindowTree, TabGroupRow, TabRow, TabFavicon, RestorePreview, RestoreProgress, WorkspaceSwitcher, WorkspaceCard, DeviceCard, RecoveryTimeline, ImportPreview, ExportButton, ConflictReview.
+**Domain:** SessionList, SessionRow, SessionInspector, SessionVersions, SavedTabTree (selectable window/group/tab tree), OpenPanel and OpenBar (the open picker, replacing RestorePreview), SplitButton, TabFavicon, RestoreProgress, WorkspaceSwitcher, WorkspaceCard, DeviceCard, RecoveryTimeline, ImportPreview, ExportButton, ConflictReview.
 
 **Extension-only:** QuickSaveActions, LiveWindowTree, PopupHeader, ExtensionConnectionBanner, SidePanelQuickSearch, PermissionExplanation.
 
@@ -515,7 +515,7 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 
 - Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus. *Planned change (2026-10-17, section 12 update):* the popup gets Open and Save tabs and opens sessions itself; the worker runs restores, so a popup closing mid-restore doesn't stop one, and the result stays in the manager's Last restore.
 - Popup has no workspace selector, side-panel button or settings entry yet: those features don't exist, and the UI must not expose actions a surface can't perform.
-- Restore modal offers only "Open in new windows" (stated as text, no radio). "Add to current window" is not implemented in the UI yet; the worker accepts it since 2026-10-17 (section 12 update).
+- Restore modal offers only "Open in new windows" (stated as text, no radio). *Replaced 2026-10-17 by the open picker (section 18j)*, which offers new windows, one new window and this window.
 - Restore summary (2026-10-17) says where tabs went ("in 2 new windows", "in 1 new window", "in this window"), lists tabs skipped because they were already open in that window, and reads "Nothing to open: every tab you chose is already open in this window." when nothing was left; the Last restore line then says "everything was already open".
 - Manager nav shows Saved sessions and Recovery (a horizontal row under the top bar below 1024 px). Below 1280 px the inspector replaces the list with a Back link; below 1024 px the sidebar collapses to a top bar.
 - Sync status: see 18e (it was always "Local only" before sync existed).
@@ -625,6 +625,26 @@ Replaces the popup's one-click **Save window** and **Save all (N)**, which saved
 - **After saving:** "Saved locally: …" or "Saved: … It will sync to your account.", plus browser pages saved as reference and ticked tabs that closed before the save. The selection returns to the default.
 - **Worker contract:** the page sends only the ticked tab ids and the name (`session.capture` with `scope: { kind: "tabs" }`); the worker reads titles and URLs from Chrome itself and saves only those tabs still open. `window` and `all-windows` scopes remain for tests and fixtures; no UI sends them. Recovery checkpoints are unchanged: automatic, local-only, never uploaded.
 - Verified at the 380 px popup width and the manager at 1280 and 390 px, light and dark (the manager's mobile nav now wraps to two rows).
+
+## 18j. Open picker (2026-10-17)
+
+Opening a saved session or a recovery checkpoint happens in its inspector, Session Buddy style (user's decisions in section 12 update). The restore dialog and the read-only window tree are gone.
+
+- **Open bar** (sticky above the tree):
+  - Summary "3 of 5 tabs · 2 windows" ("No tabs selected" at none).
+  - Select all, Select none, and "Select matches (N)" when the list's search matches tabs by title or URL. It is hidden when only the session name, device or a group matches.
+  - The split button "Open 3 tabs in 2 new windows", "... in 1 new window" or "... in this window", shown as "Open" when nothing is ticked (disabled). Its menu "Choose where to open" offers New windows, as saved / One new window / This window (radio items).
+  - The choice is remembered per browser in `localStorage` (`sessionhub-open-target`) and shared with the popup. Choosing doesn't open; the main button does.
+  - "Skip tabs already open here", only for this window, on by default and remembered (`sessionhub-open-skip`).
+- **Large opens:** above 50 planned tabs, Open turns into an inline "Open 120 tabs? Cancel / Open 120 tabs".
+- **Tree** (`region "Window N"`, `list "Group X"`):
+  - Every tab that can reopen starts ticked, re-checked from its URL. Window boxes are tri-state; Shift-click ticks a range in visible order.
+  - Browser pages, files and other links that can't reopen show "Won't open", and their box is disabled.
+  - A tab title is a plain link (`target="_blank"`, `noopener`), so a click, Ctrl/Cmd-click, Shift-click or middle-click opens that one page the way Chrome opens links, without a restore job.
+  - The "N tabs can't be reopened" notice sits under the bar, in Recovery too.
+- **Result:** the restore summary shows inline under the bar, with Retry and Done; "Last restore" and View summary are unchanged. Errors read "Restore stopped: ..." with Dismiss.
+- **Updates:** a new version of the same session (a rename, a sync download) keeps the ticks of tabs still there; ticks are per session.
+- The menu is `position: fixed` and opens above the button near the bottom of the window, so a scroll area can't clip it.
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

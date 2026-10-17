@@ -45,11 +45,13 @@ try {
   const inspector = manager.getByRole("article", { name: /session details/i });
   await expect(inspector.getByRole("list", { name: "Group Research" })).toBeVisible();
   await manager.screenshot({ path: path.join(output, "manager.png") });
-  await inspector.getByRole("button", { name: /restore/i }).click();
-  await expect(manager.getByRole("dialog").getByText(/opens in new windows/i)).toBeVisible();
+  // The ticked tree is the preview; the menu shows where the tabs can open.
+  await inspector.getByRole("button", { name: "Choose where to open" }).click();
+  await expect(manager.getByRole("menu", { name: "Choose where to open" })).toBeVisible();
   await manager.screenshot({ path: path.join(output, "restore-preview.png") });
-  await manager.getByRole("dialog").getByRole("button", { name: /^restore 3 tabs$/i }).click();
-  await expect(manager.getByRole("dialog").getByText(/opened 3 of 3 tabs/i)).toBeVisible();
+  await manager.keyboard.press("Escape");
+  await inspector.getByRole("button", { name: /^Open 3 tabs in / }).click();
+  await expect(inspector.getByText(/opened 3 of 3 tabs/i)).toBeVisible();
   await manager.screenshot({ path: path.join(output, "restore-result.png") });
 } finally {
   await context?.close();

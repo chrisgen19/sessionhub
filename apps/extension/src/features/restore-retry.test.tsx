@@ -47,20 +47,19 @@ describe("restore retry", () => {
     window.history.replaceState(null, "", `/manager.html#session=${session.id}`);
     render(<ManagerApp />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /restore/i }));
-    const dialog = screen.getByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Restore 3 tabs" }));
+    const inspector = await screen.findByRole("article", { name: /session details/i });
+    await userEvent.click(within(inspector).getByRole("button", { name: "Open 3 tabs in 2 new windows" }));
 
-    expect(await within(dialog).findByText(/opened 2 of 3 tabs/i)).toBeTruthy();
-    expect(within(dialog).getByText(/1 tab didn't open/i)).toBeTruthy();
-    expect(within(dialog).getByText(/React docs: No window with id: 7/)).toBeTruthy();
+    expect(await within(inspector).findByText(/opened 2 of 3 tabs/i)).toBeTruthy();
+    expect(within(inspector).getByText(/1 tab didn't open/i)).toBeTruthy();
+    expect(within(inspector).getByText(/React docs: No window with id: 7/)).toBeTruthy();
     expect(opened).toEqual(["https://github.com/acme/pull/42", "https://example.com/"]);
 
     failAfterFirstTab = false;
-    await userEvent.click(within(dialog).getByRole("button", { name: "Retry 1 tab" }));
-    expect(await within(dialog).findByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: "Retry 1 tab" }));
+    expect(await within(inspector).findByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeTruthy();
     expect(opened).toEqual(["https://github.com/acme/pull/42", "https://example.com/", "https://react.dev/learn"]);
-    expect(within(dialog).queryByRole("button", { name: /retry/i })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: /retry/i })).toBeNull();
   });
 
   it("keeps the summary and shows why when a retry is refused", async () => {
@@ -68,18 +67,17 @@ describe("restore retry", () => {
     await putSession(getDb(), session);
     window.history.replaceState(null, "", `/manager.html#session=${session.id}`);
     render(<ManagerApp />);
-    await userEvent.click(await screen.findByRole("button", { name: /restore/i }));
-    const dialog = screen.getByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Restore 3 tabs" }));
-    await within(dialog).findByText(/opened 2 of 3 tabs/i);
+    const inspector = await screen.findByRole("article", { name: /session details/i });
+    await userEvent.click(within(inspector).getByRole("button", { name: "Open 3 tabs in 2 new windows" }));
+    await within(inspector).findByText(/opened 2 of 3 tabs/i);
 
     // Another manager tab already finished retrying this job.
     const [job] = await getDb().restoreJobs.toArray();
     await getDb().restoreJobs.put({ ...job!, status: "completed" });
 
-    await userEvent.click(within(dialog).getByRole("button", { name: "Retry 1 tab" }));
-    expect((await within(dialog).findByRole("alert")).textContent).toMatch(/already opened/);
-    expect(within(dialog).getByText(/opened 2 of 3 tabs/i)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: "Retry 1 tab" }));
+    expect((await within(inspector).findByRole("alert")).textContent).toMatch(/already opened/);
+    expect(within(inspector).getByText(/opened 2 of 3 tabs/i)).toBeTruthy();
   });
 
   it("reopens the last restore's summary from the inspector and retries from there", async () => {
@@ -88,17 +86,15 @@ describe("restore retry", () => {
     window.history.replaceState(null, "", `/manager.html#session=${session.id}`);
     render(<ManagerApp />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /restore/i }));
-    let dialog = screen.getByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Restore 3 tabs" }));
-    await within(dialog).findByText(/opened 2 of 3 tabs/i);
-    await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    const inspector = await screen.findByRole("article", { name: /session details/i });
+    await userEvent.click(within(inspector).getByRole("button", { name: "Open 3 tabs in 2 new windows" }));
+    await within(inspector).findByText(/opened 2 of 3 tabs/i);
+    await userEvent.click(within(inspector).getByRole("button", { name: "Done" }));
+    expect(within(inspector).queryByText(/opened 2 of 3 tabs/i)).toBeNull();
 
-    const inspector = screen.getByRole("article", { name: /session details/i });
     expect(await within(inspector).findByText(/last restore today, .*: opened 2 of 3/i)).toBeTruthy();
     await userEvent.click(within(inspector).getByRole("button", { name: "View summary" }));
-    dialog = screen.getByRole("dialog", { name: `Last restore of "${session.name}"` });
+    const dialog = screen.getByRole("dialog", { name: `Last restore of "${session.name}"` });
     expect(within(dialog).getByText(/React docs: No window with id: 7/)).toBeTruthy();
 
     failAfterFirstTab = false;

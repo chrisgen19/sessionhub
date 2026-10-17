@@ -24,6 +24,38 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (open picker in the manager, PR 2 of 4) / Claude Code (Opus 5.5) / `feature/open-picker` (macOS laptop, branched from `feature/restore-targets`, PR #37)
+
+**Why:** with the worker side in place (#37), the manager gets Session Buddy-style opening. Tick windows and tabs in the session's own tree, pick where they open, and open them. This replaces the restore dialog.
+
+**Implemented:**
+- `features/open/open-panel.tsx`, `open-bar.tsx`, `saved-tab-tree.tsx` (docs/UI_UX_DESIGN.md 18j):
+  - The ticked tree is the preview. Tabs that can't reopen are listed but can't be ticked, re-checked from their URL.
+  - Tri-state window boxes and Shift ranges (disabled rows are skipped).
+  - Tab titles are plain links (`noopener`).
+  - Select all, Select none, and "Select matches (N)" from the list's search.
+  - The split button "Open N tabs in 2 new windows / in 1 new window / in this window" repeats the remembered destination.
+  - "Skip tabs already open here" (this window only).
+  - Inline confirm above 50 tabs; the result inline with Retry and Done; "Restore stopped: ..." with Dismiss.
+  - A new version of the same session keeps the ticks.
+- `components/split-button.tsx`:
+  - A menu of radio items: arrow keys, Esc returns focus, closes on an outside click, scroll or resize.
+  - `position: fixed`, flipped above the button near the bottom.
+  - The menu stays usable when the main button is disabled.
+- `lib/open-selection.ts`, `lib/open-preferences.ts` (`localStorage` keys `sessionhub-open-target` and `sessionhub-open-skip`, safe when storage throws). `lib/tab-selection.ts` `toggleTab`/`toggleRange` are generic over the id type. `@sessionhub/core/search` adds `tabMatchesQuery`.
+- Session and checkpoint inspectors use the panel. Deleted `restore-dialog.tsx` and `window-tree.tsx`. `sessions-view.tsx` passes its query. `vitest.setup.ts` clears `localStorage` after each test.
+- Store screenshots regenerated with the updated script (`restore-preview.png` now shows the picker with its destination menu).
+- Docs: UI_UX_DESIGN 12, 18a and the new 18j, plus the component list; SYSTEM_DESIGN decision row; USER_FLOWS flow 3; SECURITY_REVIEW_M6; TEST_PLAN; STORE_LISTING; store-assets README.
+
+**Validated:**
+- `pnpm check`: core 96 tests (1 new); extension 278 (14 new: selection 4, preferences 3, open picker 7). 5 dialog tests were rewritten for the inline picker.
+- `pnpm --filter @sessionhub/extension build`, then `test:e2e`: 15/15. That includes the four rewritten local-slice flows and a new real-UI test in `restore-targets.spec.ts`: untick a tab, choose This window, only the ticked tabs join the manager's window, and the choice survives a reload. The spec ran 3 times (12/12).
+  - The save helper there now waits until tabs have loaded. Mid-navigation, a synthetic page's `url` and `pendingUrl` were both empty, and a save captured no URL.
+- Playwright screenshots of the inspector at 390 px in light and dark: no horizontal overflow; the menu flips above the button and stays inside the viewport. Store screenshots at 1280x800 reviewed.
+- Not run: `test:perf`, web E2E (no web change).
+
+**Next step:** commit, push and open the PR (depends on #37). Then PR 3 (`feature/popup-open-save-tabs`): the popup's Open and Save tabs.
+
 ### 2026-10-17 (restore targets, PR 1 of the open picker) / Claude Code (Opus 5.5) / `feature/restore-targets` (macOS laptop)
 
 **Why:** restoring was all or nothing: always one new window per saved window, and only whole windows could be unticked. The user wants Session Buddy-style opening: pick windows and tabs, and open into new windows, one window or the current one.

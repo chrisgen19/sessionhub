@@ -26,6 +26,14 @@ export const matchesSessionQuery = (session: SavedSession, query: string): boole
   return terms.every((term) => haystack.includes(term));
 };
 
+/** True when every term appears in the tab's title or URL (the open picker's "Select matches"). */
+export const tabMatchesQuery = (tab: { title: string; url: string }, query: string): boolean => {
+  const terms = tokenize(query);
+  if (terms.length === 0) return false;
+  const haystack = `${tab.title}\n${tab.url}`.toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+};
+
 /** Filters sessions by query, preserving input order. */
 export const filterSessions = <T extends SavedSession>(sessions: readonly T[], query: string): T[] =>
   sessions.filter((session) => matchesSessionQuery(session, query));

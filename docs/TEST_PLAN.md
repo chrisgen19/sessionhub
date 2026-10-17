@@ -120,7 +120,7 @@ Test: `apps/extension/e2e/perf.spec.ts`, run with `pnpm test:perf` (builds first
 - Tab through popup controls and save action.
 - Ctrl/Meta+K focuses search where supported; Esc closes dialogs without data loss.
 - Side panel window/group tree operates by keyboard and announces state.
-- Restore preview checkbox list and destination radios accessible to screen readers.
+- Open picker accessible to screen readers: tri-state window boxes, disabled boxes for tabs that can't reopen, the destination menu (`menu` / `menuitemradio`, arrow keys, Esc returns focus), and the live selection summary (`features/open-picker.test.tsx`, `features/ui.test.tsx`).
 - Destructive confirm requires explicit activation and announces scope.
 - Responsive views at 375, 768, 1024, 1440 px have no critical horizontal overflow.
 - Focus remains predictable after list deletion/archive, modal close and routing.
