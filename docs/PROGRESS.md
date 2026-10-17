@@ -24,6 +24,27 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (extension 0.1.1 release ZIP from `main`) / Claude Code (Opus 5.5) / `main` at `60f4f63` (macOS laptop)
+
+**Merged:** PR #31 (version 0.1.1) as `50fe160` and PR #32 (empty-state copy) as `60f4f63`, after #32's CI passed (check, docker, both E2E jobs, extension-zip). Both branches deleted on the remote.
+
+**Release ZIP (RELEASE.md step 4):**
+
+| Field | Value |
+|---|---|
+| Commit | `60f4f6366248eff1c449d4155cfa2320f5ab367f` |
+| Lockfile sha256 | `4f197e07c911ed45a01f5d1195e99c108843a474a9dd933b1bfc4e7540f701fe` |
+| Extension version | 0.1.1 |
+| ZIP | `apps/extension/.output/sessionhub-0.1.1-chrome.zip` |
+| ZIP sha256 | `8eed4a027e9d9043141139cb19f1506c5344026ab997795fb38a80609759ad7d` |
+| API origin | `https://sessionhub.cgdev.site` |
+
+- Command: `WXT_API_BASE_URL=https://sessionhub.cgdev.site pnpm --filter @sessionhub/extension zip:release`. Passes, and a second build is identical. Same hash as the `bugfix/empty-state-copy` build, as expected (same source).
+- ZIP contents: manifest version 0.1.1, host `https://sessionhub.cgdev.site/*`, permissions alarms, favicon, tabGroups, tabs; the new empty-state copy in both bundles, none of the old.
+- The ZIP lives only in `.output` (gitignored). Keep a copy outside the repo before the next build overwrites it.
+
+**Next step:** upload the ZIP to the Chrome Web Store. Old worktrees from earlier PRs (`sessionhub-ci-speedup`, `sessionhub-pr2-fix` to `sessionhub-pr9-fix`) are still on disk; not touched.
+
 ### 2026-10-17 (stale empty-state copy) / Claude Code (Opus 5.5) / `bugfix/empty-state-copy` (macOS laptop, branched from `feature/extension-0.1.1`)
 
 **Why:** both empty states still pointed at the one-click Save window button that the save picker (PR #25) replaced (noted in the theme toggle entry below).
