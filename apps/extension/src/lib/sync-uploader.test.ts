@@ -8,6 +8,7 @@ import type { SessionHubDb } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { deleteSession, getSession, updateSession } from "./session-repository";
 import { toSyncPayload } from "./sync-batch";
+import { syncNow } from "./sync-runner";
 import { pushNow } from "./sync-uploader";
 import type { SyncDeps } from "./sync-gate";
 import { connectAs, freshDb, idFactory, sampleSession, sampleWindows, seedAccountSession } from "./test-fixtures";
@@ -88,7 +89,8 @@ describe("sync uploader", () => {
     });
     expect(await db.outbox.count()).toBe(0);
     expect((await db.sessions.get(session.id))?.sync).toEqual({ serverVersion: 1, state: "synced" });
-    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, lastError: null, lastSyncAt: T0.toISOString() });
+    // The pull that follows in a sync run records it (sync-runner); the upload alone doesn't.
+    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, lastError: null, lastSyncAt: null });
   });
 
   it("sends one operation per session per push and holds a session back after a conflict", async () => {
@@ -128,9 +130,26 @@ describe("sync uploader", () => {
     expect(await pushNow(deps)).toEqual({ status: "waiting", retryAt: "2026-10-16T08:00:05.000Z" });
 
     clock.now = new Date("2026-10-16T08:00:06.000Z");
-    expect(await pushNow(deps)).toMatchObject({ status: "done", accepted: 1 });
+    expect((await syncNow(deps)).push).toMatchObject({ status: "done", accepted: 1 });
     expect(calls[1]!.body.operations).toEqual(calls[0]!.body.operations);
+    // A whole run (upload, then download) succeeded, so the backoff ends.
     expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, nextAttemptAt: null });
+  });
+
+  it("stops when another account connects mid-run, so nothing is sent with its token", async () => {
+    const { db, deps, calls } = await setup(async (body, db) => {
+      // The first round is in flight when the user disconnects and pairs Bob's account.
+      await connectAs(db, "BobAccount0000000000000000000000", "shd_at_bob");
+      return acceptAll(body, db);
+    });
+    const a = await queuedEdit(db, 3, "A first", 2);
+    for (const operation of await listOutbox(db, SCOPE)) await db.outbox.put({ ...operation, status: "sending" });
+    await updateSession(db, a.id, a.version, (current) => renameSession(current, "A second", T0), { now: T0, createId: ids });
+
+    expect(await pushNow(deps)).toEqual({ status: "disconnected" });
+    expect(calls.map((call) => call.authorization)).toEqual(["Bearer shd_at_test"]);
+    // The second edit stays in Alice's outbox, to be sent when she reconnects.
+    expect(await listOutbox(db, SCOPE)).toHaveLength(1);
   });
 
   it("waits at least as long as the server's Retry-After", async () => {

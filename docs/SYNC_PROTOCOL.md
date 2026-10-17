@@ -375,11 +375,11 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 - **`CURSOR_EXPIRED`** when the cursor is ahead of the user's clock (the server lost changes, e.g. a backup restore) or when the change right after it is missing (log pruned). Detection relies on the gap-free log (13a); a false positive only costs a bootstrap. No pruning job exists yet.
 - **Bootstrap** pages through the user's sessions by id, **tombstones included as deletes**, each as a change without a sequence (its current version and detail). `cursor` is the clock read **before** the rows: the client keeps the first page's and pulls from it afterwards; changes written meanwhile replay harmlessly because clients apply by version. Sessions only: workspaces join when the extension stores them.
 
-**Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f):
+**Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f, but the backoff covers the whole run and only the pull's success clears it, so a pull that keeps failing backs off even while pushes work):
 
 1. No cursor (first sync of the account) or a rebuild in progress: bootstrap pages. Progress (`syncState.bootstrap`: first cursor + `after`) is stored with each page, so a stopped worker continues.
 2. Otherwise pull pages after `syncState.cursor`. `CURSOR_EXPIRED` or `INVALID_CURSOR` clears the cursor and rebuilds; queued changes are untouched.
-3. **Each page and its new cursor (or bootstrap progress) commit in one IndexedDB transaction**; a failure keeps neither (tested).
+3. **Each page and its new cursor (or bootstrap progress) commit in one IndexedDB transaction**; a failure keeps neither (tested). Every request uses only the token of the account the run opened for, and the transaction checks that account is still connected: if another account was connected mid-run, the page is dropped and the run ends as disconnected, so one account's data never lands in another's scope (tested; pushes are bound the same way).
 4. Each change goes through `reconcileRemoteChange`:
    - a record in another scope (this browser's own sessions, another account's) is never touched
    - a session with outbox operations (any status) is not overwritten: the newest server state is kept in `serverCopies`

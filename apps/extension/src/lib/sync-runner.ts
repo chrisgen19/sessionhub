@@ -12,7 +12,8 @@ let running: Promise<SyncSummary> | null = null;
 
 /**
  * One sync run: upload first, then download (docs/SYNC_PROTOCOL.md section 7), so the pull also
- * brings back what was just accepted and held server copies settle against fresh versions.
+ * brings back what was just accepted and held server copies settle against fresh versions. The
+ * backoff belongs to the whole run: only the pull's success clears it.
  */
 export const syncNow = (deps: SyncDeps, { force = false } = {}): Promise<SyncSummary> => {
   running ??= (async () => {

@@ -1,7 +1,7 @@
-import type { AccountApiError } from "./account-api";
+import { AccountApiError } from "./account-api";
 import { accountScope } from "./account-scope";
-import type { AccountDeps } from "./account-service";
-import type { AccountScope, ConnectionRecord, SessionHubDb } from "./db";
+import { withAccessToken, type AccountDeps } from "./account-service";
+import type { AccountRecord, AccountScope, ConnectionRecord, SessionHubDb } from "./db";
 import { retryDelayMs } from "./sync-batch";
 
 export interface SyncDeps {
@@ -32,6 +32,21 @@ export const openSync = async (deps: SyncDeps, force: boolean): Promise<{ connec
   return { connection, scope };
 };
 
+/** Whether `connection` is still the account that this run's `scope` belongs to. */
+export const isRunAccount = (connection: AccountRecord | undefined, scope: AccountScope): boolean =>
+  connection?.key === "connection" && !!connection.account.id && accountScope(connection.account.id) === scope;
+
+/**
+ * An authenticated request for this run's account only. Every request rereads the connection,
+ * so if another account was connected since the run opened, the run ends here (as disconnected)
+ * instead of fetching into, or uploading from, this scope with that account's token.
+ */
+export const withRunToken = <T>(deps: SyncDeps, scope: AccountScope, call: (accessToken: string, apiOrigin: string) => Promise<T>): Promise<T> =>
+  withAccessToken(deps.account, async (token, origin, connection) => {
+    if (!isRunAccount(connection, scope)) throw new AccountApiError("UNAUTHENTICATED", "A different account was connected during sync.");
+    return call(token, origin);
+  });
+
 const SIGNED_OUT = new Set(["DEVICE_REVOKED", "INVALID_TOKEN", "UNAUTHENTICATED"]);
 
 /** Backoff after a failed request (Retry-After wins when longer). Revocation already disconnected. */
@@ -45,6 +60,10 @@ export const recordFailure = async (deps: SyncDeps, scope: AccountScope, error: 
   return { status: "error", message: error.message, retryAt: retryAt.toISOString() };
 };
 
+/**
+ * Ends the backoff after a whole run (push, then pull) succeeded. Only the pull, the run's last
+ * step, calls it: if the push cleared it, a pull that keeps failing would never back off further.
+ */
 export const recordSuccess = async (deps: SyncDeps, scope: AccountScope): Promise<void> => {
   await deps.db.syncState.update(scope, { failures: 0, nextAttemptAt: null, lastError: null, lastSyncAt: deps.now().toISOString() });
 };

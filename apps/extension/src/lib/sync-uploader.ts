@@ -1,11 +1,10 @@
 import { SYNC_PROTOCOL_VERSION, type PushResult } from "@sessionhub/contracts/api-sync";
 import { AccountApiError, pushChanges } from "./account-api";
-import { withAccessToken } from "./account-service";
 import type { AccountScope, OutboxRecord, SessionHubDb, SessionSyncRecord } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { settleHeldCopy } from "./sync-apply";
 import { selectPushBatch, toPushOperation } from "./sync-batch";
-import { openSync, recordFailure, recordSuccess, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
+import { openSync, recordFailure, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
 
 export type PushSummary = GateClosed | SyncFailure | { status: "done"; accepted: number; conflicts: number; rejected: number; remaining: number };
 
@@ -88,7 +87,7 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PushSummary> => {
     const request = { protocolVersion: SYNC_PROTOCOL_VERSION, deviceId: connection.deviceId, operations: claimed.map(toPushOperation) };
     let tally: Tally;
     try {
-      const response = await withAccessToken(deps.account, (token, origin) => pushChanges(deps.account.fetch, origin, token, request));
+      const response = await withRunToken(deps, scope, (token, origin) => pushChanges(deps.account.fetch, origin, token, request));
       tally = await applyResults(deps.db, scope, claimed, response.results, deps.now().toISOString());
     } catch (error) {
       if (!(error instanceof AccountApiError)) throw error;
@@ -99,7 +98,7 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PushSummary> => {
     total.rejected += tally.rejected;
     if (tally.retryable > 0) return recordFailure(deps, scope, new AccountApiError("INTERNAL_ERROR", "Some changes couldn't be saved yet. They will be sent again."));
   }
-  await recordSuccess(deps, scope);
+  // The backoff is cleared by the pull that follows (recordSuccess), once the whole run worked.
   const outbox = await listOutbox(deps.db, scope);
   // The round cap ended this run with sendable work left: the retry alarm continues it instead of
   // waiting for the next edit or worker start. Work held back behind a conflict doesn't count.

@@ -1,9 +1,8 @@
 import type { BootstrapItem } from "@sessionhub/contracts/api-sync";
 import { AccountApiError, fetchSyncBootstrap, fetchSyncPull } from "./account-api";
-import { withAccessToken } from "./account-service";
 import type { AccountScope, SessionHubDb, SyncStateRecord } from "./db";
 import { applyRemoteChange, type ApplyOutcome } from "./sync-apply";
-import { openSync, recordFailure, recordSuccess, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
+import { isRunAccount, openSync, recordFailure, recordSuccess, withRunToken, type GateClosed, type SyncDeps, type SyncFailure } from "./sync-gate";
 
 export type PullSummary = GateClosed | SyncFailure | { status: "done"; applied: number; held: number; skipped: number; bootstrapped: boolean };
 
@@ -16,7 +15,8 @@ type Tally = Record<ApplyOutcome, number>;
 /**
  * Applies a page and moves the stored position in one transaction (docs/SYNC_PROTOCOL.md section 3,
  * invariant 7): if anything fails, neither the changes nor the cursor are kept and the page is
- * fetched again. `expect` guards against another run having moved the position meanwhile.
+ * fetched again. `expect` guards against another run having moved the position meanwhile, and
+ * a page is dropped if a different account was connected while it was in flight.
  */
 const commitPage = (
   db: SessionHubDb,
@@ -26,8 +26,8 @@ const commitPage = (
   next: Partial<SyncStateRecord>,
   now: string,
 ): Promise<Tally | null> =>
-  db.transaction("rw", [db.sessions, db.outbox, db.sessionTombstones, db.serverCopies, db.syncState], async () => {
-    if (!expect(await db.syncState.get(scope))) return null;
+  db.transaction("rw", [db.sessions, db.outbox, db.sessionTombstones, db.serverCopies, db.syncState, db.account], async () => {
+    if (!isRunAccount(await db.account.get("connection"), scope) || !expect(await db.syncState.get(scope))) return null;
     const tally: Tally = { applied: 0, held: 0, skipped: 0 };
     for (const item of items) tally[await applyRemoteChange(db, scope, item, now)] += 1;
     await db.syncState.update(scope, next);
@@ -36,7 +36,7 @@ const commitPage = (
 
 /** One pull page after the stored cursor. Returns whether more pages are waiting. */
 const pullStep = async (deps: SyncDeps, scope: AccountScope, cursor: string, total: Tally): Promise<boolean> => {
-  const page = await withAccessToken(deps.account, (token, origin) => fetchSyncPull(deps.account.fetch, origin, token, cursor));
+  const page = await withRunToken(deps, scope, (token, origin) => fetchSyncPull(deps.account.fetch, origin, token, cursor));
   const now = deps.now().toISOString();
   const tally = await commitPage(deps.db, scope, (state) => state?.cursor === cursor && !state.bootstrap, page.changes, { cursor: page.nextCursor, lastSyncAt: now }, now);
   if (tally) for (const key of Object.keys(total) as ApplyOutcome[]) total[key] += tally[key];
@@ -48,7 +48,7 @@ const pullStep = async (deps: SyncDeps, scope: AccountScope, cursor: string, tot
  * The first page's cursor is kept: pulling resumes from it after the last page.
  */
 const bootstrapStep = async (deps: SyncDeps, scope: AccountScope, progress: SyncStateRecord["bootstrap"], total: Tally): Promise<void> => {
-  const page = await withAccessToken(deps.account, (token, origin) => fetchSyncBootstrap(deps.account.fetch, origin, token, progress?.after ?? null));
+  const page = await withRunToken(deps, scope, (token, origin) => fetchSyncBootstrap(deps.account.fetch, origin, token, progress?.after ?? null));
   const now = deps.now().toISOString();
   const cursor = progress?.cursor ?? page.cursor;
   const next = page.hasMore ? { bootstrap: { cursor, after: page.nextAfter } } : { cursor, bootstrap: null, lastSyncAt: now };

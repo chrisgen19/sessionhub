@@ -29,7 +29,7 @@ export const sampleWindows = (): CaptureWindowInput[] => [
 ];
 
 /** Stores a connection to `accountId` (or a pre-v4 connection without an id when null). */
-export const connectAs = async (db: SessionHubDb, accountId: string | null): Promise<void> => {
+export const connectAs = async (db: SessionHubDb, accountId: string | null, accessToken = "shd_at_test"): Promise<void> => {
   const connection: ConnectionRecord = {
     key: "connection",
     apiOrigin: "https://sessionhub.example",
@@ -37,7 +37,7 @@ export const connectAs = async (db: SessionHubDb, accountId: string | null): Pro
     deviceName: "Chrome on Windows",
     account: { ...(accountId ? { id: accountId } : {}), name: "Pat", email: "pat@example.test" },
     connectedAt: "2026-10-16T08:00:00.000Z",
-    accessToken: "shd_at_test",
+    accessToken,
     refreshToken: "shd_rt_test",
     accessExpiresAt: "2026-10-16T08:15:00.000Z",
     refreshExpiresAt: "2026-11-15T08:00:00.000Z",

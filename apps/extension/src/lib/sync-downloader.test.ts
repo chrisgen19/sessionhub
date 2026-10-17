@@ -9,10 +9,12 @@ import { listOutbox } from "./outbox-repository";
 import { deleteSession, putSession, updateSession } from "./session-repository";
 import { pullNow } from "./sync-downloader";
 import type { SyncDeps } from "./sync-gate";
+import { syncNow } from "./sync-runner";
 import { pushNow } from "./sync-uploader";
 import { connectAs, freshDb, idFactory, sampleSession, seedAccountSession } from "./test-fixtures";
 
 const ALICE = "AliceAccount00000000000000000000";
+const BOB = "BobAccount0000000000000000000000";
 const SCOPE = accountScope(ALICE);
 const T0 = new Date("2026-10-16T08:00:00.000Z");
 const ids = idFactory(7);
@@ -216,5 +218,42 @@ describe("sync download", () => {
     const { deps, scheduleRetry } = await setup({}, { cursor: cursor("1") });
     expect(await pullNow(deps)).toMatchObject({ status: "error", retryAt: "2026-10-16T08:00:05.000Z" });
     expect(scheduleRetry).toHaveBeenCalledWith(new Date("2026-10-16T08:00:05.000Z"));
+  });
+
+  it("keeps backing off while uploads work but downloads keep failing, until a whole run succeeds", async () => {
+    const routes: Record<string, Route[]> = { "/api/v1/sync/push": [acceptPush] };
+    const { db, deps } = await setup(routes, { cursor: cursor("1") });
+    for (const seconds of [5, 10, 20]) {
+      expect((await syncNow(deps, { force: true })).pull).toMatchObject({ status: "error", retryAt: new Date(T0.getTime() + seconds * 1000).toISOString() });
+    }
+    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 3 });
+    routes["/api/v1/sync/pull"] = [pullPage([], cursor("2"))];
+    expect((await syncNow(deps, { force: true })).pull).toMatchObject({ status: "done" });
+    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, nextAttemptAt: null, lastError: null });
+  });
+
+  it("stops when another account connects mid-run: none of its data lands in this account's cache", async () => {
+    const mine = sampleSession({ name: "Alice's" }, 2);
+    const theirs = sampleSession({ name: "Bob's" }, 3);
+    const routes: Record<string, Route[]> = {};
+    const { db, deps, fetch } = await setup(routes, { cursor: cursor("1") });
+    const asBob = (init?: RequestInit) => new Headers(init?.headers).get("authorization") === "Bearer shd_at_bob";
+    routes["/api/v1/sync/pull"] = [
+      async (url, init) => {
+        // The server refuses Alice's cursor for Bob, which used to send this run into a rebuild with Bob's token.
+        if (asBob(init)) return json(400, { error: { code: "INVALID_CURSOR", message: "Not this account's cursor" } });
+        // Alice's first page is in flight when the user disconnects and pairs Bob's account.
+        await connectAs(db, BOB, "shd_at_bob");
+        return pullPage([upsert(mine, 1)], cursor("2"), true)(url, init);
+      },
+    ];
+    routes["/api/v1/sync/bootstrap"] = [bootstrap([item(upsert(theirs, 1))], cursor("7"))];
+
+    expect(await pullNow(deps)).toEqual({ status: "disconnected" });
+    expect(fetch.mock.calls.map(([, init]) => new Headers(init?.headers).get("authorization"))).toEqual(["Bearer shd_at_test"]);
+    expect(await local(db, theirs.id)).toBeUndefined();
+    // Alice's page arrived after the switch, so it isn't kept either: her cursor waits for her next run.
+    expect(await local(db, mine.id)).toBeUndefined();
+    expect(await db.syncState.get(SCOPE)).toMatchObject({ cursor: cursor("1"), failures: 0, lastError: null });
   });
 });
