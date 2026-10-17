@@ -7,8 +7,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # A new push to a PR replaces its run. Runs on main wait their turn instead, so merging two
-  # PRs in a row never cancels a run (and its deploy) halfway.
+  # A new push to a PR replaces its run. A run on main is never cancelled once it has started,
+  # but GitHub keeps only one waiting run per group: when three or more PRs merge in quick
+  # succession, the runs still waiting in between are cancelled. Nothing goes untested or
+  # undeployed, because the newest run tests and deploys main with every earlier merge in it.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
