@@ -24,6 +24,27 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (extension 0.1.1 release ZIP rebuilt with the popup fix) / Claude Code (Opus 5.5) / `main` at `fc4ec7e` (macOS laptop)
+
+**Why:** PR #35 (popup empty space, `fc4ec7e`) changed extension code after the 0.1.1 ZIP was built from `60f4f63`. That ZIP was never uploaded, so the version stays 0.1.1 and this record replaces the earlier one.
+
+**Release ZIP (RELEASE.md step 4):**
+
+| Field | Value |
+|---|---|
+| Commit | `fc4ec7e2e01b1d4ab2ea3c2aba60cd8124dcf0c3` |
+| Lockfile sha256 | `4f197e07c911ed45a01f5d1195e99c108843a474a9dd933b1bfc4e7540f701fe` (unchanged) |
+| Extension version | 0.1.1 |
+| ZIP | `apps/extension/.output/sessionhub-0.1.1-chrome.zip` |
+| ZIP sha256 | `dc98f8628245bc458f834c070fa80071e9a7ea23d3dedec133b856b48ef7a3d5` |
+| API origin | `https://sessionhub.cgdev.site` |
+
+- Command: `WXT_API_BASE_URL=https://sessionhub.cgdev.site pnpm --filter @sessionhub/extension zip:release` on `main` at `fc4ec7e`. Passes, and a second build is identical.
+- ZIP contents: manifest version 0.1.1, host `https://sessionhub.cgdev.site/*`, permissions alarms, favicon, tabGroups, tabs; the popup picker's `relative max-h-[260px] overflow-y-auto` (#35) and the empty-state copy (#32).
+- `pnpm --filter @sessionhub/extension build:unpacked` from the same commit: `~/SessionHub/extension` is identical to the ZIP's build (`diff -r`).
+
+**Next step:** the user reloads SessionHub on `chrome://extensions` to pick up the popup fix, then uploads this ZIP (keeping a copy outside the repo) to the Chrome Web Store.
+
 ### 2026-10-17 (popup empty space below the footer) / Claude Code (Opus 5.5) / `bugfix/popup-picker-scroll` (macOS laptop)
 
 **Why:** the user saw the popup scroll far past its content into empty space.
@@ -71,6 +92,8 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 **Next step:** the user loads `~/SessionHub/extension` with Load unpacked, then moves the sessions from the old install: connect the new one to the same account so sync brings back the synced ones, and for local-only sessions use Export JSON per session in the old manager, then Import in the new one (there is no export-all). Remove the old install only after checking. Commit, push and open the PR.
 
 ### 2026-10-17 (extension 0.1.1 release ZIP from `main`) / Claude Code (Opus 5.5) / `main` at `60f4f63` (macOS laptop)
+
+**Superseded** by the rebuild from `fc4ec7e` (sha256 `dc98f862...`, entry above). This ZIP was never uploaded.
 
 **Merged:** PR #31 (version 0.1.1) as `50fe160` and PR #32 (empty-state copy) as `60f4f63`, after #32's CI passed (check, docker, both E2E jobs, extension-zip). Both branches deleted on the remote.
 
