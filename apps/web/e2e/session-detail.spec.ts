@@ -113,7 +113,7 @@ test("delete needs confirmation, then the session is gone for good", async ({ pa
   await page.goto(`/app/sessions/${session.id}`);
   await page.getByRole("button", { name: "Delete" }).click();
   const dialog = page.getByRole("dialog", { name: 'Delete "Client Alpha research"?' });
-  await expect(dialog).toContainText("Tabs you have open right now and sessions saved in an extension on a computer aren't affected.");
+  await expect(dialog).toContainText("Tabs you have open right now aren't affected, and neither are sessions kept only in a browser.");
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 

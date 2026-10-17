@@ -5,8 +5,10 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { SessionActions } from "@/components/sessions/session-actions";
 import { WindowTree } from "@/components/sessions/window-tree";
+import { WorkspaceSelect } from "@/components/sessions/workspace-select";
 import { getPrisma } from "@sessionhub/database/client";
 import { formatRelative, plural } from "@/lib/format";
+import { listWorkspaceChoices } from "@/server/queries/dashboard";
 import { getSessionDetail } from "@/server/sessions/queries";
 import { requireSession } from "@/server/session";
 
@@ -18,6 +20,7 @@ export default async function SessionDetailPage(props: PageProps<"/app/sessions/
   // Malformed, missing, deleted and other users' ids all look the same.
   const detail = z.uuid().safeParse(id).success ? await getSessionDetail(getPrisma(), user.id, id) : null;
   if (!detail) notFound();
+  const workspaces = await listWorkspaceChoices(getPrisma(), user.id);
 
   return (
     <>
@@ -39,7 +42,10 @@ export default async function SessionDetailPage(props: PageProps<"/app/sessions/
           {formatRelative(new Date(detail.updatedAt)).toLowerCase()} · version {detail.version}
         </p>
       </header>
-      <SessionActions detail={detail} />
+      <div className="space-y-4">
+        <WorkspaceSelect detail={detail} workspaces={workspaces} />
+        <SessionActions detail={detail} />
+      </div>
       <p className="my-5 flex items-start gap-2 rounded-xl border border-line bg-surface p-3 text-[13px] text-fg-muted">
         <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         <span>

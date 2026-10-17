@@ -82,7 +82,7 @@ flowchart LR
 ## M5 — Full experience / refinement
 
 - [ ] Side panel with live tab tree, search, focus/move/group.
-- [x] Workspace switcher and saved-session assignment. (2026-10-17: server and sync side: sync push takes workspace operations and a session's `workspaceId`, bootstrap carries workspaces, SYNC_PROTOCOL.md 13f/13g. Extension: Dexie v6 workspaces, per-field merge, switcher, Workspaces dialog and inspector assignment, SYNC_PROTOCOL.md 13j, UI_UX_DESIGN.md 18g; verified across two real extension profiles. Not yet: workspaces in the popup, side panel and web dashboard.)
+- [x] Workspace switcher and saved-session assignment. (2026-10-17: server and sync side: sync push takes workspace operations and a session's `workspaceId`, bootstrap carries workspaces, SYNC_PROTOCOL.md 13f/13g. Extension: Dexie v6 workspaces, per-field merge, switcher, Workspaces dialog and inspector assignment, SYNC_PROTOCOL.md 13j, UI_UX_DESIGN.md 18g; verified across two real extension profiles. Web dashboard: workspace filter on Saved sessions and assignment on the session page, UI_UX_DESIGN.md 18h. Not yet: workspaces in the popup and side panel, and creating or editing workspaces on the web.)
 - [ ] Advanced session inspector, tags/filters/sort/bulk select.
 - [ ] Versions and recovery timeline with useful preview.
 - [ ] Device management and revocation UX.

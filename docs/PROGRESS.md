@@ -24,6 +24,36 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (M5 workspaces, part 3: web dashboard filter and assignment) / Claude Code (Opus 5.5) / `feature/web-workspaces-filter` (macOS laptop)
+
+**Goal (user's scope):** workspace filter and assignment on `/app/sessions`. Branched off `main` at `5afefe2` (PR #18 merged; its `check` job was still running at merge time, at the user's request).
+
+**Plan:**
+- `server/queries/dashboard.ts`: `listSessions` takes a workspace filter (an id or "none") and returns each session's workspace; a new user-scoped query lists the workspaces with session counts for the current view (active or archived).
+- `/app/sessions`: `?workspace=<id|none>` combined with `view` and `q`; an id the user doesn't own is ignored. A "Workspace" select beside the Active/Archived tabs (a client component that updates the URL); rows show their workspace.
+- `/app/sessions/[id]`: a "Workspace" select that sends `PATCH /api/v1/sessions/:id { expectedVersion, workspaceId }` with the existing notices (a version conflict offers "Load latest version").
+- Copy on these pages that still says sync isn't available (empty state, delete dialog) is corrected. The overview's notice and the sidebar label are left for later.
+- Tests: DB tests for the filter and ownership, E2E for filter + assignment + conflict, 1440 and 390 px.
+
+**Implemented:**
+- `apps/web/src/server/queries/dashboard.ts`: `listSessions` takes `workspace` (an id or `NO_WORKSPACE`) and returns `workspaceId`; new `listWorkspaceChoices` (live, display order, at most 100) and `listWorkspaceFilters` (counts per view plus "no workspace").
+- `apps/web/src/lib/workspace-filter.ts`: `NO_WORKSPACE`, `parseWorkspaceFilter` (only the user's own ids), `sessionsHref`. `lib/group-colors.ts` shares the palette with the window tree.
+- `/app/sessions` (`page.tsx`): filter in the URL with view and search, filtered descriptions and empty states, workspace names in rows (`components/dashboard/session-list.tsx`, `color-dot.tsx`, `workspace-filter.tsx`).
+- `/app/sessions/[id]`: `components/sessions/workspace-select.tsx` (PATCH with the loaded version; resyncs on a new version so its notice survives the refresh; choosing the current workspace sends nothing). `notice-line.tsx` is shared with `session-actions.tsx`.
+- Copy: the no-sessions empty state and the delete dialog no longer say sync isn't available.
+- Tests: `src/lib/workspace-filter.test.ts` (2), `dashboard.db.test.ts` (+1: filter, counts per view, ownership, order, deleted and unknown colors), `e2e/session-workspaces.spec.ts` (4: filter across views and foreign ids; assignment, conflict and Load latest version; no-workspace state; 390 px). `e2e/session-detail.spec.ts` follows the new delete copy.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54369/58065):**
+- `pnpm check --force` 17/17 (web unit tests 76, +2); `pnpm --filter @sessionhub/web test:db` **67/67** (+1); `pnpm --filter @sessionhub/web build`.
+- Full web E2E **54/54** (+4); the new spec and `session-detail.spec.ts` also ran 3 times each (30/30).
+- Found and fixed while testing: keying the select by version remounted it after a successful move and wiped the "Moved to" notice (the first E2E run only passed that step by winning the race).
+- Screens checked at 1440 and 390 px and dark mode at 390 px.
+- Not run: extension suites (no extension change), `pnpm test:docker`.
+
+**Known gaps:** no workspace create/rename/delete on the web (the session page points to the extension); the list's filter isn't on the Overview page; the sidebar's "Sync off / Cloud sync isn't available yet" and the Overview's sync notice are still out of date (the Overview's is asserted by `dashboard.spec.ts`), worth a small copy PR; not pushed, no PR yet.
+
+**Next step:** push `feature/web-workspaces-filter` and open the PR; then the stale sync copy on Overview and the sidebar, or workspace management on the web.
+
 ### 2026-10-17 (M5 workspaces, part 2: extension) / Claude Code (Opus 5.5) / `feature/m5-workspaces-extension` (macOS laptop)
 
 **Goal (user's scope):** Dexie v6 `workspaces` table, `workspaceId` on local sessions, pull/bootstrap apply (drop account workspaces missing from the live set unless they have pending changes), upload of workspace operations and assignments, the workspace switcher and assignment in the manager. Branched off `main` at `3b8a37a` (CI green).
