@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createPrismaClient, getPrisma } from "@sessionhub/database/client";
 import { afterAll, describe, expect, it } from "vitest";
+import { captureLogs } from "../observability/logger";
 import { authRateLimitStorage, takeTokens, type RateLimitPolicy } from "./rate-limit";
 
 const prisma = getPrisma();
@@ -72,6 +73,29 @@ describe("shared token buckets", () => {
     await takeTokens(prisma, key(), policy, { now: T, random: () => 0 });
     const left = await prisma.rateLimitBucket.findMany({ where: { key: { in: [idle, busy] } }, select: { key: true } });
     expect(left.map((row) => row.key)).toEqual([busy]);
+  });
+
+  it("a failed sweep (timeout, deadlock) never fails the request whose token it already took", async () => {
+    const k = key();
+    const policy = { capacity: 2, refillPerSecond: 0.001 };
+    const timeout = Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" });
+    // The real database for the bucket update; only the sweep fails.
+    const sweepFails = new Proxy(prisma, {
+      get: (target, property) => {
+        if (property === "$executeRaw") return () => Promise.reject(timeout);
+        const value: unknown = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const lines: string[] = [];
+    const restore = captureLogs((level, line) => lines.push(`${level} ${line}`));
+    try {
+      expect(await takeTokens(sweepFails, k, policy, { now: T, random: () => 0 })).toEqual({ allowed: true, remaining: 1 });
+    } finally {
+      restore();
+    }
+    expect(await take(k, policy)).toEqual({ allowed: true, remaining: 0 });
+    expect(lines).toEqual([expect.stringMatching(/^warn .*"event":"rate_limit_sweep_failed"/)]);
   });
 });
 

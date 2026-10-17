@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@sessionhub/database/client";
+import { errorFields, log } from "../observability/logger";
 
 /**
  * Token-bucket rate limits kept in PostgreSQL (`rate_limit_buckets`), so every web instance
@@ -28,6 +29,8 @@ export type RateLimitDecision = { allowed: true; remaining: number } | { allowed
 /** Every policy refills completely well within this, so deleting idler buckets changes nothing. */
 const IDLE_INTERVAL = Prisma.sql`interval '1 hour'`;
 const CLEANUP_CHANCE = 0.01;
+/** Idle buckets one sweep deletes at most, so it stays a short statement however many piled up. */
+const CLEANUP_BATCH = 500;
 const KEY_MAX = 255;
 
 export interface TakeOptions {
@@ -38,6 +41,23 @@ export interface TakeOptions {
   /** Tests only: decides when to sweep idle buckets. */
   random?: () => number;
 }
+
+/**
+ * Best effort: deletes up to CLEANUP_BATCH idle buckets, skipping rows a request is updating. It
+ * runs after the request's own update committed, so a failure (timeout, lock conflict) is only
+ * logged: maintenance must never turn an allowed request into an error.
+ */
+const sweepIdleBuckets = async (prisma: PrismaClient, at: Prisma.Sql): Promise<void> => {
+  try {
+    await prisma.$executeRaw`
+      DELETE FROM "rate_limit_buckets" WHERE "key" IN (
+        SELECT "key" FROM "rate_limit_buckets" WHERE "updated_at" < ${at} - ${IDLE_INTERVAL}
+        LIMIT ${CLEANUP_BATCH} FOR UPDATE SKIP LOCKED
+      )`;
+  } catch (error) {
+    log("warn", "rate_limit_sweep_failed", errorFields(error));
+  }
+};
 
 /** Takes `cost` tokens from the bucket at `key` all at once, or none if they aren't all there. */
 export const takeTokens = async (prisma: PrismaClient, key: string, policy: RateLimitPolicy, { cost = 1, now, random = Math.random }: TakeOptions = {}): Promise<RateLimitDecision> => {
@@ -53,7 +73,7 @@ export const takeTokens = async (prisma: PrismaClient, key: string, policy: Rate
       "allowed" = ${refilled} >= ${need},
       "updated_at" = ${at}
     RETURNING "tokens", "allowed"`;
-  if (random() < CLEANUP_CHANCE) await prisma.$executeRaw`DELETE FROM "rate_limit_buckets" WHERE "updated_at" < ${at} - ${IDLE_INTERVAL}`;
+  if (random() < CLEANUP_CHANCE) await sweepIdleBuckets(prisma, at);
   const row = rows[0];
   if (!row) throw new Error("Rate limit update returned no row");
   const tokens = Number(row.tokens);
