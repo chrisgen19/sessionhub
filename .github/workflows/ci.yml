@@ -45,6 +45,13 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:db
+      - name: Test encrypted backup and isolated restore (including failure paths)
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y age
+          bash infra/scripts/test-backup.sh "$POSTGRES_CONTAINER" sessionhub_test
       - run: pnpm build
       - name: Install Chromium for extension E2E
         run: pnpm --filter @sessionhub/extension exec playwright install --with-deps chromium

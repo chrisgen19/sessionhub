@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { checkRelease, PLACEHOLDER_ORIGIN, type ReleaseZip } from "./check-release-zip";
 
@@ -13,13 +15,14 @@ const zipWith = ({ manifest = {}, files = {} }: { manifest?: Record<string, unkn
   };
   const base = {
     manifest_version: 3,
+    content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'" },
     version: "0.1.0",
     permissions: ["tabs", "tabGroups", "favicon", "alarms"],
     host_permissions: [`${ORIGIN}/*`],
     background: { service_worker: "background.js" },
-    icons: { "128": "icon-128.png" },
+    icons: Object.fromEntries([16, 32, 48, 128].map((size) => [String(size), `icons/${size}.png`])),
   };
-  return { manifest: { ...base, ...manifest }, files: Object.keys(contents), read: (file) => contents[file] ?? "" };
+  return { manifest: { ...base, ...manifest }, files: [...Object.keys(contents), ...[16, 32, 48, 128].map((size) => `icons/${size}.png`)], read: (file) => contents[file] ?? "", readBytes: (file) => readFileSync(path.join(import.meta.dirname, "../public", file)) };
 };
 const check = (zip: ReleaseZip, apiOrigin = ORIGIN) => checkRelease(zip, { apiOrigin, version: "0.1.0" });
 
@@ -55,8 +58,18 @@ describe("checkRelease", () => {
     ]);
   });
 
-  it("warns, without failing, about missing icons and the placeholder server", () => {
+  it("warns about the placeholder server and rejects missing icons", () => {
     const zip = zipWith({ manifest: { icons: undefined, host_permissions: [`${PLACEHOLDER_ORIGIN}/*`] }, files: { "background.js": `new URL(\`${PLACEHOLDER_ORIGIN}\`)` } });
-    expect(check(zip, PLACEHOLDER_ORIGIN)).toEqual({ errors: [], warnings: [expect.stringContaining("no icons"), expect.stringContaining("placeholder")] });
+    expect(check(zip, PLACEHOLDER_ORIGIN)).toEqual({ errors: [16, 32, 48, 128].map(() => expect.stringContaining("missing packaged")), warnings: [expect.stringContaining("placeholder")] });
   });
+});
+
+it("rejects a missing file, wrong PNG dimensions and an unsafe extension CSP", () => {
+  const zip = zipWith();
+  zip.files = zip.files.filter((file) => file !== "icons/128.png");
+  expect(check(zip).errors).toContain("missing packaged 128x128 icon");
+  const wrongSize = zipWith();
+  wrongSize.readBytes = () => readFileSync(path.join(import.meta.dirname, "../public/icons/16.png"));
+  expect(check(wrongSize).errors).toHaveLength(3);
+  expect(check(zipWith({ manifest: { content_security_policy: { extension_pages: "script-src 'self' 'unsafe-eval'" } } })).errors).toEqual([expect.stringContaining("extension CSP")]);
 });

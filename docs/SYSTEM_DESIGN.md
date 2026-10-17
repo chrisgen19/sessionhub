@@ -434,6 +434,14 @@ Verified 2026-10-16 (details in `PROGRESS.md`): monorepo skeleton, and the local
 | 2026-10-16 | `packages/sync` not created yet | Empty packages add no value; created with M3/M4 | M3 / M4 |
 | 2026-10-16 | Web app uses the ESLint CLI with the shared config, not `eslint-config-next` | `next lint` was removed in Next 16; `eslint-config-next` 16.4 depends on `eslint-plugin-react` 7.37, which does not declare ESLint 10 support | eslint-plugin-react supports ESLint 10 |
 
+### M6 release preparation decisions (2026-10-17)
+
+- `/api/health` is uncached readiness: configuration errors return 503 `misconfigured`; PostgreSQL probe failures return 503 `unavailable`. No database errors or addresses are exposed. Container readiness prevents promotion while the database is unreachable.
+- Encrypted logical backups use PostgreSQL custom format streamed into age. Restore drills create their own isolated disposable database; scripts cannot target production. Off-host storage, key recovery and staging app verification remain operator gates (`BACKUPS.md`). No backup scheduler/storage provider is silently enabled.
+- Explicit extension CSP is `script-src 'self'; object-src 'self'`. Release validation now requires actual packaged 16/32/48/128 PNG dimensions. The mark uses a repository SVG with no fonts/network assets, rendered by the existing Next.js sharp dependency; generated PNGs are committed.
+- Pinning/grouping are best effort after a URL opens. The first tab's successful open commits before pinning so a cosmetic failure cannot make retry duplicate the window. Interrupted unrecorded opens still have the documented one-tab ambiguity.
+- Public `/privacy` and store materials describe implemented behavior, including complete URL upload and no site/query exclusions. Operator/private contact/providers/retention must be finalized before public registration. No production claim is inferred from local tests.
+
 ## 15. Authoritative references
 
 - [Chrome extension service-worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)

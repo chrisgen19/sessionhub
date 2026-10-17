@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SessionHub",
-  description: "Save, search and safely restore your browser windows. Local-first, with opt-in sync planned.",
+  description: "Save, search and safely restore your browser windows. Local-first, with opt-in sync.",
 };
 
 export const viewport: Viewport = {

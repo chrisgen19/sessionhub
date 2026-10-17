@@ -158,3 +158,11 @@ These are **initial proposed designs**, not irrevocable decisions. When implemen
 4. Mark what is actually implemented in `docs/PROGRESS.md`—never confuse a specification with shipped functionality.
 
 Use the prompt file as a reusable project kickoff brief. Do **not** paste it on every agent turn if the agent can read the repository; ask the agent to read the references and resume from `docs/PROGRESS.md` instead.
+
+## Release preparation
+
+M6 repository work includes public `/privacy`, extension icons/CSP and ZIP checks, encrypted database backup/restore tooling and release/rollback guidance. Start with [deployment](docs/DEPLOYMENT.md), [backups](docs/BACKUPS.md), [release and limitations](docs/RELEASE.md), [store materials](docs/STORE_LISTING.md) and [security review/advisory exceptions](docs/SECURITY_REVIEW_M6.md).
+
+After installing dependencies, regenerate icons with `node infra/scripts/generate-extension-icons.mjs`; capture synthetic store screenshots after building the extension with `node infra/scripts/capture-store-screenshots.mjs`. Encrypted backup tests need Docker, Bash, age and a migrated, idle test database: `bash infra/scripts/test-backup.sh <test-postgres-container> sessionhub_test`.
+
+No production deployment exists yet. Public operator/contact/provider/retention details, a real off-host recovery drill and live TLS/proxy/mail checks remain release gates. Local tests and placeholder ZIPs do not mean the product has been deployed or approved by the Chrome Web Store.

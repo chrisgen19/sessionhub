@@ -1,18 +1,31 @@
+import { getPrisma } from "@sessionhub/database/client";
 import { configurationProblem } from "@/server/env";
 import { log } from "@/server/observability/logger";
 
+export const dynamic = "force-dynamic";
 let reported = false;
 
-/**
- * Health probe for Docker/Coolify. Answers 503 while the configuration is invalid (for example
- * BETTER_AUTH_URL without https in production), so such a deploy never takes traffic; the reason
- * is logged once, by variable name. Reports no internals. Doesn't check PostgreSQL.
- */
-export function GET(): Response {
+/** Readiness checks configuration and a bounded database query; never returns internals. */
+export async function GET(): Promise<Response> {
+  const headers = { "Cache-Control": "no-store" };
   const problem = configurationProblem();
-  if (problem && !reported) {
-    reported = true;
-    log("error", "config_invalid", { detail: problem });
+  if (problem) {
+    if (!reported) {
+      reported = true;
+      log("error", "config_invalid", { detail: problem });
+    }
+    return Response.json({ status: "misconfigured" }, { status: 503, headers });
   }
-  return Response.json({ status: problem ? "misconfigured" : "ok" }, { status: problem ? 503 : 200, headers: { "Cache-Control": "no-store" } });
+  try {
+    // Both pool acquisition and query execution must fit inside the container's 3 s probe.
+    // A transaction also ensures PostgreSQL cancels the query; Promise.race alone would
+    // leave abandoned work consuming pool connections on every subsequent probe.
+    await getPrisma().$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL statement_timeout = '1000ms'`;
+      await tx.$queryRaw`SELECT 1`;
+    }, { maxWait: 1000, timeout: 1500 });
+    return Response.json({ status: "ok" }, { headers });
+  } catch {
+    return Response.json({ status: "unavailable" }, { status: 503, headers });
+  }
 }
