@@ -149,6 +149,7 @@ Do not communicate status solely by color: pair statuses with text, icons and ac
 - Main desktop padding: 24–32 px; mobile: 16 px.
 - List rows: ~44–52 px; compact side panel 32–40 px.
 - Navigation width desktop: 236–252 px; inspector: 320–380 px.
+- Extension manager (2026-10-17, section 18l): the list is the narrow column (360 px, 400 px from 1536 px) and the inspector takes the rest of the width.
 - Inputs/buttons: min 36–40 px visual height; touch-oriented targets preferably >=44 px.
 - Radius: inputs 8 px, cards 12 px, dialogs 14–16 px; avoid overly rounded pill-shaped everything.
 - Elevation: subtle shadow only for floating popovers/dialogs, not every card.
@@ -260,6 +261,8 @@ Lucide icons, typically 16–18 px. Prefer recognizable browser favicons for ind
 ```
 
 Desktop widths: 220–244 px navigation, fluid center minimum 420 px, right inspector 320–380 px. At 900–1150 px, collapse inspector into an on-demand drawer. Under 900 px, replace persistent navigation with a top menu and use dedicated details view.
+
+**Superseded for the extension manager (2026-10-17, section 18l):** the list and inspector widths are swapped, because the inspector holds the tab tree and the list rows hold three short facts.
 
 ### Recovery page layout
 
@@ -670,6 +673,16 @@ The toolbar popup is two tabs (user's choice, mock approved 2026-10-17) and neve
   - The save picker (18i) without its own 260 px scroll box: the popup scrolls as one, and the save bar sticks to the bottom.
   - It stays mounted while hidden, so ticks and the typed name survive switching tabs.
 - **Closing:** opening new windows focuses them and closes the popup. The worker finishes the restore (`e2e/popup.spec.ts` closes the page right after Open). Opening into this window keeps the popup open.
+
+## 18l. Manager: list rail and wide inspector (2026-10-17)
+
+The user's report: on a wide screen the session list took most of the width for a few short rows, while the inspector (the tab tree) was fixed at 400 px and cut tab titles short. Their choice: a narrow list and a wide detail, keeping the current colors and type. Saved sessions and Recovery share the layout (`components/master-detail.tsx`).
+
+- **Columns (>=1280 px):** navigation 232 px | list rail 360 px (400 px from 1536 px) | inspector, fluid. Each pane scrolls on its own; the Saved sessions header (title, Import, search, workspace switcher) stays at the top of the rail. Below 1280 px nothing changed: the inspector replaces the list and has its own back link.
+- **List rows:** name and date on the first line, counts and sync status on the second. Date and sync status never shrink, so the narrow rail can't truncate them away. The icon is a favicon tile: up to four sites from the session (distinct hosts, saved order, tabs that can reopen; `lib/session-preview.ts`), one favicon for a single site, the stack icon when nothing can reopen. Decorative (`aria-hidden`): the row text names the session.
+- **Inspector header:** title (24 px) with the rename pencil right after it, and Export JSON / Delete on the same row, wrapping under a long title or on narrow screens. Counts, sync badge, origin, saved date and version on one line under it, then the workspace picker. A border separates the header from the open picker. The Recovery checkpoint inspector uses the same header.
+- **Wide tab tree (container query, tree >= 672 px):** one line per tab, the URL in a last column 30% of the tree's width (`30cqw`), so URLs line up across pinned, "Won't open" and grouped rows. Narrower trees, including the popup, keep the two-line rows.
+- **Wide open bar (container >= 672 px):** the selection summary and Select links on the left, the open options and the split button on the right, in one row when they fit; otherwise the controls wrap under it, right-aligned. The popup's stacked bar is unchanged.
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

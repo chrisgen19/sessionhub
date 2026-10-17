@@ -34,51 +34,56 @@ export function SessionInspector({ session, syncLabel, workspaceId, onBack, onDe
   const summary = summarizeSession(session);
 
   return (
-    <article aria-label="Session details" className="space-y-5 p-5 lg:p-6">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand xl:hidden">
-        <ArrowLeft aria-hidden="true" className="size-4" />
-        All sessions
-      </button>
-
-      <div className="space-y-2">
-        <RenameTitle key={`${session.id}:${session.version}`} session={session} />
-        <p className="text-xs text-fg-muted">
-          {sessionOrigin(session)} · saved {formatFullDate(session.updatedAt)} · version {session.version}
-        </p>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold tabular-nums">
-            {plural(summary.windowCount, "window")} · {plural(summary.tabCount, "tab")}
-          </span>
-          <SessionSyncBadge label={syncLabel} />
-        </div>
-        <WorkspacePicker sessionId={session.id} inAccount={syncLabel !== "local"} workspaceId={workspaceId} />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className={buttonClass.secondary} onClick={() => downloadSessionExport(session)}>
-          <Download aria-hidden="true" className="size-4" />
-          Export JSON
+    <article aria-label="Session details">
+      <header className="space-y-3 border-b border-line px-5 py-5 lg:px-8">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand xl:hidden">
+          <ArrowLeft aria-hidden="true" className="size-4" />
+          All sessions
         </button>
-        <button type="button" className={buttonClass.ghostDanger} onClick={() => setDialog("delete")}>
-          <Trash2 aria-hidden="true" className="size-4" />
-          Delete
-        </button>
-      </div>
-
-      {review && (
-        <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg bg-warning-soft px-3 py-2.5 text-xs text-fg">
-          <span className="min-w-0 flex-1">
-            <span className="font-semibold">Needs review.</span> Your account didn&apos;t accept the last change. Both versions are kept until you choose.
-          </span>
-          <button type="button" className={buttonClass.secondary} onClick={() => setDialog("review")}>
-            Review…
-          </button>
+        {/* Title and the session's own actions share a row; the actions wrap under a long title or on narrow screens. */}
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0 flex-1 basis-[min(100%,20rem)]">
+            <RenameTitle key={`${session.id}:${session.version}`} session={session} />
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button type="button" className={buttonClass.secondary} onClick={() => downloadSessionExport(session)}>
+              <Download aria-hidden="true" className="size-4" />
+              Export JSON
+            </button>
+            <button type="button" className={buttonClass.ghostDanger} onClick={() => setDialog("delete")}>
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete
+            </button>
+          </div>
         </div>
-      )}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+            <span className="font-semibold tabular-nums">
+              {plural(summary.windowCount, "window")} · {plural(summary.tabCount, "tab")}
+            </span>
+            <SessionSyncBadge label={syncLabel} />
+            <span className="text-fg-muted">
+              {sessionOrigin(session)} · saved {formatFullDate(session.updatedAt)} · version {session.version}
+            </span>
+          </div>
+          <WorkspacePicker sessionId={session.id} inAccount={syncLabel !== "local"} workspaceId={workspaceId} />
+        </div>
+      </header>
 
-      <LastRestore session={session} />
-
-      <OpenPanel key={session.id} session={session} query={query} />
+      <div className="space-y-4 px-5 py-5 lg:px-8">
+        {review && (
+          <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg bg-warning-soft px-3 py-2.5 text-xs text-fg">
+            <span className="min-w-0 flex-1">
+              <span className="font-semibold">Needs review.</span> Your account didn&apos;t accept the last change. Both versions are kept until you choose.
+            </span>
+            <button type="button" className={buttonClass.secondary} onClick={() => setDialog("review")}>
+              Review…
+            </button>
+          </div>
+        )}
+        <LastRestore session={session} />
+        <OpenPanel key={session.id} session={session} query={query} />
+      </div>
 
       {dialog === "review" && review && (
         <ReviewDialog

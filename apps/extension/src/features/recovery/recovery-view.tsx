@@ -30,9 +30,9 @@ export function RecoveryView({ snapshotId, onSelect }: { snapshotId: string | nu
 
   const list = (
     <>
-      <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6">
+      <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6 xl:px-4 xl:py-4">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">Recovery</h1>
+          <h1 className="text-2xl font-bold tracking-tight xl:text-xl">Recovery</h1>
           <button type="button" className={buttonClass.secondary} disabled={taking} onClick={() => void takeNow()}>
             {taking ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Camera aria-hidden="true" className="size-4" />}
             Checkpoint now

@@ -31,7 +31,7 @@ export function CheckpointList({ snapshots, selectedId, onSelect }: CheckpointLi
     <div className="bg-surface">
       {[...groups].map(([bucket, items]) => (
         <section key={bucket} aria-label={bucket}>
-          <h2 className="border-b border-line bg-canvas px-4 py-1.5 text-[11px] font-semibold tracking-wide text-fg-muted uppercase lg:px-6">{bucket}</h2>
+          <h2 className="border-b border-line bg-canvas px-4 py-1.5 text-[11px] font-semibold tracking-wide text-fg-muted uppercase lg:px-6 xl:px-4">{bucket}</h2>
           <ul className="divide-y divide-line">
             {items.map(({ snapshot, previous }) => {
               const selected = snapshot.id === selectedId;
@@ -42,7 +42,7 @@ export function CheckpointList({ snapshots, selectedId, onSelect }: CheckpointLi
                     type="button"
                     aria-current={selected ? "true" : undefined}
                     onClick={() => onSelect(snapshot.id)}
-                    className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted lg:px-6 ${
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted lg:px-6 xl:px-4 ${
                       selected ? "bg-brand-soft shadow-[inset_3px_0_0_var(--sh-brand)]" : ""
                     }`}
                   >
