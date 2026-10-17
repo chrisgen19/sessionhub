@@ -171,7 +171,7 @@ Operator steps and checks are in `DEPLOYMENT.md`.
   - in every string field, URLs (any scheme), email addresses, `shd_*` tokens and `Bearer` values are replaced with placeholders
   - fields whose names suggest content or secrets (authorization, cookie, token, password, url, link, email, title, name, body, query, cursor, ...) are dropped
   - text is capped at 300 characters
-- **Request ids:** every `/api/v1` and `/api/auth` request gets an `X-Request-Id`. A proxy's id is kept if it matches `^[A-Za-z0-9._-]{8,128}$`, otherwise a fresh UUID is used. The id is returned on the response and attached to every log line written during the request (AsyncLocalStorage).
+- **Request ids:** every `/api/v1` and `/api/auth` request gets an `X-Request-Id`. A proxy's id is kept if it matches `^[A-Za-z0-9._-]{8,128}$` and contains no device credential prefix (`shd_at_`, `shd_rt_`, `shd_dc_`), otherwise a fresh UUID is used. The id is returned on the response and attached to every log line written during the request (AsyncLocalStorage).
 - **Access log:** one `http_request` line per request with `method`, `path` (ids, tokens and numbers replaced with `:id`, query and fragment dropped), `status` and `durationMs`. Never the user, IP address, query, headers or body.
 - **Errors and other events:**
   - unexpected errors log only the class, plus Prisma's `P####` code when present

@@ -18,10 +18,12 @@ const context = new AsyncLocalStorage<RequestContext>();
 
 /** A proxy's request id is kept when it looks like one; anything else gets a fresh UUID. */
 const REQUEST_ID = /^[A-Za-z0-9._-]{8,128}$/;
+/** Device credential prefixes anywhere in it: the id is logged unredacted, so one is never kept. */
+const CREDENTIAL = /shd_(?:at|rt|dc)_/i;
 
 export const requestIdFor = (request: Request): string => {
   const incoming = request.headers.get("x-request-id");
-  return incoming && REQUEST_ID.test(incoming) ? incoming : randomUUID();
+  return incoming && REQUEST_ID.test(incoming) && !CREDENTIAL.test(incoming) ? incoming : randomUUID();
 };
 
 /** Runs `fn` with this request id attached to every log line written inside it. */

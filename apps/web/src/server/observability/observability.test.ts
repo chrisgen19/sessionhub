@@ -63,6 +63,17 @@ describe("request ids and access logs", () => {
     expect((await run("<script>")).headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it("never keeps a device credential as the request id, since the id is logged unredacted", async () => {
+    capture();
+    const run = (id: string) => observeRequest(new Request("http://h/api/v1/devices", { headers: { "x-request-id": id } }), async () => new Response(null, { status: 204 }));
+    const secret = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCdE";
+    for (const id of [`shd_at_${secret}`, `shd_rt_${secret}`, `shd_dc_${secret}`, `SHD_AT_${secret}`, `req_shd_rt_${secret}`]) {
+      expect((await run(id)).headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
+    }
+    expect(lines).toHaveLength(5);
+    expect(JSON.stringify(lines)).not.toContain(secret);
+  });
+
   it("adds the id even to responses with immutable headers", async () => {
     capture();
     const response = await observeRequest(new Request("http://h/api/auth/callback"), async () => Response.redirect("http://h/app", 302));
