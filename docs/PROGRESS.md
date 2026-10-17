@@ -16,12 +16,34 @@
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). Every open PR runs `check` (lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services) and, from #2 up, `docker`. Results after the 2026-10-17 restack: latest session entry and the PRs. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive) and #2 (2 findings in the Docker slice, not identified from the API): user's call |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, **restacked 2026-10-17 after the review fixes**; merge bottom-up with merge commits (not squash or rebase): #1 `feature/m1-monorepo-local-slice` -> `main` (`fb0feb8`), #2 `feature/m3-web-docker` (`d5627a4`), #3 `feature/m3-email-auth` (`328d5f9`), #4 `feature/m4-device-pairing` (`c6724fe`), #6 `feature/m4-local-outbox` (`880486d`), #7 `feature/m4-sync-push` (`ce13869`), #8 `feature/m4-sync-pull` (`e602712`), #9 `feature/m4-sync-ui` (`d9f9ba3`), #10 `feature/m4-conflict-review` (`e87f3d4`), #11 **`feature/m6-hardening`** (this progress update on top of `0799082`). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **`main` = `765989c`: the whole stack (#1 to #11) was merged on 2026-10-17**, bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. Latest change: PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (stack merged; flaky restore-retry E2E fixed) / Claude Code (Opus 5.5) / `main`, then `bugfix/restore-retry-e2e` (macOS laptop)
+
+**Goal:** merge PRs #1 to #11 bottom-up with merge commits after all their `check` and `docker` jobs were green, then fix the flaky extension E2E test (user's requests).
+
+**Merge:**
+- All ten PRs were merged in order (`gh pr merge --merge --match-head-commit`). `main` = `765989c`, whose content is identical to the last #11 head (`git diff` empty).
+- **Incident, recovered:** after #1 merged, I deleted its branch through the API. GitHub then **closed** PR #2 instead of retargeting it; it retargets only when the branch is deleted through the PR's own "Delete branch" button or the repository's auto-delete setting.
+  - Fixed by recreating the branch at the same commit, reopening #2, setting its base to `main` and deleting the branch again.
+  - Every later PR was then merged in the safe order: merge it, set the next PR's base to `main`, and only then delete the merged branch.
+  - **Lesson:** never delete a branch that is still the base of an open PR.
+- CI on `main` for `765989c` (run 38995084504): **`check` and `docker` passed**.
+- Local cleanup: the stale `feature/*` copies were deleted, after checking that none held commits outside `main` or the last recorded remote tips. The other sessions' `bugfix/*` worktrees were left alone.
+
+**Flaky test fixed** (`apps/extension/e2e/local-slice.spec.ts`, "a real mid-restore failure can be retried from the summary"):
+- **Cause:** it read the reopened window's tab URLs once, right after "opened 3 of 3 tabs". A tab that hasn't started loading yet reports an empty URL. This failed on every run on this Mac and once in CI (PR #4, passed on re-run).
+- **Fix:** it now polls (`expect.poll`, like the other restore tests in this file) until exactly one new window holds `failedCount` tabs, all with saved URLs. Saved URLs show as one label, so a failure prints the actual offending URL.
+
+**Validated (macOS):**
+- `apps/extension` lint and typecheck pass.
+- The test passed `--repeat-each 5`: 5/5, where the old version failed every time on this machine.
+- Full extension E2E (`--grep-invert @perf`): **9/9**, the first full pass on this laptop.
 
 ### 2026-10-17 (review fixes on every open PR, then one restack) / Claude Code (Opus 5.5) / all stack branches (macOS laptop)
 
@@ -921,13 +943,13 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Once every PR's `check` and `docker` jobs are green after the 2026-10-17 restack, merge bottom-up #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 with **Create a merge commit** (not squash or rebase), deleting each head branch so GitHub retargets the next PR to `main`. Decide GitGuardian on #1 and #2 first (mark as false positives or move the placeholders to CI variables). After that, branch each slice off `main` as a small PR.
+1. Merge the `bugfix/restore-retry-e2e` PR (flaky restore-retry E2E) once its CI is green. From now on: one small PR per slice, off `main`.
 2. Next M6 items:
    - framing protection (`frame-ancestors 'none'` / `X-Frame-Options: DENY`), at least for `/app/pair` (clickjacking of the approval button)
    - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
    - CI builds of the production extension ZIP
    - permissions review and privacy policy
-3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the macOS-only extension E2E failure (mid-restore retry). The web password-reset failure no longer reproduces at the top of the stack.
+3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work. Both former macOS-only E2E failures are gone (password reset since the PR #3 fix, mid-restore retry since `bugfix/restore-retry-e2e`). Remove the other sessions' worktrees (`sessionhub-pr2-fix` to `-pr9-fix`): their branches are merged.
 
 ## Open questions / architecture validations
 

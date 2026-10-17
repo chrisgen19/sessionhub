@@ -246,12 +246,17 @@ test("a real mid-restore failure can be retried from the summary", async ({ cont
   await expect(dialog.getByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeVisible();
   await expect(dialog.getByRole("button", { name: /^retry/i })).toHaveCount(0);
 
-  // Only the tabs that failed were reopened, in one new window.
-  const created = (await snapshotWindows(worker)).windows.filter((w) => !before.windows.some((old) => old.id === w.id));
-  expect(created).toHaveLength(1);
-  const reopened = created[0]!.urls;
-  expect(reopened).toHaveLength(failedCount);
-  expect(reopened.every((url) => [`${SITE}/red`, `${SITE}/green`, `${SITE}/blue`].includes(url))).toBe(true);
+  // Only the tabs that failed were reopened, in one new window. A tab that hasn't started loading
+  // yet reports an empty URL, so wait for the window to settle instead of reading it once. Saved
+  // URLs show as one label (which tabs failed depends on timing); anything else shows as itself.
+  const savedUrls = new Set([`${SITE}/red`, `${SITE}/green`, `${SITE}/blue`]);
+  await expect
+    .poll(async () =>
+      (await snapshotWindows(worker)).windows
+        .filter((w) => !before.windows.some((old) => old.id === w.id))
+        .map((w) => w.urls.map((url) => (savedUrls.has(url) ? "saved tab" : url))),
+    )
+    .toEqual([Array<string>(failedCount).fill("saved tab")]);
 });
 
 /** Reads a whole object store from the extension's IndexedDB (runs in the page; pass the name as the evaluate argument). */
