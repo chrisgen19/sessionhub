@@ -128,7 +128,7 @@ Do not communicate status solely by color: pair statuses with text, icons and ac
   - web: in the home header, the top-right corner of the sign-in pages, the dashboard top bar and the privacy page
   - extension: in the popup header and the manager's sidebar footer (its top bar on narrow screens)
 - **System** follows the operating system live.
-- **Stored per browser** in `localStorage` (`sessionhub-theme`). The website and the extension keep separate choices; the popup and the manager share one.
+- **Stored per browser** in `localStorage` (`sessionhub-theme`). The website and the extension keep separate choices; the popup and the manager share one. If the browser refuses to store it (blocked site data), the choice still holds, toggle included, for the open page (PR #29 review).
 - **Applied before the first paint:** `@sessionhub/core/theme`'s init script sets `data-theme="light" | "dark"` on `<html>`, so there's no flash of the wrong theme. It runs as an inline `<head>` script on the web and as `theme-init.js` in the extension, generated from the same string. `tokens.css` switches colors on that attribute, not on `prefers-color-scheme`.
 - **Content Security Policy:** if the web app adds a `script-src` CSP, the inline script needs a nonce.
 

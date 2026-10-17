@@ -64,7 +64,13 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - The manager's empty state still says "choose Save window".
 - The popup's says "Save this window to get started".
 
-**Next step:** push and open the PR. Still pending: a valid `COOLIFY_TOKEN`; the deploy job got a 401.
+**PR #29 review (Codex, 1 P2 finding), valid and fixed:**
+- *Problem:* when storage refused the choice (blocked site data), the page switched theme but the toggle snapped back to the old option (`readThemePreference` fell back to the default), and the init script forgot the choice on the next system change, since it re-read storage.
+- *Fix:* `theme.ts` keeps a choice storage refused for the open page, and the change event now carries the choice. The init script keeps the current choice itself, updated by that event and by `storage`, so it no longer re-reads storage on system changes.
+- *Tests:* reproduced first by a toggle UI test (storage throwing) and an init-script test (blocked storage: Dark holds, System follows the system), which now pass. The toggle tests reset the per-page choice between tests.
+- Both apps' theme E2E tests pass with the new script.
+
+**Next step:** PR #29 (`feature/theme-toggle`) is open. Still pending: a valid `COOLIFY_TOKEN`; the deploy job got a 401.
 
 ### 2026-10-17 (web favicon; first CI deploy attempt) / Claude Code (Opus 5.5) / `bugfix/web-favicon` (macOS laptop)
 
