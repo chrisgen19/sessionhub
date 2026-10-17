@@ -113,6 +113,34 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** `refreshConnection` writes the refreshed connection unconditionally, so a pairing that completes while the previous account's refresh is in flight could be overwritten (found by reading, not reproduced; PR #4 code).
 
+### 2026-10-17 (PR #9 review fixes: stop on turn-off, honest "Last synced") / Claude Code (Opus 5.5) / `bugfix/sync-ui-review-fixes` (worktree `sessionhub-pr9-fix`, based on `feature/m4-sync-ui`)
+
+**Goal:** assess the two Codex findings on PR #9 (review 5555130903). Both valid; both fixed. Decisions recorded in `SYSTEM_DESIGN.md` 14.
+
+**Finding 1 (P1, privacy):** "Turn off sync" during a run only cleared `enabledAt`; `openSync` was checked once per run, so the uploader kept going for up to 9 more rounds and the downloader for up to 19 more pages after the UI said sync was off. While checking it: `withAccessToken` reads whichever connection is current on every request, so disconnecting and connecting another account mid-run could push the first account's queue with the second account's connection.
+
+- `sync-gate.ts`: `stillOpen(db, scope)` (the connection is still this account, `enabledAt` still set), checked before every push round (`sync-uploader.ts`) and pull page (`sync-downloader.ts`). Returns `disabled` / `disconnected`; nothing is recorded as a failure. A request already sent completes (its page is kept).
+
+**Finding 2 (P2):** the upload's `recordSuccess` moved `lastSyncAt` before the download ran, so a failed download still showed "Last synced" just now. Same cause, bigger effect: it also reset `failures`, and an upload with nothing queued makes no request and always "succeeds", so a failing download restarted the backoff at 5 s on every run (about every 30 s with Chrome's alarm minimum) instead of growing to 15 minutes, for every idle browser during an outage.
+
+- `sync-uploader.ts`: no `recordSuccess`; failures are still recorded. Only the download's `recordSuccess` marks a run synced (`lastSyncAt`, backoff reset). The runner always pulls after a `done` push.
+
+**Tests (written first; 6 failed against the unfixed code, all pass now):**
+
+- `sync-uploader.test.ts`: turning sync off during the first of two pushes stops after it (1 request, 5 operations still `queued`; before: all 30 uploaded); connecting another account mid-run stops with `disconnected` (before: all 30 uploaded). Two assertions changed to the new rule: an upload alone leaves `lastSyncAt` null and doesn't reset `failures`.
+- `sync-downloader.test.ts`: turning sync off during a page keeps that page, then stops (1 request; before: 20 pages).
+- `sync-runner.test.ts`: upload accepted, download fails -> `lastSyncAt` unchanged, `failures` 1 then 2 (wait 5 s then 10 s; before: reset to 1 each run); download works -> `lastSyncAt` moves, `failures` 0.
+
+**Docs:** `SYNC_PROTOCOL.md` 13f step 1, 13g intro, 13h `sync.disable`; `SECURITY_PRIVACY.md` "Sync off produces zero uploads" checklist item; `DATA_MODEL.md` `syncState.lastSyncAt`; `SYSTEM_DESIGN.md` 14 (two decisions).
+
+**Validated commands and results:**
+
+- `apps/extension` sync tests: **27/27**. `pnpm check`: **pass** (17 tasks; extension 163/163).
+- Full web E2E (`playwright test` in `apps/web`, real extension): **37/38**. Pairing, `sync-push` and `sync-two-profiles` pass. The one failure is `email.spec.ts` "password reset", the click-then-fill race fixed on PR #3 (`7a47e98`), which hasn't reached this branch yet. Ran against `docker run` Postgres + Mailpit (this laptop has no `docker compose`).
+
+**Known gaps:** the stale-connection window narrows to the moment between the gate check and `withAccessToken` reading the connection; passing the expected account into `withAccessToken` would close it fully. Pull pages still move `lastSyncAt` per page, so a later page failing leaves the time of the last page that arrived.
+
+**Next step:** after PR #9 takes this fix, carry it up the stack (#10, #11). `sync-uploader.ts` `run` also changes in the PR #7 fix (`51b0582`, round-cap continuation), so the rebase of #8 and #9 onto the new #7 meets this code too.
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
