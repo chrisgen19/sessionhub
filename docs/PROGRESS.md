@@ -17,11 +17,36 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **`main` = `765989c`: the whole stack (#1 to #11) was merged on 2026-10-17**, bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. Latest change: PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. Latest change: `feature/m6-framing-protection` (framing protection). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (M6 framing protection) / Claude Code (Opus 5.5) / `feature/m6-framing-protection` (macOS laptop)
+
+**Goal:** framing protection (`frame-ancestors 'none'` / `X-Frame-Options: DENY`), at least for `/app/pair` (user's scope). Applied to every route, because nothing embeds the app (no `iframe` in the extension or the web app). Decision in SYSTEM_DESIGN.md 14; behavior in SECURITY_PRIVACY.md 8b.
+
+**Implemented:**
+- `apps/web/next.config.ts`: `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY` on `/:path*`, in every environment.
+- `apps/web/e2e/framing.spec.ts` (new, 2 tests):
+  - the headers are on `/`, `/login`, `/signup`, `/reset-password`, `/app/pair`, `/api/health` and `/api/v1/sessions`
+  - a page on the same origin frames a real pending `/app/pair` request with the session cookie sent: the frame ends on Chrome's error page, and "Connect this browser" never appears
+- Docs:
+  - SECURITY_PRIVACY 8b (the "Not covered" line replaced)
+  - DEPLOYMENT.md (no longer listed as missing, plus a post-deploy `curl` check)
+  - SYSTEM_DESIGN 14 (one row)
+
+**Assessment:** the session cookie is `SameSite=Lax`, so another site's frame never had the session and only showed the login page. The real gaps were framing from the same site and visual tricks on the login page.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54339/58035):**
+- `e2e/framing.spec.ts` against the code before the change: **both fail**. The headers were missing, and the framed frame loaded `http://127.0.0.1:3917/app/pair?code=...`.
+- After the change: **6/6** with `--repeat-each 3`.
+- `pnpm check --force` 17/17; `pnpm build`.
+- Full web E2E **46/46**, including pairing with the real extension.
+- Not checked: the headers under `next dev` (same `next.config.ts` entry), and the extension suites (no extension change).
+
+**Known gaps:** none new. A full Content Security Policy (scripts, styles, connections) is still not set; if one is added, it must keep `frame-ancestors 'none'`.
 
 ### 2026-10-17 (stack merged; flaky restore-retry E2E fixed) / Claude Code (Opus 5.5) / `main`, then `bugfix/restore-retry-e2e` (macOS laptop)
 
@@ -943,9 +968,8 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Merge the `bugfix/restore-retry-e2e` PR (flaky restore-retry E2E) once its CI is green. From now on: one small PR per slice, off `main`.
+1. Merge the framing protection PR (`feature/m6-framing-protection`) once its CI is green. From now on: one small PR per slice, off `main`.
 2. Next M6 items:
-   - framing protection (`frame-ancestors 'none'` / `X-Frame-Options: DENY`), at least for `/app/pair` (clickjacking of the approval button)
    - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
    - CI builds of the production extension ZIP
    - permissions review and privacy policy

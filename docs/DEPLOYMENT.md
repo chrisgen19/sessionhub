@@ -1,7 +1,7 @@
 # Deployment checklist (Coolify)
 
 > **Status (2026-10-17):** the app side of the proxy and TLS requirements is implemented and tested locally. SessionHub hasn't been deployed yet. Work through this list on the first deployment, run every **Check**, and record the results in `docs/PROGRESS.md`.
-> Not covered yet: off-host backups with a restore drill, log shipping, and framing protection (`ROADMAP.md` M6).
+> Not covered yet: off-host backups with a restore drill and log shipping (`ROADMAP.md` M6).
 
 ## 1. Topology
 
@@ -67,6 +67,7 @@ done
 APP=sessionhub.example.com
 curl -sI "http://$APP/" | head -3                       # expect a redirect (301/308) to https://
 curl -s -D - -o /dev/null "https://$APP/api/health" | grep -i strict   # expect strict-transport-security: max-age=31536000
+curl -s -D - -o /dev/null "https://$APP/login" | grep -i -E "frame-ancestors|x-frame-options"   # expect frame-ancestors 'none' and DENY (SECURITY_PRIVACY.md 8b)
 curl -s "https://$APP/api/health"                                       # expect {"status":"ok"}
 curl -s -D - -o /dev/null "https://$APP/api/v1/sessions" | grep -i -E "^HTTP|x-request-id"   # 401, with a request id
 openssl s_client -connect "$APP:443" -servername "$APP" </dev/null | openssl x509 -noout -issuer -enddate
