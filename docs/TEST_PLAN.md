@@ -117,7 +117,7 @@ Test: `apps/extension/e2e/perf.spec.ts`, run with `pnpm test:perf` (builds first
 
 ## 6. Accessibility / UX E2E tests
 
-- Tab through popup controls and save action.
+- Tab through popup controls and save action. The popup's Open | Save tablist moves with the arrow keys and remembers the last tab; at 380x600 with 20 sessions and 14 browser pages, neither tab overflows the page and only `main` scrolls (`e2e/popup.spec.ts`, `features/popup-open.test.tsx`).
 - Ctrl/Meta+K focuses search where supported; Esc closes dialogs without data loss.
 - Side panel window/group tree operates by keyboard and announces state.
 - Open picker accessible to screen readers: tri-state window boxes, disabled boxes for tabs that can't reopen, the destination menu (`menu` / `menuitemradio`, arrow keys, Esc returns focus), and the live selection summary (`features/open-picker.test.tsx`, `features/ui.test.tsx`).

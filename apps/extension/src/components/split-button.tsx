@@ -1,6 +1,12 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
-import { buttonClass } from "./modal";
+
+// Built here rather than from buttonClass.primary, so sizes never stack conflicting utilities (h-9 with h-8).
+const BASE = "inline-flex items-center justify-center gap-2 bg-brand font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-60";
+const SIZES = {
+  md: { main: "h-9 px-3.5 text-[13px]", toggle: "h-9 px-2" },
+  sm: { main: "h-8 px-2.5 text-xs", toggle: "h-8 px-1.5" },
+} as const;
 
 export interface SplitButtonOption<V extends string> {
   value: V;
@@ -10,6 +16,10 @@ export interface SplitButtonOption<V extends string> {
 interface SplitButtonProps<V extends string> {
   /** The main button's text; it acts on the chosen option. */
   label: ReactNode;
+  /** Accessible name and tooltip for the main button when its text is short (it must contain that text). */
+  labelName?: string;
+  /** `sm` for list rows. */
+  size?: "md" | "sm";
   onClick: () => void;
   /** Disables the main button only, so the choice can still change. */
   disabled?: boolean;
@@ -27,7 +37,7 @@ interface SplitButtonProps<V extends string> {
  * from the toggle and flipped above it near the bottom, so a scroll area can't clip it and it can't
  * make the page (or the popup) taller.
  */
-export function SplitButton<V extends string>({ label, onClick, disabled, menuDisabled, options, value, onSelect, menuLabel }: SplitButtonProps<V>) {
+export function SplitButton<V extends string>({ label, labelName, size = "md", onClick, disabled, menuDisabled, options, value, onSelect, menuLabel }: SplitButtonProps<V>) {
   const [position, setPosition] = useState<CSSProperties | null>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -83,7 +93,14 @@ export function SplitButton<V extends string>({ label, onClick, disabled, menuDi
 
   return (
     <div className="inline-flex min-w-0">
-      <button type="button" className={`${buttonClass.primary} min-w-0 rounded-r-none`} disabled={disabled} onClick={onClick}>
+      <button
+        type="button"
+        aria-label={labelName}
+        title={labelName}
+        className={`${BASE} ${SIZES[size].main} min-w-0 rounded-l-lg`}
+        disabled={disabled}
+        onClick={onClick}
+      >
         {label}
       </button>
       <button
@@ -95,7 +112,7 @@ export function SplitButton<V extends string>({ label, onClick, disabled, menuDi
         aria-controls={open ? menuId : undefined}
         disabled={menuDisabled}
         onClick={() => (open ? close(false) : show())}
-        className={`${buttonClass.primary} rounded-l-none border-l border-on-brand/30 px-2`}
+        className={`${BASE} ${SIZES[size].toggle} rounded-r-lg border-l border-on-brand/30`}
       >
         <ChevronDown aria-hidden="true" className="size-4" />
       </button>

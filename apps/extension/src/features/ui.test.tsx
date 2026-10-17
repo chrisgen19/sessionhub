@@ -21,14 +21,18 @@ beforeEach(async () => {
 });
 
 describe("PopupApp", () => {
-  it("shows the local-only state, the save picker with this window ticked, and an empty state", async () => {
+  it("starts on Open with an empty state, and the Save tab has the picker with this window ticked", async () => {
     render(<PopupApp />);
     expect(await screen.findByText("Local only")).toBeTruthy();
-    expect((screen.getByRole("checkbox", { name: /Window 1/ }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByRole("button", { name: "Save 2 tabs" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open full view" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Open" }).getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByText("No saved sessions yet. Save tabs from the Save tab to get started.")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Save" }));
+    const save = screen.getByRole("tabpanel", { name: "Save" });
+    expect((within(save).getByRole("checkbox", { name: /Window 1/ }) as HTMLInputElement).checked).toBe(true);
+    expect(within(save).getByRole("button", { name: "Save 2 tabs" })).toBeTruthy();
+    expect(within(save).getByRole("button", { name: "Open full view" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /save window|save all/i })).toBeNull();
-    expect(await screen.findByText(/no saved sessions yet/i)).toBeTruthy();
   });
 
   it("lists recent sessions and filters them by tab content", async () => {

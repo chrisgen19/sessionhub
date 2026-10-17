@@ -159,7 +159,7 @@ Lucide icons, typically 16–18 px. Prefer recognizable browser favicons for ind
 
 ## 5. Extension popup wireframe
 
-**Baseline:** target width 380 px; height auto within Chrome popup constraints; scroll content after recent sessions. Only the primary action should have brand-filled treatment.
+**Baseline:** target width 380 px; height auto within Chrome popup constraints; scroll content after recent sessions. Only the primary action should have brand-filled treatment. *Superseded 2026-10-17 by section 18k:* Open and Save tabs, at most 600 px, with one scroll area between a fixed header and footer.
 
 ```text
 ┌────────────────────────────────────────────┐
@@ -193,7 +193,7 @@ Lucide icons, typically 16–18 px. Prefer recognizable browser favicons for ind
 
 - Focus search with popup shortcut where Chrome permits; never hijack OS/browser reserved shortcuts.
 - (Superseded 2026-10-17 by section 18i: the popup no longer has **Save window** / **Save all (N)**; it shows the save picker.) A save commits locally at once and says `Saved locally`, or that it will sync; `Synced` only after acknowledgment.
-- Recent session click -> short preview sheet with Restore (new window), View in manager, Copy URL list.
+- Recent session click -> short preview sheet with Restore (new window), View in manager, Copy URL list. *(2026-10-17, section 18k: a tap shows the session's tree with the open picker in the popup; each row also has an Open button for the whole session.)*
 - First run: local capture remains usable without signup. Show small secondary banner to enable optional sync, not a blocking modal.
 - Signed out: `Local only` with optional `Enable sync` action; signed in with sync off must still show `Sync off`.
 - Errors: show retry action; never hide save behind cloud timeout.
@@ -411,7 +411,7 @@ Clarify that revoking a device blocks new cloud sync but does not remotely erase
 - Large jobs display `X of Y restored`; cancellation applies only to not-yet-started actions. Describe unavoidable partial outcomes honestly.
 - Never automatically close existing windows. Destructive "replace session" is out of MVP.
 
-**Update 2026-10-17 (user's decision, after research into Session Buddy v4):** the modal is replaced by an in-place open picker in the manager's session and checkpoint inspectors (section 18j). Popup opening is planned (`feature/popup-open-save-tabs`).
+**Update 2026-10-17 (user's decision, after research into Session Buddy v4):** the modal is replaced by an in-place open picker in the manager's session and checkpoint inspectors (section 18j) and in the popup (section 18k).
 
 - Destinations: **Open in new windows** (one per saved window, default), **Open in one new window**, **Open in this window** (appended after its tabs; "Skip tabs already open here" on by default). Still additive: nothing is closed or replaced, and there is no "replace this window".
 - Selection: tick windows and single tabs in the session's own tree (tri-state window boxes, Shift ranges); tabs that can't reopen are listed and can't be ticked.
@@ -513,7 +513,7 @@ Component states must cover default, hover, keyboard-focus, selected, disabled, 
 
 Built so far: popup (search, Save window, Save all (N), recent sessions, Open manager; the save buttons were replaced by the save picker on 2026-10-17, section 18i) and the manager's Saved Sessions view (list, search, inspector with window/group/tab tree, rename, export, delete confirmation, restore preview and summary). Deviations from the wireframes, all deliberate for this slice:
 
-- Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus. *Planned change (2026-10-17, section 12 update):* the popup gets Open and Save tabs and opens sessions itself; the worker runs restores, so a popup closing mid-restore doesn't stop one, and the result stays in the manager's Last restore.
+- Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus. *Changed 2026-10-17 (section 18k):* the popup has Open and Save tabs and opens sessions itself; the worker runs restores, so a popup closing mid-restore doesn't stop one (tested), and the result stays in the manager's Last restore.
 - Popup has no workspace selector, side-panel button or settings entry yet: those features don't exist, and the UI must not expose actions a surface can't perform.
 - Restore modal offers only "Open in new windows" (stated as text, no radio). *Replaced 2026-10-17 by the open picker (section 18j)*, which offers new windows, one new window and this window.
 - Restore summary (2026-10-17) says where tabs went ("in 2 new windows", "in 1 new window", "in this window"), lists tabs skipped because they were already open in that window, and reads "Nothing to open: every tab you chose is already open in this window." when nothing was left; the Last restore line then says "everything was already open".
@@ -617,7 +617,7 @@ Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `uplo
 
 Replaces the popup's one-click **Save window** and **Save all (N)**, which saved every tab (and, with sync on, uploaded it) without showing anything first. Modelled on Session Buddy v4, whose windows and tabs are selectable "for more precise actions like saving just a portion of a session" (checkboxes, Ctrl/Cmd-click, Shift-click ranges, an action bar), with its ignore rules for browser pages. Code: `apps/extension/src/features/save/` (`save-panel.tsx`, `tab-picker.tsx`, `save-bar.tsx`, `open-tabs-view.tsx`), `hooks/use-open-windows.ts`, rules in `lib/tab-selection.ts`.
 
-- **Where:** the popup's "Save tabs" section (the list scrolls within about 260 px, the current window expanded, others collapsed) and the manager's **Open tabs** view (`#view=open-tabs`, every window expanded, the save bar kept in view above the list), reached from the popup's **Open full view** or the manager nav.
+- **Where:** the popup's Save tab (the current window expanded, others collapsed; since 2026-10-17 the popup scrolls as one and the save bar sticks to the bottom, 18k) and the manager's **Open tabs** view (`#view=open-tabs`, every window expanded, the save bar kept in view above the list), reached from the popup's **Open full view** or the manager nav.
 - **The list:** open normal windows, the current one first with a "This window" badge; tab groups as labelled runs; each tab with a checkbox, favicon, title, address, pin icon and "Won't reopen" for browser pages. Incognito windows and SessionHub's own pages are never listed. It follows the browser live: closed tabs leave the list and the selection; new tabs appear unticked; a ticked web page that turns into a browser page (it navigated to `chrome://...`) is unticked, while a browser page ticked by hand stays ticked (PR #25 review).
 - **Defaults (user's choices):** the current window's web pages are ticked; other windows and every browser page (`chrome://`, new tab, local files) start unticked.
 - **Selecting:** a window's checkbox ticks its web pages (in a window of browser pages only, all of them) and, once checked, unticks the whole window; a partly ticked window shows the mixed state. Single tabs tick or untick; Shift-click sets a range in visible order; **Select all** (web pages of every window) and **Select none**. The chevron hides or shows a window's tabs without changing what is ticked.
@@ -645,6 +645,28 @@ Opening a saved session or a recovery checkpoint happens in its inspector, Sessi
 - **Result:** the restore summary shows inline under the bar, with Retry and Done; "Last restore" and View summary are unchanged. Errors read "Restore stopped: ..." with Dismiss.
 - **Updates:** a new version of the same session (a rename, a sync download) keeps the ticks of tabs still there; ticks are per session.
 - The menu is `position: fixed` and opens above the button near the bottom of the window, so a scroll area can't clip it.
+
+## 18k. Popup: Open and Save tabs (2026-10-17)
+
+The toolbar popup is two tabs (user's choice, mock approved 2026-10-17) and never exceeds Chrome's 600 px popup height.
+
+- **Shell:**
+  - Fixed header (brand, sync chip, theme) and a tablist **Open | Save** (arrow keys move between them).
+  - One scrolling area (`main`, `relative` so `sr-only` text can't stretch the page; PR #35) and a fixed footer with Open manager.
+  - The root is `max-h-[600px]`: with 20 sessions and 14 browser-page tabs, the page has no overflow on either tab (`e2e/popup.spec.ts`).
+  - The popup opens on the tab used last (`sessionhub-popup-tab`), Open the first time.
+- **Open tab:**
+  - A sticky search, then up to 20 recent or matching sessions.
+  - A hint says where Open puts tabs ("Open puts all of a session's tabs in this window").
+  - Each row is a button that shows the session's tree, plus a compact **Open ▾** split button for the whole session. Its accessible name says what and where: `Open "Name" (12 tabs) in this window`.
+  - The remembered destination is shared with the manager; above 50 tabs a row asks first.
+  - After opening into this window the row says "Opened 12 of 12 tabs in this window."; if some failed, "See what didn't open" opens the manager on the session.
+  - Tapping a row shows "← All sessions", the name and the open picker (section 18j) with its bar stuck to the bottom. Only the first window is expanded, and the search carries over for Select matches.
+  - Empty state: "No saved sessions yet. Save tabs from the Save tab to get started."
+- **Save tab:**
+  - The save picker (18i) without its own 260 px scroll box: the popup scrolls as one, and the save bar sticks to the bottom.
+  - It stays mounted while hidden, so ticks and the typed name survive switching tabs.
+- **Closing:** opening new windows focuses them and closes the popup. The worker finishes the restore (`e2e/popup.spec.ts` closes the page right after Open). Opening into this window keeps the popup open.
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

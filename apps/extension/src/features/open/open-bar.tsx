@@ -4,13 +4,20 @@ import { buttonClass } from "../../components/modal";
 import { SplitButton, type SplitButtonOption } from "../../components/split-button";
 import { plural } from "../../lib/format";
 
-const DESTINATIONS: SplitButtonOption<RestoreDestination>[] = [
+export const DESTINATIONS: SplitButtonOption<RestoreDestination>[] = [
   { value: "new-windows", label: "New windows, as saved" },
   { value: "one-window", label: "One new window" },
   { value: "this-window", label: "This window" },
 ];
 
 const linkClass = "text-xs font-semibold text-brand hover:underline disabled:opacity-60 disabled:no-underline";
+
+/** Without counts, for a hint: "in new windows", "in one new window", "in this window". */
+export const DESTINATION_PHRASE: Record<RestoreDestination, string> = {
+  "new-windows": "in new windows",
+  "one-window": "in one new window",
+  "this-window": "in this window",
+};
 
 /** "in 2 new windows", "in 1 new window", "in this window". */
 export const destinationText = (destination: RestoreDestination, plannedWindows: number) =>
