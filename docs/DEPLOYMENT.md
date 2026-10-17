@@ -143,7 +143,35 @@ Set up with the `coolify` CLI (and the Coolify API for the three settings CLI 1.
 | Backups | `sessionhub` added to that instance's daily schedule (`z4fynbkees3nazddvjvacbv0`: 18:00 UTC, S3 on, 7 local / 30 days on S3). The encrypted off-host procedure in `BACKUPS.md` is still to do |
 | Environment | Runtime only, literal: `DATABASE_URL`, `BETTER_AUTH_SECRET` (random, 64 hex), `BETTER_AUTH_URL=https://sessionhub.cgdev.site`, `TRUSTED_PROXY_COUNT=1`, `MAIL_TRANSPORT=resend`, `MAIL_FROM=SessionHub <noreply@support.cgdiomampo.dev>`, `RESEND_API_KEY` (JobTrack's key) |
 
-**Deploys.** Merging to `main` deploys: the `deploy` job POSTs to the repository secret `COOLIFY_DEPLOY_WEBHOOK` (`https://coolify.cgdiomampo.dev/api/v1/deploy?uuid=v5tdb1gh3vky09itrppd4t33&force=false`) with `COOLIFY_TOKEN` (a Coolify API token with deploy permission). Without them the job skips with a notice. A manual deploy: `coolify deploy uuid v5tdb1gh3vky09itrppd4t33`.
+**Deploys.** Merging to `main` deploys: the `deploy` job POSTs to the repository secret `COOLIFY_DEPLOY_WEBHOOK` (`https://coolify.cgdiomampo.dev/api/v1/deploy?uuid=v5tdb1gh3vky09itrppd4t33&force=false`) with `COOLIFY_TOKEN` (a Coolify API token with deploy permission). Without them the job skips with a notice. A manual deploy: `coolify deploy uuid v5tdb1gh3vky09itrppd4t33` (CLI context `prod`).
+
+**The deploy token: check it before saving it.** `COOLIFY_TOKEN` must be an API token of *this* Coolify (`coolify.cgdiomampo.dev`, Root Team) with the `deploy` permission. A token from another instance (the CLI also has `localhost:8000` and `app.coolify.io` contexts), a deleted token, or the wrong text makes every deploy fail with `401 Unauthenticated.`, which is what happened all morning on 2026-10-17.
+
+1. With the token in the clipboard, ask this Coolify whether it knows it:
+
+   ```sh
+   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(pbpaste | tr -d '[:space:]')" https://coolify.cgdiomampo.dev/api/v1/teams/current
+   ```
+
+   - `403`: recognised, deploy-only (what CI should have).
+   - `200`: recognised, with read access too (works, but more than CI needs).
+   - `401`: not a token of this Coolify. Don't save it.
+2. Save it without whitespace: `pbpaste | tr -d '[:space:]' | gh secret set COOLIFY_TOKEN -R chrisgen19/sessionhub`.
+3. Re-run the `deploy` job of the latest `main` run (a re-run reads the secrets as they are now). Check that Coolify lists a finished deployment and that `/api/health` is ok.
+
+Without the clipboard, a deploy-only token can be created on the server itself and piped straight into the secret, never printed. This is how the current token, `github-actions sessionhub deploy`, was made on 2026-10-17. This Coolify version takes the token's team from the web session, so the script sets it:
+
+```sh
+TOKEN=$(ssh vps 'docker exec -i coolify php artisan tinker --no-interaction' <<'PHP' | grep -oE '[0-9]+\|[A-Za-z0-9]{40,}' | tail -1
+session(["currentTeam" => App\Models\Team::find(0)]);
+echo App\Models\User::find(0)->createToken("github-actions sessionhub deploy", ["deploy"])->plainTextToken, PHP_EOL;
+PHP
+)
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" https://coolify.cgdiomampo.dev/api/v1/teams/current   # expect 403
+printf '%s' "$TOKEN" | gh secret set COOLIFY_TOKEN -R chrisgen19/sessionhub; unset TOKEN
+```
+
+Revoke a replaced token in Coolify (Keys & Tokens). The older `github-actions-deploy` token (created 2026-09-02, last used 2026-09-29) predates this app (created in Coolify on 2026-10-17), so it serves another project, if any; revoke it only once no repository uses it.
 
 **Notes for this host:**
 - The PostgreSQL 17 instance is shared with other apps; SessionHub's migrations use nothing newer than 17 (CI tests on 18).

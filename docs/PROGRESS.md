@@ -16,7 +16,7 @@
 | Database | **Schema, 3 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces and session assignments sync too (SYNC_PROTOCOL.md 13j) |
-| Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
+| Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. **Deployed** on Coolify at `https://sessionhub.cgdev.site` (DEPLOYMENT.md section 8); since 2026-10-17 13:28 UTC the CI `deploy` job deploys `main` itself, production at `9f442b3` |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR and every push to `main`, as parallel jobs: `check` (lint, typecheck, unit, DB and encrypted backup tests on PostgreSQL), `e2e-extension`, `e2e-web` (PostgreSQL + Mailpit), `extension-zip`, `docker` (the production image and compose stack); `deploy` on `main` after all of them. A newer push to a PR cancels its run in progress; runs on `main` queue instead (since `feature/ci-speedup`). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
 | Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 merged as `8c4102e` (M6 worktree/branches cleaned up); PR #15 (workspace sync, server side) merged as `3b8a37a`; PR #17 (`bugfix/local-only-conflict-identity`) merged as `acd9342`. PR #18 `feature/m5-workspaces-extension` (workspaces in the extension) merged as `5afefe2`. PR #19 `feature/web-workspaces-filter` (web workspace filter and assignment) merged as `4cd07de`. Latest change: PR #20 `bugfix/web-sync-copy` (stale sync copy on the dashboard), open against `main`. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
@@ -24,7 +24,7 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
-### 2026-10-17 (manager layout: list rail and wide inspector) / Claude Code (Opus 5.5) / `feature/manager-layout` (macOS laptop, worktree `../sessionhub-manager-layout`, branched from `main` at `9f442b3`)
+### 2026-10-17 (manager layout: list rail and wide inspector) / Claude Code (Opus 5.5) / `feature/manager-layout` (macOS laptop, worktree `../sessionhub-manager-layout`, branched from `main` at `9f442b3`, then merged `main` at `edbdbe7` (#41, #42), PR #43)
 
 **Why:** the user reported that on Saved sessions the list was much wider than the inspector, although the inspector holds the tab tree. Asked first; the user chose a narrow list with a fluid detail, and keeping the current look while fixing the structure. Spec change recorded in `docs/UI_UX_DESIGN.md` 18l (supersedes the 320 to 380 px inspector width in 4.3 and section 7 for the manager).
 
@@ -42,9 +42,72 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - `pnpm --filter @sessionhub/extension build` then `test:e2e`: 19 passed.
 - Screenshots (throwaway Playwright script, seeded sessions with groups, pins, a long name and a search) at 1920, 1440, 1180, 820 and 390 px, dark theme, Recovery with a checkpoint, and the popup (unchanged).
 
-**Not done:** `~/SessionHub/extension` wasn't rebuilt from this branch (`build:unpacked` after merge). The empty inspector still shows only "Select a session..."; auto-selecting the newest session at >= 1280 px is a possible follow-up. This entry and PR #42's both sit at the top of the session log, so one of them may need a trivial merge.
+**Not done:** `~/SessionHub/extension` wasn't rebuilt from this branch (`build:unpacked` after merge). The empty inspector still shows only "Select a session..."; auto-selecting the newest session at >= 1280 px is a possible follow-up.
 
 **Next step:** review and merge this PR, then `build:unpacked`. The next ROADMAP item is still restoring window size and position.
+
+### 2026-10-17 (merged #37 to #40, deployed, fixed the CI deploy token) / Claude Code (Opus 5.5) / `feature/deploy-token-record` (macOS laptop)
+
+**Merged** (the user's request, each once its CI was green), in order, with merge commits:
+
+| PR | What | Merge commit |
+|---|---|---|
+| #37 | restore targets | `0856939` |
+| #38 | open picker in the manager | `59775d0` |
+| #39 | popup Open and Save tabs | `9a5f271` |
+| #40 | keep tabs unloaded until clicked | `9f442b3` |
+
+None had review comments. The remote branches were left in place. `pnpm --filter @sessionhub/extension build:unpacked` then rebuilt `~/SessionHub/extension` from `9f442b3`.
+
+**`main`'s CI runs:**
+- The runs for #38 and #39 were **cancelled**, not failed. GitHub keeps only one waiting run per concurrency group, so the run for #39 replaced #38's and #40's replaced #39's.
+- Nothing was skipped: the run for #40 tests `main` with all four.
+- The workflow comment claimed runs on `main` are never cancelled; it now describes this.
+
+**Why every CI deploy got `401 Unauthenticated.`:**
+- Read over SSH: Coolify's token table had **no token created on 2026-10-17**. The values saved to `COOLIFY_TOKEN` at 08:56 and 10:32 UTC were never tokens of this Coolify.
+- Likely sources: another instance (the CLI also has `localhost:8000` and `app.coolify.io` contexts), or an old value. The source isn't knowable from here.
+- The only GitHub-named token there, `github-actions-deploy` (2026-09-02, last used 2026-09-29), predates the app.
+- **CI had never deployed:** the 08:41 "success" was the job's skip path, before the secrets existed. All three earlier Coolify deployments were triggered directly through Coolify's API, not by CI; the last (10:40, `3977e9a`) is the one production ran until now.
+
+**Deployed and fixed (with the user's go-ahead for each):**
+1. **CLI deploy:** `coolify deploy uuid v5tdb1gh3vky09itrppd4t33` (context `prod`), deployment `idpyfc2obv8fl9ykfhbmnc6a`, finished 13:24 UTC on `9f442b3`. `/api/health` returned `200 {"status":"ok"}` and the home page 200.
+2. **New token:** a deploy-only token for Root Team, `github-actions sessionhub deploy`.
+   - Created on the server (`artisan tinker`, with the session's `currentTeam` set) and piped straight into `gh secret set COOLIFY_TOKEN`; never printed.
+   - Before saving: `GET /api/v1/teams/current` with it returned **403**, so it was recognised as deploy-only, not 401.
+   - Secret updated 13:25:57 UTC.
+3. **CI re-run:** re-ran the `deploy` job of run 39035584887. It **passed** and created Coolify deployment `tzy7slnf5wt1qeoyou78k2bb`, finished 13:28 UTC on `9f442b3`: **the first deploy CI has done**. `/api/health` was ok afterwards.
+
+**Changed in this PR:**
+- `docs/DEPLOYMENT.md`: check a token against `/teams/current` before saving it (403 or 200 good, 401 don't save), strip whitespace when saving, re-run `deploy`; the server-side creation script.
+- `.github/workflows/ci.yml`: the concurrency comment (comment only).
+- This entry, and the Deployment row above.
+
+**Still open:**
+- The old `github-actions-deploy` token can be revoked in Coolify once no repository uses it.
+- The CLI is 1.8.0; 1.10.0 is available.
+
+**Next step:** merge this PR. The next ROADMAP item is restoring window size and position (contracts, sync and server fields).
+
+### 2026-10-17 (two timing-sensitive tests) / Claude Code (Opus 5.5) / `bugfix/flaky-tests` (macOS laptop)
+
+**Why:** two tests failed intermittently, in nothing they test.
+
+**Fixed:**
+- **`apps/web/e2e/api-sessions.spec.ts`, "reads are rate-limited per user too":**
+  - *How it failed:* `main`'s `e2e-web` for the #29 merge (`413cded`): all 130 reads were allowed. The limit is 120 at once plus 2 per second (`apps/web/src/server/api/rate-limit.ts:21`), so a burst that took 5 s or more refilled 10.
+  - *Fix:* the test now sends 200; all of them would only pass if the burst took 40 s.
+- **`apps/extension/src/features/workspaces-ui.test.tsx:86`:**
+  - *How it failed:* it read the workspace switcher's counts once, right after the switcher appeared. Under the full parallel `pnpm check` the counts' query hadn't landed yet (`(0)`).
+  - *Fix:* the assertion now waits for them with `waitFor`.
+
+**Validated:**
+- The rate-limit test 3/3 against the standalone build.
+- `workspaces-ui.test.tsx` 10/10 alone.
+- `pnpm check --force` 17/17 three times in a row (extension 290 tests).
+- Web and extension lint and typecheck.
+
+**Next step:** open the PR. (The `COOLIFY_TOKEN` was fixed the same afternoon: see the entry above.)
 
 ### 2026-10-17 (keep opened tabs unloaded until clicked, PR 4 of 4) / Claude Code (Opus 5.5) / `feature/lazy-open` (macOS laptop, branched from `feature/popup-open-save-tabs`, PR #39)
 
