@@ -24,6 +24,22 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (extension 0.1.1 release ZIP) / Claude Code (Opus 5.5) / `feature/extension-0.1.1` (macOS laptop)
+
+**Why:** the theme toggle and light default (PR #29) were already in the extension on `main`, but the local store ZIP (`sessionhub-0.1.0-chrome.zip`, 18:00) predated the follow-up fix `0f4731f`. RELEASE.md step 5 requires a higher version for each store upload.
+
+**Changed:**
+- `apps/extension/package.json`: version `0.1.0` -> `0.1.1`. Nothing else reads it (the release check test uses its own fixture version).
+- The old 0.1.0 ZIPs (`.output` and `.output/reproduce`) were moved out of `.output`, since the check expects exactly one ZIP.
+
+**Validated:**
+- `WXT_API_BASE_URL=https://sessionhub.cgdev.site pnpm --filter @sessionhub/extension zip:release`: passes, `sessionhub-0.1.1-chrome.zip` sha256 `805657dc3f039754b9daa5ce4f1bfc3a16e82f51c591aa5da8b9208a38f9426d`, a second build is identical.
+- ZIP manifest: version 0.1.1, host `https://sessionhub.cgdev.site/*`, permissions alarms, favicon, tabGroups, tabs; `theme-init.js` is the post-fix script (469 B).
+- Extension lint, typecheck, unit tests 245/245.
+- Not run: extension E2E (no code changed since PR #29's run).
+
+**Next step:** commit, push and open the PR. After it merges, upload the ZIP built from the merged commit (or this exact ZIP, recording its SHA-256 per RELEASE.md step 4) to the Chrome Web Store.
+
 ### 2026-10-17 (CI database without a password) / Claude Code (Opus 5.5) / `bugfix/ci-db-password` (macOS laptop)
 
 **Why:**
