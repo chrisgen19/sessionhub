@@ -1,7 +1,7 @@
 # Deployment checklist (Coolify)
 
 > **Status (2026-10-17):** the app side of the proxy and TLS requirements is implemented and tested locally. SessionHub hasn't been deployed yet. Work through this list on the first deployment, run every **Check**, and record the results in `docs/PROGRESS.md`.
-> Not covered yet: off-host backups with a restore drill and log shipping (`ROADMAP.md` M6).
+> Backup policy, commands and an isolated encrypted restore drill are in `BACKUPS.md`; release/rollback in `RELEASE.md`. Actual off-host recovery and log shipping still need a deployment.
 
 ## 1. Topology
 
@@ -35,7 +35,7 @@ The app counts per-IP rate limits by client address: pairing start, device token
 - [ ] `TRUSTED_PROXY_COUNT=2`: the CDN records the client, then Traefik records the CDN edge.
 - [ ] Add the CDN's published address ranges as `forwardedHeaders.trustedIPs` in the server's Traefik configuration in Coolify. Coolify appends custom proxy flags after its defaults.
 - [ ] Firewall ports 80 and 443 so only the CDN's ranges can connect. Otherwise a client that connects to the server directly can write its own address into the counted position.
-- Any extra proxy layer adds one to the count. Too low a count trusts a client-written entry; too high a count puts many users in one bucket.
+- Any extra proxy layer adds one to the count. Too high a count can trust a client-written entry; too low a count puts many users in one bucket.
 
 **Check** (from a machine outside the server, against the deployed origin). Six pairing starts with a different fake `X-Forwarded-For` each: the first five get `201`, the sixth gets `429`. That means the fake values were ignored. This uses up your own pairing budget for a minute.
 
@@ -92,7 +92,7 @@ No secrets in `NEXT_PUBLIC_*` or `WXT_*` variables.
 ## 5. Deploy order and health
 
 - [ ] Run the `migrate` image before `web`. The compose stack does this: `web` waits for `migrate` to finish successfully.
-- [ ] Health check: `GET /api/health`. It returns 200 when the configuration is valid and 503 otherwise. It doesn't check PostgreSQL.
+- [ ] Health check: `GET /api/health`. It returns uncached 200 when configuration is valid and a PostgreSQL probe succeeds; 503 `misconfigured` for configuration errors or `unavailable` for a failed database probe. No database details are returned.
 - [ ] After deploying, the logs show one JSON line per API request (`http_request`), without URLs, emails, tokens or client addresses (`SECURITY_PRIVACY.md` 8a).
 
 ## 6. Extension release ZIP
@@ -108,12 +108,21 @@ The `extension-zip` CI job builds the Chrome Web Store ZIP on every PR and every
 - The ZIP contains source maps, or the HTML loads remote scripts.
 - The service worker doesn't contain the configured origin, or the bundle still contains the development server `localhost:3000`.
 
-**What only warns:** missing icons (the store needs a 128x128 icon), and a build for the placeholder origin.
+**What also fails:** missing or incorrectly sized 16/32/48/128 PNG icons, or an extension CSP other than `script-src 'self'; object-src 'self'`.
+
+**What only warns:** a build for the placeholder origin.
 
 - [ ] Set the repository variable `EXTENSION_API_BASE_URL` (GitHub: Settings, Secrets and variables, Actions, Variables) to the production origin, the same value as `BETTER_AUTH_URL`.
   - Without it, CI builds for `https://sessionhub.invalid` (a reserved name that never resolves) and uploads nothing.
   - With it, every run uploads `sessionhub-extension-<commit>` (`sessionhub-<version>-chrome.zip`, kept 30 days).
-- [ ] Before the first store submission, add icons (at least 128x128) and the store listing items (`SECURITY_PRIVACY.md` section 10).
+- [ ] Before store submission, finalize `STORE_LISTING.md`, the public `/privacy` operator/contact/provider/retention details and reviewer access. Icons and synthetic local-flow screenshots are included; account-flow screenshots need the actual service.
 - [ ] Raise `version` in `apps/extension/package.json` for every store upload: the store refuses a version it already has.
 - Local equivalent: `WXT_API_BASE_URL=https://<domain> pnpm --filter @sessionhub/extension zip:release`. It writes to `apps/extension/.output`; delete older ZIPs there first, because the check expects exactly one.
 
+
+## 7. Backups, rollback and final gates
+
+- [ ] Configure the encrypted off-host backup schedule, retention, restricted credentials, failure alerts and offline age key recovery (`BACKUPS.md`).
+- [ ] Download an off-host object on an independent machine, verify its checksum, run the disposable drill and a full isolated staging app restore. Record measured RPO/RTO, migration status and app checks in PROGRESS.
+- [ ] Record immutable images, app commit, extension version/hash and migration compatibility before promotion (`RELEASE.md`). Never restore a database over the live volume or resume sync after a database rollback without reconciling client cursors/outboxes.
+- [ ] Finalize private privacy/deletion contact, hosting providers, actual retention, public privacy URL and real Resend delivery before opening registration. Review dependency exceptions in `SECURITY_REVIEW_M6.md` against a fresh scan.

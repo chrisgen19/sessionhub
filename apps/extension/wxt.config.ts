@@ -26,13 +26,15 @@ export default defineConfig({
   imports: false,
   manifest: () => ({
     name: "SessionHub",
+    icons: { 16: "icons/16.png", 32: "icons/32.png", 48: "icons/48.png", 128: "icons/128.png" },
+    content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'" },
     description: "Save, search and safely restore your browser windows. Local-first.",
     // Each permission maps to a shipped feature (docs/SECURITY_PRIVACY.md section 6):
     // tabs: read tab titles/URLs to save sessions; tabGroups: save/restore groups;
     // favicon: show cached favicons without fetching third-party icon URLs;
     // alarms: schedule debounced, bounded recovery checkpoints (MV3 workers can't keep timers).
     permissions: ["tabs", "tabGroups", "favicon", "alarms"],
-    // Only the configured SessionHub server, for pairing and (later) sync. No other sites.
+    // Only the configured SessionHub server, for pairing and opt-in sync. No other sites.
     host_permissions: [`${apiOrigin()}/*`],
     // The _favicon endpoint used for icons needs Chrome 104+.
     minimum_chrome_version: "104",

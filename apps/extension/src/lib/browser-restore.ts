@@ -39,14 +39,15 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window,
   if (!first) return [];
 
   let windowId: number;
+  let firstTabId: number;
   const createdIds = new Map<string, number>();
   try {
     const created = await browser.windows.create({ url: first.url, focused: true });
-    const firstTabId = created?.tabs?.[0]?.id;
-    if (created?.id === undefined || firstTabId === undefined) throw new Error("Browser didn't return the new window");
+    const returnedTabId = created?.tabs?.[0]?.id;
+    if (created?.id === undefined || returnedTabId === undefined) throw new Error("Browser didn't return the new window");
     windowId = created.id;
+    firstTabId = returnedTabId;
     createdIds.set(first.sourceTabId, firstTabId);
-    if (first.pinned) await browser.tabs.update(firstTabId, { pinned: true });
   } catch (error) {
     return window.tabs.map((tab) => ({ sourceTabId: tab.sourceTabId, status: "failed", error: message(error) }));
   }
@@ -56,7 +57,16 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window,
     outcomes.push(outcome);
     await record(outcome);
   };
+  // Persist the successful open before cosmetic work: pinning can fail after the tab
+  // exists. Reporting that as a failed open would duplicate it on Retry.
   await settle({ sourceTabId: first.sourceTabId, status: "opened" });
+  if (first.pinned) {
+    try {
+      await browser.tabs.update(firstTabId, { pinned: true });
+    } catch {
+      // Like group metadata, pinning is best effort; the URL is already open.
+    }
+  }
   for (const tab of rest) {
     let outcome: RestoreTabOutcome;
     try {

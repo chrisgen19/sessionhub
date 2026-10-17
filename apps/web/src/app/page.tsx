@@ -26,11 +26,12 @@ const WORKS_TODAY = [
   "Restore into new windows with a preview, a per-tab result summary and retry for tabs that failed",
   "Rename, delete with confirmation, and export or import sessions as JSON",
   "Automatic local recovery checkpoints you can inspect and restore",
+  "Account sign-in, device pairing and opt-in saved-session sync between computers",
 ];
 
 const COMING_NEXT = [
   "Side panel for navigating open tabs",
-  "Account sign-in and opt-in sync between computers",
+  "Workspace organization and richer session filters",
 ];
 
 function StatusList({ title, icon, items }: { title: string; icon: ReactNode; items: string[] }) {
@@ -80,7 +81,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-4 text-[15px] leading-relaxed text-fg-muted">
             SessionHub saves your Chrome windows and tabs on your computer, lets you find them again, and restores them into new
-            windows when you need them. Sync between computers is planned and will always be opt-in.
+            windows when you need them. Optional account sync makes saved sessions available on your other computers.
           </p>
           <p className="mt-6 inline-flex items-start gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-[13px]">
             <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand" />
@@ -112,8 +113,8 @@ export default function HomePage() {
       </main>
 
       <footer className="border-t border-line py-6 text-xs text-fg-muted">
-        SessionHub does not offer end-to-end encryption. Cloud features, when they arrive, will explain exactly what is uploaded
-        before you turn them on.
+        SessionHub does not offer end-to-end encryption. Sync shows what will upload before you turn it on.{" "}
+        <Link href="/privacy" className="underline">Privacy policy</Link>
       </footer>
     </div>
   );

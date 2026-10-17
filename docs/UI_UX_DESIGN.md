@@ -592,3 +592,9 @@ Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `uplo
 - [Chrome extension user interface guidelines](https://developer.chrome.com/docs/extensions/develop/ui)
 
 See also [`USER_FLOWS.md`](USER_FLOWS.md) and [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md).
+
+## M6 privacy and restore clarification (2026-10-17)
+
+The landing page links a public, unsigned `/privacy` page describing actual capture, automatic local checkpoints, upload consent, full URL exposure, cached data, tombstones/versions/receipts, account deletion limitations and Limited Use. It marks deployment-specific operator/contact/provider/retention details as pre-launch requirements. Landing/metadata now describe implemented opt-in sync rather than planned sync.
+
+Restore results track successful URL opens. Pinning and group styling are best effort; a failed pin after opening the first tab does not report the whole window failed or offer those opened URLs for retry. No cosmetic-warning UI is added; the known limitation is documented in RELEASE.md. Synthetic 1280x800 store screenshots show the actual manager, preview and result.

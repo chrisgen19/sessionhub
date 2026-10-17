@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M2 and M3 done; M0 and M1 each have one open item; M4 done (10 of 10); M5 and M6 not started (verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M1–M4 complete; M0 has one open decision item; M5 not started. M6 repository preparation is implemented (6/8 checklist items); public privacy/operator details and live deployment/off-host recovery verification remain pending (2026-10-17). See `PROGRESS.md`.
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -94,14 +94,14 @@ flowchart LR
 
 ## M6 — Production hardening and release
 
-- [ ] Validate required Chrome permissions and MV3 compliance.
-- [ ] Complete privacy policy/user-data disclosures and store copy.
-- [ ] Run abuse/security, race/concurrency and restore failure tests.
+- [x] Validate required Chrome permissions and MV3 compliance. (2026-10-17: source review, explicit self-only CSP, exactly four permissions/one API host, release ZIP checks incl. packaged icons; SECURITY_REVIEW_M6.md.)
+- [ ] Complete privacy policy/user-data disclosures and store copy. (Public `/privacy`, Limited Use statement, accurate disclosures/copy, icons and synthetic screenshots implemented. Production operator/private contact, providers/retention, public URL and final store review await deployment; STORE_LISTING.md.)
+- [x] Run abuse/security, race/concurrency and restore failure tests. (2026-10-17: database 60/60, web browser 47/47, extension 9/9, restore regressions and encrypted backup failure tests; dependency advisory triage in SECURITY_REVIEW_M6.md. Manual stable-Chrome Windows/macOS and live-host checks remain release gates.)
 - [x] Add rate limiting, observability with URL redaction, resource limits. (2026-10-16/17: shared PostgreSQL rate limits incl. reads and Better Auth; structured redacted JSON logs with request ids; bounded body reads, database timeouts, 5,000 sessions per account; SECURITY_PRIVACY.md 8a)
-- [ ] Production Dockerfile and Coolify deployment checklist. (Dockerfile: done, `infra/docker/web.Dockerfile`; checklist: `docs/DEPLOYMENT.md` with proxy/client IP, TLS, environment and deploy order, 2026-10-17; backups section pending.)
+- [x] Production Dockerfile and Coolify deployment checklist. (`DEPLOYMENT.md`, `BACKUPS.md`: encrypted backups, isolated restore drill and off-host procedure, configuration/database readiness and deploy order. Actual host verification remains the next item.)
 - [ ] Verify TLS, trusted proxy, DB migration and off-host backup restore. (App side done 2026-10-17: trusted-proxy client IP, https required in production, HSTS, `Secure` cookies; verifying on a real deployment, `DEPLOYMENT.md` checks, is pending.)
 - [x] CI production extension ZIP and web build. (2026-10-17: `extension-zip` job, built twice and checked by `check-release-zip.ts`; the web production image is built by the `docker` job on every PR. `DEPLOYMENT.md` section 6)
-- [ ] Document release/rollback process and known limitations.
+- [x] Document release/rollback process and known limitations. (`RELEASE.md`: immutable artifacts, migration compatibility, forward fixes, extension rollback with a higher version, sync-safe database recovery; 2026-10-17.)
 
 **Done when:** Release candidate meets `TEST_PLAN.md`, operational deployment has been verified and user-facing security claims are accurate.
 
