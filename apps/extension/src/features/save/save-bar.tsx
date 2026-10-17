@@ -1,5 +1,5 @@
 import { LoaderCircle, Save } from "lucide-react";
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { SESSION_LIMITS } from "@sessionhub/contracts/session";
 import { plural } from "../../lib/format";
 import type { SelectionSummary } from "../../lib/tab-selection";
@@ -20,6 +20,8 @@ interface SaveBarProps {
   onSave: () => void;
   onSelectAll: () => void;
   onSelectNone: () => void;
+  /** More selection links after Select all / Select none (the Open tabs view's matches and duplicates). */
+  selectExtras?: ReactNode;
 }
 
 const DESTINATION = {
@@ -27,10 +29,10 @@ const DESTINATION = {
   account: "Saves to your account: it uploads at the next sync.",
 } as const;
 
-const linkClass = "text-xs font-semibold text-brand hover:underline";
+export const linkClass = "text-xs font-semibold text-brand hover:underline";
 
 /** What will be saved, its name and destination, all stated before anything is saved. */
-export function SaveBar({ summary, name, onName, destination, result, onSave, onSelectAll, onSelectNone }: SaveBarProps) {
+export function SaveBar({ summary, name, onName, destination, result, onSave, onSelectAll, onSelectNone, selectExtras }: SaveBarProps) {
   const nameId = useId();
   const saving = result.status === "saving";
   return (
@@ -42,13 +44,14 @@ export function SaveBar({ summary, name, onName, destination, result, onSave, on
             <span className="font-normal text-fg-muted"> · {plural(summary.browserPages, "browser page")} kept for reference only</span>
           )}
         </p>
-        <span className="flex gap-3">
+        <span className="flex flex-wrap gap-x-3 gap-y-1">
           <button type="button" className={linkClass} onClick={onSelectAll}>
             Select all
           </button>
           <button type="button" className={linkClass} onClick={onSelectNone}>
             Select none
           </button>
+          {selectExtras}
         </span>
       </div>
       <label htmlFor={nameId} className="sr-only">

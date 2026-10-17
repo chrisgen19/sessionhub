@@ -41,12 +41,18 @@ vi.mock("../lib/message-client", async () => {
   };
 });
 
+// Going to and closing tabs act on Chrome directly; here they only record what they were asked.
+const actions = vi.hoisted(() => ({ goToTab: vi.fn(async () => undefined), closeTabs: vi.fn(async (ids: Iterable<number>) => [...ids].length) }));
+vi.mock("../lib/open-tab-actions", () => actions);
+
 const checkbox = (name: RegExp | string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
 const savedTitles = async () => (await listSessions(getDb()))[0]?.windows.map((window) => window.tabs.map((tab) => tab.title));
 
 beforeEach(async () => {
   await Promise.all(getDb().tables.map((table) => table.clear()));
   window.history.replaceState(null, "", "/manager.html#view=open-tabs");
+  actions.goToTab.mockClear();
+  actions.closeTabs.mockClear();
 });
 
 describe("save picker", () => {
@@ -129,5 +135,57 @@ describe("save picker", () => {
     expect(screen.getByText("2 tabs in 1 window selected")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Show the tabs of Window 1" }));
     expect(checkbox(/React docs/).checked).toBe(true);
+  });
+});
+
+describe("open tabs view", () => {
+  it("searches by title or address, keeping window numbers, and selects the matches", async () => {
+    render(<ManagerApp />);
+    const search = screen.getByRole("searchbox", { name: "Search open tabs" });
+    await userEvent.type(search, "example");
+    expect(screen.queryByRole("region", { name: "Window 1" })).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Window 2" })).getByText(/1 matching/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Select matches (1)" }));
+    expect(screen.getByText("1 tab in 1 window selected")).toBeTruthy();
+    expect(checkbox(/Example/).checked).toBe(true);
+
+    await userEvent.clear(search);
+    await userEvent.type(search, "nothing like this");
+    expect(screen.getByText('No open tabs match "nothing like this".')).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Select matches/ })).toBeNull();
+  });
+
+  it("goes to a tab from its title and closes one from its ✕, without ticking either", async () => {
+    render(<ManagerApp />);
+    await userEvent.click(screen.getByRole("button", { name: "Example" }));
+    expect(actions.goToTab).toHaveBeenCalledWith(201, 2);
+    expect(checkbox(/Example/).checked).toBe(false);
+
+    await userEvent.click(screen.getByRole("button", { name: "Close tab: Example" }));
+    expect(actions.closeTabs).toHaveBeenCalledWith([201]);
+    expect(screen.getByText("2 tabs in 1 window selected")).toBeTruthy();
+  });
+
+  it("closes the ticked tabs only once confirmed, and Save and close saves them first", async () => {
+    render(<ManagerApp />);
+    await userEvent.click(screen.getByRole("button", { name: "Close 2 tabs…" }));
+    const confirm = screen.getByRole("alertdialog", { name: "Confirm closing" });
+    expect(within(confirm).getByText("Close 2 tabs?")).toBeTruthy();
+    await userEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(actions.closeTabs).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Close 2 tabs…" }));
+    await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Close 2 tabs" }));
+    expect(actions.closeTabs).toHaveBeenCalledWith([101, 102]);
+    expect(await screen.findByText("Closed 2 tabs.")).toBeTruthy();
+    expect(await listSessions(getDb())).toEqual([]);
+
+    actions.closeTabs.mockClear();
+    await screen.findByText("Saves in this browser only.");
+    await userEvent.click(screen.getByRole("button", { name: "Close 2 tabs…" }));
+    await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save and close" }));
+    expect(await screen.findByText("Saved locally: 2 tabs in 1 window.")).toBeTruthy();
+    expect(await savedTitles()).toEqual([["Fix login PR", "React docs"]]);
+    expect(actions.closeTabs).toHaveBeenCalledWith([101, 102]);
   });
 });

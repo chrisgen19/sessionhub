@@ -89,7 +89,7 @@ export function PopupApp() {
               Open full view
             </button>
           </div>
-          <SavePanel variant="popup" />
+          <SavePanel />
         </div>
       </main>
 
