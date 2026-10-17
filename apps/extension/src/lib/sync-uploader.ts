@@ -125,7 +125,11 @@ const run = async (deps: SyncDeps, force: boolean): Promise<PushSummary> => {
     if (tally.retryable > 0) return failed(deps, scope, new AccountApiError("INTERNAL_ERROR", "Some changes couldn't be saved yet. They will be sent again."));
   }
   await deps.db.syncState.update(scope, { failures: 0, nextAttemptAt: null, lastError: null, lastSyncAt: deps.now().toISOString() });
-  const remaining = (await listOutbox(deps.db, scope)).filter((operation) => operation.status === "queued" || operation.status === "sending").length;
+  const outbox = await listOutbox(deps.db, scope);
+  // The round cap ended this run with sendable work left: the retry alarm continues it instead of
+  // waiting for the next edit or worker start. Work held back behind a conflict doesn't count.
+  if (selectPushBatch(outbox).operations.length > 0) await deps.scheduleRetry(deps.now()).catch(() => undefined);
+  const remaining = outbox.filter((operation) => operation.status === "queued" || operation.status === "sending").length;
   return { status: "done", ...total, remaining };
 };
 

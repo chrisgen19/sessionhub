@@ -184,6 +184,31 @@ describe("sync uploader", () => {
     expect((await db.sessions.get(huge.id))?.sync?.state).toBe("error");
   });
 
+  it("arms the retry alarm when the round cap stops a run with sendable work left", async () => {
+    const { db, deps, calls, scheduleRetry } = await setup(acceptAll);
+    for (let prefix = 100; prefix < 351; prefix += 1) await queuedEdit(db, 1, "Edited", prefix);
+
+    expect(await pushNow(deps)).toEqual({ status: "done", accepted: 250, conflicts: 0, rejected: 0, remaining: 1 });
+    expect(calls).toHaveLength(10);
+    expect(scheduleRetry).toHaveBeenCalledWith(T0);
+    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, nextAttemptAt: null });
+
+    expect(await pushNow(deps)).toEqual({ status: "done", accepted: 1, conflicts: 0, rejected: 0, remaining: 0 });
+    expect(scheduleRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't arm the alarm for work held back behind a conflict", async () => {
+    const { db, deps, calls, scheduleRetry } = await setup(acceptAll);
+    const held = await queuedEdit(db, 3, "A first", 2);
+    for (const operation of await listOutbox(db, SCOPE)) await db.outbox.put({ ...operation, status: "conflict" });
+    await updateSession(db, held.id, held.version, (current) => renameSession(current, "A second", T0), { now: T0, createId: ids });
+    for (let prefix = 100; prefix < 350; prefix += 1) await queuedEdit(db, 1, "Edited", prefix);
+
+    expect(await pushNow(deps)).toEqual({ status: "done", accepted: 250, conflicts: 0, rejected: 0, remaining: 1 });
+    expect(calls).toHaveLength(10);
+    expect(scheduleRetry).not.toHaveBeenCalled();
+  });
+
   it("runs one upload at a time: a second call shares the run in progress", async () => {
     let release: () => void = () => undefined;
     const { db, deps, fetch } = await setup(async (body, database) => {
