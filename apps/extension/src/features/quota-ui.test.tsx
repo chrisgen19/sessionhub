@@ -48,6 +48,8 @@ describe("storage full in the UI", () => {
   it("popup save explains that storage is full and what to do", async () => {
     vi.spyOn(getDb().sessions, "put").mockImplementation(quota);
     render(<PopupApp />);
+    // Save is enabled once the picker can say where the session goes.
+    await screen.findByText("Saves in this browser only.");
     await userEvent.click(screen.getByRole("button", { name: "Save 2 tabs" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/Not saved: Storage for SessionHub is full, so this wasn't saved\. Delete or export sessions/);

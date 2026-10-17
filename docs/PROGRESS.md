@@ -63,6 +63,11 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Not changed:** recovery checkpoints (automatic, local-only, never uploaded); `window` and `all-windows` scopes stay for tests and fixtures.
 
+**PR #25 review (Codex, 2 P2 findings), both valid and fixed:**
+- *A ticked web page that navigates to a browser page stayed ticked* (`reconcile` only checked the id was open), so a `chrome://` page could be saved and uploaded without opt-in. `reconcile` now takes the previous view and unticks web pages that became browser pages; browser pages ticked by hand stay. Unit test, plus the real-Chromium picker test (navigate to `chrome://settings`: unticked; re-tick by hand; close: gone; 3/3).
+- *Save was enabled before the destination was stated* (while the sync state loaded). The save bar now says "Checking where this saves…" and Save waits for it. UI test added; the storage-full popup test waits for the destination before clicking.
+- `pnpm check --force` 17/17 (extension 242 tests).
+
 **Next step:** PR #25 is open; wait for its Codex review, then merge. PRs #23 (the CI upload fix) and #24 (the deployment results) were merged (`0788ccb`, `94707d4`), and `main` was merged into this branch.
 
 ### 2026-10-17 (first deployment verified: sessionhub.cgdev.site) / Claude Code (Opus 5.5) / `feature/first-deploy-results` (macOS laptop)

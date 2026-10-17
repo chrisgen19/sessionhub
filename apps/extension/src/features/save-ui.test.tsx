@@ -7,6 +7,7 @@ import { listOutbox } from "../lib/outbox-repository";
 import { listSessions } from "../lib/session-repository";
 import { connectAs } from "../lib/test-fixtures";
 import { ManagerApp } from "./manager/manager-app";
+import { SaveBar } from "./save/save-bar";
 
 const ALICE = "AliceAccount00000000000000000000";
 const T0 = "2026-10-17T08:00:00.000Z";
@@ -110,6 +111,15 @@ describe("save picker", () => {
     expect(operation?.entityType === "savedSession" && operation.action === "upsert" && operation.payload.windows.flatMap((window) => window.tabs.map((tab) => tab.url))).toEqual([
       "https://github.com/acme/pull/42",
     ]);
+  });
+
+  it("doesn't let you save until it can say where the session goes", () => {
+    const props = { summary: { tabs: 2, windows: 1, browserPages: 0 }, name: "Window", onName: () => undefined, result: { status: "idle" } as const, onSave: () => undefined, onSelectAll: () => undefined, onSelectNone: () => undefined };
+    const { rerender } = render(<SaveBar {...props} destination={null} />);
+    expect((screen.getByRole("button", { name: "Save 2 tabs" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Checking where this saves…")).toBeTruthy();
+    rerender(<SaveBar {...props} destination="account" />);
+    expect((screen.getByRole("button", { name: "Save 2 tabs" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("hides and shows a window's tabs without changing what is ticked", async () => {

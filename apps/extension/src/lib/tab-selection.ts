@@ -88,10 +88,22 @@ export const toggleRange = (selection: TabSelection, visibleOrder: number[], anc
 
 export const selectAll = (windows: OpenWindow[]): TabSelection => new Set(windows.flatMap((window) => headerTargets(window).map((tab) => tab.id)));
 
-/** After the open tabs changed: closed tabs drop out of the selection; new ones were never in it. */
-export const reconcile = (selection: TabSelection, windows: OpenWindow[]): TabSelection => {
-  const open = new Set(windows.flatMap((window) => window.tabs.map((tab) => tab.id)));
-  const kept = [...selection].filter((id) => open.has(id));
+const eligibilityById = (windows: OpenWindow[]) => new Map(windows.flatMap((window) => window.tabs.map((tab) => [tab.id, tab.eligibility] as const)));
+
+/**
+ * After the open tabs changed: closed tabs drop out of the selection (new ones were never in it),
+ * and so does a ticked web page that has since become a browser page (it navigated to
+ * `chrome://...`, say): browser pages stay opt-in. One the user ticked as a browser page stays.
+ * `previous` is the view the selection was made against.
+ */
+export const reconcile = (selection: TabSelection, windows: OpenWindow[], previous: OpenWindow[] = []): TabSelection => {
+  const now = eligibilityById(windows);
+  const before = eligibilityById(previous);
+  const kept = [...selection].filter((id) => {
+    const eligibility = now.get(id);
+    if (eligibility === undefined) return false;
+    return !(before.get(id) === "restorable" && eligibility !== "restorable");
+  });
   return kept.length === selection.size ? selection : new Set(kept);
 };
 

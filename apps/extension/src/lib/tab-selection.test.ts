@@ -76,6 +76,14 @@ describe("save picker selection", () => {
     expect(reconcile(new Set([11]), later)).toBeInstanceOf(Set);
   });
 
+  it("unticks a ticked web page that turns into a browser page, but keeps a browser page the user ticked", () => {
+    // 12 navigates to chrome://settings; 14 was a browser page the user ticked by hand.
+    const later: OpenWindow[] = [{ ...first, tabs: [tab(11), tab(12, "browser-internal"), tab(13), tab(14, "browser-internal")] }, second];
+    expect(ids(reconcile(new Set([11, 12, 14]), later, windows))).toEqual([11, 14]);
+    // Without the previous view it can only drop closed tabs.
+    expect(ids(reconcile(new Set([11, 12, 14]), later))).toEqual([11, 12, 14]);
+  });
+
   it("summarizes what will be saved", () => {
     expect(summarize(new Set([11, 14, 21]), windows)).toEqual({ tabs: 3, windows: 2, browserPages: 1 });
     expect(summarize(new Set(), windows)).toEqual({ tabs: 0, windows: 0, browserPages: 0 });

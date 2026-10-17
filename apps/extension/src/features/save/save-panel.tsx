@@ -39,7 +39,7 @@ export function SavePanel({ variant }: { variant: "popup" | "page" }) {
   // The open tabs changed: the first load ticks the current window, later loads drop closed tabs.
   if (open.status === "ready" && open.windows !== seen) {
     setSeen(open.windows);
-    setSelection(seen === null ? initialSelection(open.windows, open.currentWindowId) : reconcile(selection, open.windows));
+    setSelection(seen === null ? initialSelection(open.windows, open.currentWindowId) : reconcile(selection, open.windows, seen));
   }
 
   if (open.status === "loading") {

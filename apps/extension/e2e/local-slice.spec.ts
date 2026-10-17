@@ -83,7 +83,7 @@ test("capture -> IndexedDB -> list -> restore into a new window, leaving existin
   }
 });
 
-test("the save picker saves exactly the tabs ticked, and drops a ticked tab that closes", async ({ context, worker, extensionId }) => {
+test("the save picker saves exactly the tabs ticked; a tab that becomes a browser page or closes leaves the selection", async ({ context, worker, extensionId }) => {
   const other = await worker.evaluate(async (site) => {
     const window = await chrome.windows.create({ url: [`${site}/three`, `${site}/four`, `${site}/five`], focused: false });
     await chrome.tabs.create({ windowId: window!.id, url: "chrome://version", active: false });
@@ -103,12 +103,19 @@ test("the save picker saves exactly the tabs ticked, and drops a ticked tab that
   await expect(region.getByRole("checkbox", { name: /chrome:\/\/version/ })).not.toBeChecked();
   await region.getByRole("checkbox", { name: /sessionhub\.test\/four/ }).uncheck();
 
-  // A ticked tab closed elsewhere leaves the list and the selection at once.
-  await worker.evaluate(async ({ site, windowId }) => {
+  // A ticked tab that turns into a browser page is unticked: browser pages stay opt-in.
+  const fiveId = await worker.evaluate(async ({ site, windowId }) => {
     const [five] = await chrome.tabs.query({ windowId, url: `${site}/five` });
-    await chrome.tabs.remove(five!.id!);
+    await chrome.tabs.update(five!.id!, { url: "chrome://settings" });
+    return five!.id!;
   }, { site: SITE, windowId: other });
-  await expect(region.getByRole("checkbox", { name: /sessionhub\.test\/five/ })).toHaveCount(0);
+  await expect(region.getByRole("checkbox", { name: /chrome:\/\/settings/ })).not.toBeChecked();
+  await expect(manager.getByText("1 tab in 1 window selected")).toBeVisible();
+  // Ticked again by hand, then closed elsewhere: it leaves the list and the selection at once.
+  await region.getByRole("checkbox", { name: /chrome:\/\/settings/ }).check();
+  await expect(manager.getByText(/2 tabs in 1 window selected/)).toBeVisible();
+  await worker.evaluate((id) => chrome.tabs.remove(id), fiveId);
+  await expect(region.getByRole("checkbox", { name: /chrome:\/\/settings/ })).toHaveCount(0);
   await expect(manager.getByText("1 tab in 1 window selected")).toBeVisible();
 
   await manager.getByRole("textbox", { name: "Session name" }).fill("Only page three");

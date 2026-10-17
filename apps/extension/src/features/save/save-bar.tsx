@@ -61,10 +61,11 @@ export function SaveBar({ summary, name, onName, destination, result, onSave, on
         onChange={(event) => onName(event.target.value)}
         className="h-9 w-full rounded-lg border border-line bg-canvas px-3 text-[13px]"
       />
-      {destination && <p className="text-[11px] text-fg-muted">{DESTINATION[destination]}</p>}
+      {/* Where it goes is always stated before saving is possible. */}
+      <p className="text-[11px] text-fg-muted">{destination ? DESTINATION[destination] : "Checking where this saves…"}</p>
       <button
         type="button"
-        disabled={saving || summary.tabs === 0 || name.trim().length === 0}
+        disabled={saving || destination === null || summary.tabs === 0 || name.trim().length === 0}
         onClick={onSave}
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-on-brand hover:bg-brand-hover disabled:opacity-60"
       >
