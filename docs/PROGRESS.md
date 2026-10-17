@@ -17,7 +17,7 @@
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces and session assignments sync too (SYNC_PROTOCOL.md 13j) |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR and every push to `main`, as parallel jobs: `check` (lint, typecheck, unit, DB and encrypted backup tests on PostgreSQL), `e2e-extension`, `e2e-web` (PostgreSQL + Mailpit), `extension-zip`, `docker` (the production image and compose stack); `deploy` on `main` after all of them. A newer push to a PR cancels its run in progress; runs on `main` queue instead (since `feature/ci-speedup`). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
 | Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 merged as `8c4102e` (M6 worktree/branches cleaned up); PR #15 (workspace sync, server side) merged as `3b8a37a`; PR #17 (`bugfix/local-only-conflict-identity`) merged as `acd9342`. PR #18 `feature/m5-workspaces-extension` (workspaces in the extension) merged as `5afefe2`. PR #19 `feature/web-workspaces-filter` (web workspace filter and assignment) merged as `4cd07de`. Latest change: PR #20 `bugfix/web-sync-copy` (stale sync copy on the dashboard), open against `main`. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
@@ -71,6 +71,33 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - Both apps' theme E2E tests pass with the new script.
 
 **Next step:** PR #29 (`feature/theme-toggle`) is open. Still pending: a valid `COOLIFY_TOKEN`; the deploy job got a 401.
+
+### 2026-10-17 (CI speed-up: E2E suites as parallel jobs) / Claude Code (Opus 5.5) / `feature/ci-speedup` (worktree `sessionhub-ci-speedup`, macOS laptop)
+
+**Why:** every CI run took about 8 minutes. The `check` job ran everything in a row, and the two Playwright suites alone took about 3.7 minutes of it (extension 1.0m, then web 2.7m: `turbo.json` makes web E2E wait for extension E2E, both with 1 worker). `docker` and `extension-zip` finished in under 3 minutes and then waited. Also, merging two PRs in a row cancelled the first `main` run (the #17 and #23 runs).
+
+**Changed (`.github/workflows/ci.yml`):**
+- `check` keeps lint, typecheck, unit, DB and the encrypted backup test. It no longer builds or runs E2E, and no longer starts Mailpit (no DB or unit test uses it; the mail unit tests stub `fetch`).
+- New `e2e-extension` job: `pnpm build --filter=@sessionhub/extension`, Chromium, `pnpm --filter @sessionhub/extension test:e2e`.
+- New `e2e-web` job with PostgreSQL + Mailpit: `pnpm build --filter=@sessionhub/web`, Chromium, `pnpm --filter @sessionhub/web test:e2e`. Its global setup already migrates the test database and builds its own extension copy, so it needs nothing from the other jobs. Calling Playwright through `pnpm --filter` skips the turbo ordering; local `pnpm test:e2e` still runs the suites one after the other.
+- On failure, each E2E job uploads its own `test-results` (the web suite's were never uploaded before).
+- `deploy` now also needs both E2E jobs.
+- `cancel-in-progress` only for `pull_request`, so `main` runs (and their deploys) queue instead of being cancelled.
+- `docs/DEPLOYMENT.md`: the auto-deploy row lists the new jobs.
+
+**Not done (item 2 of the plan):** merging lint, typecheck and test into one `pnpm check` call. `pnpm check` runs `prisma generate` (database typecheck) and `wxt prepare` (extension typecheck) at the same time as the tests that read their output, the generated-client race noted in the PR #17 log (`--concurrency=1`). Once E2E moved out, `check` (about 3.3 minutes) is no longer the slowest job, so it wouldn't make runs faster either.
+
+**Validated (macOS, worktree, dev container's `sessionhub_test`):**
+- The workflow parses (Ruby YAML): 6 jobs, `deploy` needs the other 5.
+- `pnpm build --filter=@sessionhub/extension`: builds only the extension (same turbo hash as CI, `e3874ee0bc043a70`).
+- `pnpm build --filter=@sessionhub/web`: builds only the web app.
+- `pnpm --filter @sessionhub/extension test:e2e`: 10/10.
+- `pnpm --filter @sessionhub/web test:e2e`: 55/55, run on its own (no extension E2E first).
+- Not checked yet: the new jobs on GitHub. Expected run time is about 4.5 to 5 minutes (`e2e-web`), at the cost of more billed minutes, since each E2E job repeats install and build.
+
+**Outstanding (unchanged):** the `deploy` job still gets **HTTP 401** from Coolify (runs 39018919820, 39021961640, 39022472104), so production is still `83cdd15`; #23 to #27 are not deployed. The fix is the new `COOLIFY_TOKEN` from the favicon entry below.
+
+**Next step:** push `feature/ci-speedup`, open its PR and compare the run time with the last `main` run (39022472104: 7m54s).
 
 ### 2026-10-17 (web favicon; first CI deploy attempt) / Claude Code (Opus 5.5) / `bugfix/web-favicon` (macOS laptop)
 

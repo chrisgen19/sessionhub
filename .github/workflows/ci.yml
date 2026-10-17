@@ -7,10 +7,72 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push to a PR replaces its run. Runs on main wait their turn instead, so merging two
+  # PRs in a row never cancels a run (and its deploy) halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: sessionhub
+          POSTGRES_PASSWORD: sessionhub_ci
+          POSTGRES_DB: sessionhub_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sessionhub -d sessionhub_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://sessionhub:sessionhub_ci@localhost:5432/sessionhub_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:db
+      - name: Test encrypted backup and isolated restore (including failure paths)
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y age
+          bash infra/scripts/test-backup.sh "$POSTGRES_CONTAINER" sessionhub_test
+
+  # The two Playwright suites run as separate jobs, side by side. Locally `pnpm test:e2e` still
+  # runs them one after the other (turbo.json), so they don't compete for one machine.
+  e2e-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build --filter=@sessionhub/extension
+      - name: Install Chromium for extension E2E
+        run: pnpm --filter @sessionhub/extension exec playwright install --with-deps chromium
+      - run: pnpm --filter @sessionhub/extension test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results-extension
+          path: apps/extension/test-results
+          retention-days: 7
+
+  e2e-web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -41,26 +103,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm test:db
-      - name: Test encrypted backup and isolated restore (including failure paths)
-        env:
-          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y age
-          bash infra/scripts/test-backup.sh "$POSTGRES_CONTAINER" sessionhub_test
-      - run: pnpm build
-      - name: Install Chromium for extension E2E
-        run: pnpm --filter @sessionhub/extension exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      # Playwright's global setup migrates the test database and builds its own copy of the extension.
+      - run: pnpm build --filter=@sessionhub/web
+      - name: Install Chromium for web E2E
+        run: pnpm --filter @sessionhub/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @sessionhub/web test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-results
-          path: apps/extension/test-results
+          name: playwright-results-web
+          path: apps/web/test-results
           retention-days: 7
 
   extension-zip:
@@ -112,7 +164,7 @@ jobs:
     # Ships main to Coolify only after every check has passed (docs/DEPLOYMENT.md section 8).
     # Coolify's own auto-deploy is off, so merging is what deploys. Until the repository
     # secrets exist, this skips with a notice instead of failing.
-    needs: [check, extension-zip, docker]
+    needs: [check, e2e-extension, e2e-web, extension-zip, docker]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
