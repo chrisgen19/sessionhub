@@ -10,7 +10,7 @@ import { idFactory, sampleSession } from "../lib/test-fixtures";
 import { ManagerApp } from "./manager/manager-app";
 
 /** What the fake browser was asked to open, and into which window. */
-const calls: { urls: string[]; into: number | undefined }[] = [];
+const calls: { urls: string[]; into: number | undefined; lazy?: boolean }[] = [];
 let inspectWindow: NonNullable<HandlerDeps["inspectWindow"]> = async () => ({ openUrls: [] });
 
 // Route commands straight to the real handler with a fake browser adapter.
@@ -23,7 +23,7 @@ vi.mock("../lib/message-client", async () => {
         db: db(),
         readWindows: async () => [],
         restoreWindow: async (window, _record, options) => {
-          calls.push({ urls: window.tabs.map((tab) => tab.url), into: options?.into });
+          calls.push({ urls: window.tabs.map((tab) => tab.url), into: options?.into, ...(options?.lazy ? { lazy: true } : {}) });
           return window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "opened" }));
         },
         inspectWindow: (windowId) => inspectWindow(windowId),
@@ -80,6 +80,18 @@ describe("open picker", () => {
     await userEvent.click(within(inspector).getByRole("button", { name: "Open 2 tabs in 1 new window" }));
     expect(await within(inspector).findByText("Opened 2 of 2 tabs in 1 new window.")).toBeTruthy();
     expect(calls).toEqual([{ urls: ["https://react.dev/learn", "https://example.com/"], into: undefined }]);
+  });
+
+  it("keeps tabs unloaded until clicked when asked, and remembers that", async () => {
+    const inspector = await showSession();
+    const lazy = within(inspector).getByRole("checkbox", { name: "Keep tabs unloaded until clicked" }) as HTMLInputElement;
+    expect(lazy.checked).toBe(false);
+    await userEvent.click(lazy);
+    expect(localStorage.getItem("sessionhub-open-lazy")).toBe("true");
+
+    await userEvent.click(within(inspector).getByRole("button", { name: "Open 3 tabs in 2 new windows" }));
+    expect(await within(inspector).findByText("Opened 3 of 3 tabs in 2 new windows.")).toBeTruthy();
+    expect(calls.map((call) => call.lazy)).toEqual([true, true]);
   });
 
   it("shows why nothing opened, and lets the message go", async () => {

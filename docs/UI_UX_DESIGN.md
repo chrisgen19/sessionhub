@@ -637,6 +637,9 @@ Opening a saved session or a recovery checkpoint happens in its inspector, Sessi
   - The choice is remembered per browser in `localStorage` (`sessionhub-open-target`) and shared with the popup. Choosing doesn't open; the main button does.
   - "Skip tabs already open here", only for this window, on by default and remembered (`sessionhub-open-skip`).
 - **Large opens:** above 50 planned tabs, Open turns into an inline "Open 120 tabs? Cancel / Open 120 tabs".
+- **Keep tabs unloaded until clicked** (checkbox, off by default, remembered in `sessionhub-open-lazy`, used by the popup's row buttons too):
+  - Background tabs unload once their page starts loading, and load again when clicked; the selected tab stays loaded.
+  - The tooltip says each page starts loading first. Chrome can't open a tab unloaded (spike in the SYSTEM_DESIGN decisions log).
 - **Tree** (`region "Window N"`, `list "Group X"`):
   - Every tab that can reopen starts ticked, re-checked from its URL. Window boxes are tri-state; Shift-click ticks a range in visible order.
   - Browser pages, files and other links that can't reopen show "Won't open", and their box is disabled.
@@ -657,7 +660,7 @@ The toolbar popup is two tabs (user's choice, mock approved 2026-10-17) and neve
   - The popup opens on the tab used last (`sessionhub-popup-tab`), Open the first time.
 - **Open tab:**
   - A sticky search, then up to 20 recent or matching sessions.
-  - A hint says where Open puts tabs ("Open puts all of a session's tabs in this window").
+  - A hint says where Open puts tabs ("Open puts all of a session's tabs in this window", plus ", unloaded until clicked" when that's on).
   - Each row is a button that shows the session's tree, plus a compact **Open ▾** split button for the whole session. Its accessible name says what and where: `Open "Name" (12 tabs) in this window`.
   - The remembered destination is shared with the manager; above 50 tabs a row asks first.
   - After opening into this window the row says "Opened 12 of 12 tabs in this window."; if some failed, "See what didn't open" opens the manager on the session.

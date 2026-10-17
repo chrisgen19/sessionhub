@@ -24,6 +24,38 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (keep opened tabs unloaded until clicked, PR 4 of 4) / Claude Code (Opus 5.5) / `feature/lazy-open` (macOS laptop, branched from `feature/popup-open-save-tabs`, PR #39)
+
+**Why:** the user chose lazy loading for big opens, with a spike first and best effort accepted.
+
+**Spike** (throwaway Playwright scripts in the session scratchpad, Chromium 156; a local HTTP server with slow pages counted requests):
+
+| Approach | Result |
+|---|---|
+| `tabs.create({ discarded: true })` | Not supported ("Unexpected property: 'discarded'") |
+| Discard right after `tabs.create` | Tab ends up blank (`url` and `title` empty): ruled out |
+| Discard once the URL commits | Keeps URL, title, pin and group; reloads when selected (focused window); a save records the real URL. Page HTML and early requests are still fetched |
+| Discard after load | Same as above, later |
+
+- Discarding gives the tab a **new id**, so it must happen after grouping.
+- For 30 tabs on a local server, everything had committed by the time the last tab was created (+40 ms).
+
+**Implemented:**
+- `lib/browser-restore.ts`: with `lazy`, after `applyGroups`, wait (one listener, in parallel, `UNLOAD_WAIT_MS` = 8 s) for the background tabs to commit, then discard each committed, non-active tab. Best effort: refused or late tabs stay loaded.
+- `lib/messages.ts`: optional `lazy` on `restore.start` and `recovery.restore`. `lib/db.ts` and `restore-job-repository.ts`: `lazy` on the job. `command-handlers.ts`: `RestoreWindowOptions { into, lazy }`; retries reuse the job's `lazy`.
+- UI:
+  - "Keep tabs unloaded until clicked" in the open bar (off by default, remembered in `sessionhub-open-lazy`, with a tooltip saying each page starts loading first).
+  - Used by the popup's row buttons; the popup hint adds ", unloaded until clicked".
+- Docs: SYSTEM_DESIGN decision with the spike findings; UI_UX_DESIGN 18j and 18k; DATA_MODEL; TEST_PLAN; ROADMAP (done).
+
+**Validated:**
+- `pnpm check`: extension 290 tests (7 new: adapter 3, handler 2, preferences 1, picker 1). Five PR 1 handler expectations updated: the options now carry `lazy: false`.
+- `pnpm --filter @sessionhub/extension build`, then `test:e2e`: 19/19, including the new `e2e/lazy-open.spec.ts` (repeated 3 times, 3/3): background tabs discarded with their URLs, the selected tab loaded, a selected tab reloads, and a save of an unloaded tab records its real URL.
+- `test:perf` passes. The popup at 380x600 with the new option row still has no page overflow on either tab.
+- Not run: web E2E (no web change).
+
+**Next step:** commit, push and open the PR (depends on #39, #38 and #37). After the four merge, rebuild the unpacked extension (`pnpm --filter @sessionhub/extension build:unpacked`) to try them in Chrome. ROADMAP's next item is window size and position.
+
 ### 2026-10-17 (popup Open and Save tabs, PR 3 of 4) / Claude Code (Opus 5.5) / `feature/popup-open-save-tabs` (macOS laptop, branched from `feature/open-picker`, PR #38)
 
 **Why:** the popup stacked search, the save picker, recent sessions and the footer at about 950 px against Chrome's 600 px limit, with a scroll box inside a scrolling page. It also couldn't open anything. The user chose Open / Save tabs with a fixed header and footer.

@@ -50,6 +50,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     sessionId: z.uuid(),
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
     target: restoreTargetSchema.optional(),
+    /** Unload background tabs once their pages start loading; they load again when selected (best effort). */
+    lazy: z.boolean().optional(),
   }),
   z.object({ type: z.literal("restore.retry"), jobId: z.uuid() }),
   z.object({
@@ -57,6 +59,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     snapshotId: z.uuid(),
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
     target: restoreTargetSchema.optional(),
+    /** Unload background tabs once their pages start loading; they load again when selected (best effort). */
+    lazy: z.boolean().optional(),
   }),
   z.object({ type: z.literal("recovery.checkpointNow") }),
   // Account connection (pairing). None of these send saved sessions anywhere.

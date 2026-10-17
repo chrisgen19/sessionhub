@@ -89,6 +89,8 @@ export interface RestoreJobRecord {
   interruptedAt?: string;
   /** Where the first run opened its tabs (absent on older records: new windows). Retries use new windows. */
   target?: RestoreDestination;
+  /** Background tabs were unloaded after opening (retries do the same). */
+  lazy?: boolean;
 }
 
 /**

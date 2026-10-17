@@ -16,12 +16,12 @@ import { LARGE_OPEN_THRESHOLD } from "../open/open-panel";
 type Phase = { name: "idle" } | { name: "confirm" } | { name: "running" } | { name: "done"; job: RestoreJobRecord } | { name: "error"; message: string };
 
 /** Opening a whole session straight from its row, with the same large-open confirm as the picker. */
-const useQuickOpen = (session: SavedSession, destination: RestoreDestination, skipOpen: boolean) => {
+const useQuickOpen = (session: SavedSession, destination: RestoreDestination, skipOpen: boolean, lazy: boolean) => {
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const plan = useMemo(() => planRestore(session, { layout: destination === "new-windows" ? "original" : "single" }), [session, destination]);
   const start = async () => {
     setPhase({ name: "running" });
-    const result = await sendOpen({ session, kind: "session", destination, skipOpen });
+    const result = await sendOpen({ session, kind: "session", destination, skipOpen, lazy });
     setPhase(result.ok ? { name: "done", job: result.job } : { name: "error", message: result.message });
   };
   return {
@@ -58,6 +58,7 @@ interface SessionRowProps {
   destination: RestoreDestination;
   onDestination: (destination: RestoreDestination) => void;
   skipOpen: boolean;
+  lazy: boolean;
   /** Shows the session's tree in the popup, to choose tabs. */
   onShow: () => void;
   /** Opens the manager on this session. */
@@ -65,8 +66,8 @@ interface SessionRowProps {
 }
 
 /** A recent session: tap it to choose tabs, or open all of it with the row's Open button. */
-export function SessionRow({ session, syncLabel, destination, onDestination, skipOpen, onShow, onDetails }: SessionRowProps) {
-  const quick = useQuickOpen(session, destination, skipOpen);
+export function SessionRow({ session, syncLabel, destination, onDestination, skipOpen, lazy, onShow, onDetails }: SessionRowProps) {
+  const quick = useQuickOpen(session, destination, skipOpen, lazy);
   const summary = summarizeSession(session);
   const running = quick.phase.name === "running";
   return (

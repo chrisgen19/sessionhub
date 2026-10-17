@@ -351,7 +351,7 @@ describe("restore targets", () => {
     const deps = makeDeps();
     const job = jobOf(await start(deps, undefined));
     expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn"], ["https://example.com/"]]);
-    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined }, { into: undefined }]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined, lazy: false }, { into: undefined, lazy: false }]);
     expect(job.target).toBe("new-windows");
   });
 
@@ -359,7 +359,7 @@ describe("restore targets", () => {
     const deps = makeDeps();
     const job = jobOf(await start(deps, { kind: "one-window" }));
     expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn", "https://example.com/"]]);
-    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined }]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined, lazy: false }]);
     expect(job).toMatchObject({ target: "one-window", status: "completed" });
   });
 
@@ -370,7 +370,7 @@ describe("restore targets", () => {
 
     expect(inspectWindow).toHaveBeenCalledWith(987654);
     expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://example.com/"]]);
-    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: 987654 }]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: 987654, lazy: false }]);
     expect(job).toMatchObject({ target: "this-window", status: "completed", plan: { tabCount: 2 } });
     expect(job.plan.alreadyOpen?.map((tab) => tab.url)).toEqual(["https://react.dev/learn"]);
     expect(JSON.stringify(await deps.db.restoreJobs.get(job.id))).not.toContain("987654");
@@ -418,7 +418,8 @@ describe("restore targets", () => {
     );
     expect(await handleCommand({ type: "restore.retry", jobId: job.id }, deps)).toMatchObject({ ok: true, data: { job: { status: "completed" } } });
     expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn"]]);
-    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined }]);
+    // A retry never targets the old window.
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ lazy: false }]);
   });
 
   it("rejects a malformed target", async () => {
@@ -426,5 +427,37 @@ describe("restore targets", () => {
     for (const target of [{ kind: "replace-window" }, { kind: "this-window", skipOpen: true }, { kind: "this-window", windowId: "42", skipOpen: true }]) {
       expect(await start(deps, target)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
     }
+  });
+});
+
+describe("lazy opens", () => {
+  it("asks the browser adapter to unload background tabs, remembers it on the job, and retries the same way", async () => {
+    const deps = makeDeps({
+      restoreWindow: vi.fn<HandlerDeps["restoreWindow"]>(async (window) =>
+        window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "failed", error: "No window with id: 1" })),
+      ),
+    });
+    const { sessionId } = await capture(deps);
+    const response = await handleCommand({ type: "restore.start", sessionId, lazy: true }, deps);
+    if (!response.ok) throw new Error(response.error.message);
+    const { job } = response.data as { job: RestoreJobRecord };
+    expect(job).toMatchObject({ lazy: true, status: "failed" });
+    expect(vi.mocked(deps.restoreWindow).mock.calls.map(([, , options]) => options)).toEqual([
+      { into: undefined, lazy: true },
+      { into: undefined, lazy: true },
+    ]);
+
+    deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window) =>
+      window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "opened" })),
+    );
+    await handleCommand({ type: "restore.retry", jobId: job.id }, deps);
+    expect(vi.mocked(deps.restoreWindow).mock.calls.map(([, , options]) => options?.lazy)).toEqual([true, true]);
+  });
+
+  it("doesn't mark a job lazy unless asked", async () => {
+    const deps = makeDeps();
+    const { sessionId } = await capture(deps);
+    const response = await handleCommand({ type: "restore.start", sessionId }, deps);
+    expect(response.ok && (response.data as { job: RestoreJobRecord }).job).not.toHaveProperty("lazy");
   });
 });

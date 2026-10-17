@@ -12,7 +12,7 @@ export class RestoreJobNotRetryableError extends Error {
 /** Persists the plan before any tab is opened so an interrupted restore is inspectable later. */
 export const createRestoreJob = async (
   db: SessionHubDb,
-  input: { id: string; plan: RestorePlan; now: Date; target?: RestoreDestination },
+  input: { id: string; plan: RestorePlan; now: Date; target?: RestoreDestination; lazy?: boolean },
 ): Promise<RestoreJobRecord> => {
   const timestamp = input.now.toISOString();
   const job: RestoreJobRecord = {
@@ -25,6 +25,7 @@ export const createRestoreJob = async (
     outcomes: [],
     attempts: 1,
     ...(input.target ? { target: input.target } : {}),
+    ...(input.lazy ? { lazy: true } : {}),
   };
   await db.restoreJobs.add(job);
   return job;

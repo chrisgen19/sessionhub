@@ -2,7 +2,7 @@ import { filterSessions } from "@sessionhub/core/search";
 import { ArrowLeft, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { SessionsState } from "../../hooks/use-sessions";
-import { readOpenTarget, readSkipOpen, saveOpenTarget } from "../../lib/open-preferences";
+import { readOpenLazy, readOpenTarget, readSkipOpen, saveOpenTarget } from "../../lib/open-preferences";
 import { DESTINATION_PHRASE } from "../open/open-bar";
 import { OpenPanel } from "../open/open-panel";
 import { RecentSessions } from "./recent-sessions";
@@ -26,6 +26,8 @@ export function OpenTab({ state, onRetry, onOpenManager }: OpenTabProps) {
   const [shownId, setShownId] = useState<string | null>(null);
   const [destination, setDestination] = useState(readOpenTarget);
   const searching = query.trim().length > 0;
+  // Read on each render: the open picker may change them while a session is shown.
+  const lazy = readOpenLazy();
 
   const visible = useMemo(() => {
     if (state.status !== "ready") return [];
@@ -79,7 +81,8 @@ export function OpenTab({ state, onRetry, onOpenManager }: OpenTabProps) {
           </button>
         </div>
         <p className="mb-1 text-[11px] text-fg-muted">
-          Open puts all of a session&apos;s tabs {DESTINATION_PHRASE[destination]}. Tap a session to choose tabs.
+          Open puts all of a session&apos;s tabs {DESTINATION_PHRASE[destination]}
+          {lazy ? ", unloaded until clicked" : ""}. Tap a session to choose tabs.
         </p>
         <RecentSessions
           state={state}
@@ -91,6 +94,7 @@ export function OpenTab({ state, onRetry, onOpenManager }: OpenTabProps) {
             saveOpenTarget(next);
           }}
           skipOpen={readSkipOpen()}
+          lazy={lazy}
           onShow={setShownId}
           onDetails={(id) => onOpenManager(`#session=${id}`)}
           onRetry={onRetry}

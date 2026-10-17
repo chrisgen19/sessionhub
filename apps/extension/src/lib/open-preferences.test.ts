@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readOpenTarget, readSkipOpen, saveOpenTarget, saveSkipOpen } from "./open-preferences";
+import { readOpenLazy, readOpenTarget, readSkipOpen, saveOpenLazy, saveOpenTarget, saveSkipOpen } from "./open-preferences";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -11,6 +11,12 @@ describe("open preferences", () => {
     saveSkipOpen(false);
     expect(readOpenTarget()).toBe("this-window");
     expect(readSkipOpen()).toBe(false);
+  });
+
+  it("keeps tabs loaded unless the user chose to keep them unloaded", () => {
+    expect(readOpenLazy()).toBe(false);
+    saveOpenLazy(true);
+    expect(readOpenLazy()).toBe(true);
   });
 
   it("ignores an unknown stored value", () => {

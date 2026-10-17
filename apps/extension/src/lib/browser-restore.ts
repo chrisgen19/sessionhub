@@ -28,6 +28,62 @@ const applyGroups = async (window: PlannedWindow, windowId: number, createdIds: 
   }
 };
 
+/** How long a lazy open waits for pages to start loading before unloading them; slower tabs stay loaded. */
+export const UNLOAD_WAIT_MS = 8_000;
+
+/**
+ * The tabs whose navigation has committed (`url` set) within `ms`. Discarding a tab before that
+ * leaves it blank, with no URL (lazy loading spike, docs/SYSTEM_DESIGN.md decisions log).
+ */
+const committedTabs = (tabIds: number[], ms: number) =>
+  new Promise<number[]>((resolve) => {
+    const pending = new Set(tabIds);
+    const committed: number[] = [];
+    const settle = (tabId: number, url: string | undefined) => {
+      if (!pending.has(tabId) || !url) return;
+      pending.delete(tabId);
+      committed.push(tabId);
+      if (pending.size === 0) finish();
+    };
+    const listener = (tabId: number, _change: unknown, tab: { url?: string }) => settle(tabId, tab.url);
+    const finish = () => {
+      clearTimeout(timer);
+      browser.tabs.onUpdated.removeListener(listener);
+      resolve(committed);
+    };
+    const timer = setTimeout(finish, ms);
+    browser.tabs.onUpdated.addListener(listener);
+    if (pending.size === 0) finish();
+    for (const tabId of tabIds) {
+      browser.tabs.get(tabId).then(
+        (tab) => settle(tabId, tab.url),
+        () => {
+          // Closed meanwhile: nothing to unload.
+          pending.delete(tabId);
+          if (pending.size === 0) finish();
+        },
+      );
+    }
+  });
+
+/**
+ * Lazy open, best effort: once each background tab's page has started loading, unload it so it
+ * stops using memory; Chrome loads it again when it's selected. Chrome can't create a tab unloaded,
+ * so each page does start loading. The active tab is never unloaded, and a tab that can't be
+ * unloaded (or commits too late) just stays loaded; the restore outcome is already recorded.
+ * Must run after grouping: Chrome gives a discarded tab a new id.
+ */
+const unloadInBackground = async (tabIds: number[]) => {
+  for (const tabId of await committedTabs(tabIds, UNLOAD_WAIT_MS)) {
+    try {
+      const tab = await browser.tabs.get(tabId);
+      if (!tab.active) await browser.tabs.discard(tabId);
+    } catch {
+      // Closed, or Chrome refused: it stays as it is.
+    }
+  }
+};
+
 /** Collects outcomes and records each one as it settles. */
 const outcomeLog = (record: (outcome: RestoreTabOutcome) => Promise<void>) => {
   const outcomes: RestoreTabOutcome[] = [];
@@ -63,14 +119,15 @@ const openTabs = async (
  * after the existing ones) to that open window. Existing windows and tabs are never closed, moved
  * or navigated. Each tab is attempted independently, and its outcome is recorded before the next
  * tab opens, so a worker stopped mid-window leaves at most the tab it was opening unrecorded. A
- * recording error stops the window.
+ * recording error stops the window. With `lazy`, background tabs are unloaded once they start loading.
  */
-export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window, record, { into } = {}) => {
+export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window, record, { into, lazy } = {}) => {
   const createdIds = new Map<string, number>();
   const { outcomes, settle } = outcomeLog(record);
   if (into !== undefined) {
     await openTabs(window.tabs, into, createdIds, settle);
     await applyGroups(window, into, createdIds);
+    if (lazy) await unloadInBackground([...createdIds.values()]);
     return outcomes;
   }
 
@@ -102,6 +159,7 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window,
   }
   await openTabs(rest, windowId, createdIds, settle);
   await applyGroups(window, windowId, createdIds);
+  if (lazy) await unloadInBackground([...createdIds.values()]);
   return outcomes;
 };
 

@@ -39,6 +39,13 @@ export const readSkipOpen = (): boolean => read(SKIP_OPEN_KEY) !== "false";
 
 export const saveSkipOpen = (skip: boolean) => write(SKIP_OPEN_KEY, String(skip));
 
+const LAZY_KEY = "sessionhub-open-lazy";
+
+/** "Keep tabs unloaded until clicked" is off unless the user turned it on. */
+export const readOpenLazy = (): boolean => read(LAZY_KEY) === "true";
+
+export const saveOpenLazy = (lazy: boolean) => write(LAZY_KEY, String(lazy));
+
 const POPUP_TAB_KEY = "sessionhub-popup-tab";
 
 export type PopupTab = "open" | "save";

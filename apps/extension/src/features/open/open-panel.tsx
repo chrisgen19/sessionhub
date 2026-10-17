@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RestoreJobRecord } from "../../lib/db";
 import { plural } from "../../lib/format";
-import { readOpenTarget, readSkipOpen, saveOpenTarget, saveSkipOpen } from "../../lib/open-preferences";
+import { readOpenLazy, readOpenTarget, readSkipOpen, saveOpenLazy, saveOpenTarget, saveSkipOpen } from "../../lib/open-preferences";
 import { allOpenable, canOpen, isEverything, matchingTabIds, reconcileSaved, type SavedSelection } from "../../lib/open-selection";
 import { RestoreResult } from "../manager/restore-result";
 import { OpenBar } from "./open-bar";
@@ -36,6 +36,7 @@ export function OpenPanel({ session, kind = "session", query = "", variant = "pa
   const [seenVersion, setSeenVersion] = useState(session.version);
   const [destination, setDestination] = useState(readOpenTarget);
   const [skipOpen, setSkipOpen] = useState(readSkipOpen);
+  const [lazy, setLazy] = useState(readOpenLazy);
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const [retrying, setRetrying] = useState(false);
   const outcome = useRef<HTMLDivElement>(null);
@@ -59,7 +60,7 @@ export function OpenPanel({ session, kind = "session", query = "", variant = "pa
 
   const start = async () => {
     setPhase({ name: "running" });
-    const result = await sendOpen({ session, kind, destination, skipOpen, ...(isEverything(selection, session) ? {} : { tabIds: [...selection] }) });
+    const result = await sendOpen({ session, kind, destination, skipOpen, lazy, ...(isEverything(selection, session) ? {} : { tabIds: [...selection] }) });
     setPhase(result.ok ? { name: "done", job: result.job } : { name: "error", message: result.message });
   };
 
@@ -77,6 +78,11 @@ export function OpenPanel({ session, kind = "session", query = "", variant = "pa
       onSkipOpen={(next) => {
         setSkipOpen(next);
         saveSkipOpen(next);
+      }}
+      lazy={lazy}
+      onLazy={(next) => {
+        setLazy(next);
+        saveOpenLazy(next);
       }}
       matches={matches?.size ?? null}
       onSelectAll={() => setSelection(allOpenable(session))}
