@@ -138,7 +138,9 @@ Do not use IP address or user agent string as device identity. Avoid exposing un
 
 ### Implemented server schema (Prisma 7.10.0, PostgreSQL 18, verified 2026-10-16)
 
-Source: `packages/database/prisma/schema.prisma`, migration `20261016052129_init`. All entities in this section exist, with these decisions:
+Source: `packages/database/prisma/schema.prisma`, migrations `20261016052129_init`, `20261016101018_device_pairing_and_credentials`, `20261016160300_rate_limit_buckets`. All entities in this section exist, with these decisions:
+
+- **Operational table** `rate_limit_buckets` (`key` PK, `tokens`, `allowed`, `updated_at` indexed): shared rate-limit state for all web instances (`SYNC_PROTOCOL.md` 13a). No user data; truncating it only resets budgets.
 
 - **Auth tables** (`user`, `session`, `account`, `verification`) are exactly what the Better Auth CLI (`auth generate`, v1.7.9, email/password, Prisma/PostgreSQL) produced: string ids and camelCase columns. Only Prisma back-relation fields were added to `User`. Regenerate when auth plugins change and diff.
 - **Domain tables** use snake_case table and column names, app-generated UUID primary keys, `timestamptz(3)` timestamps and `varchar` limits equal to the contracts limits.

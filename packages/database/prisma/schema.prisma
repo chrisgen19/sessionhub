@@ -365,6 +365,19 @@ model UserSettings {
   @@map("user_settings")
 }
 
+/// Rate-limit token buckets shared by every web instance (apps/web/src/server/api/rate-limit.ts).
+/// Operational state only: no user data, safe to truncate (everyone starts with a full budget).
+model RateLimitBucket {
+  key       String   @id @db.VarChar(255)
+  tokens    Float
+  /// Whether the last request on this bucket was allowed (returned by the same atomic statement).
+  allowed   Boolean
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@index([updatedAt])
+  @@map("rate_limit_buckets")
+}
+
 /// Security-relevant events only. Never store URL lists or tokens here.
 model AuditEvent {
   id        String         @id @default(uuid()) @db.Uuid

@@ -4,6 +4,7 @@ import type { PrismaClient } from "@sessionhub/database/client";
 import type { DevicePrincipal } from "../devices/credentials";
 import { RollbackWith, ServiceError } from "../service-errors";
 import { createSessionInTx, deleteSessionInTx, updateSessionInTx, type DeleteResult, type WriteResult } from "../sessions/mutations";
+import { log } from "../observability/logger";
 import { nextSequence, runMutation, type Tx } from "./transaction";
 
 /** The authenticated device a push writes as (provenance on created sessions and versions). */
@@ -16,7 +17,7 @@ type Receipted = Extract<PushResult, { status: "accepted" | "conflict" | "reject
 type StoredResult = Receipted extends infer R ? (R extends Receipted ? Omit<R, "replayed"> : never) : never;
 type StoredAccepted = Extract<StoredResult, { status: "accepted" }>;
 
-const REJECTED_CODES = ["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE"] as const;
+const REJECTED_CODES = ["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE", "LIMIT_REACHED"] as const;
 const isRejectedCode = (code: string): code is (typeof REJECTED_CODES)[number] => (REJECTED_CODES as readonly string[]).includes(code);
 
 /** The device row behind a principal, with what the push route needs to know about its account. */
@@ -127,8 +128,8 @@ const pushOne = async (prisma: PrismaClient, pusher: Pusher, raw: unknown): Prom
     });
   } catch (error) {
     if (!(error instanceof ServiceError) || !(error.code === "VERSION_CONFLICT" || isRejectedCode(error.code))) {
-      // Class name only: never log payloads or URLs.
-      console.error(`[sync-push] unexpected ${error instanceof Error ? error.name : typeof error}`);
+      // Class name only: never payloads or URLs.
+      log("error", "sync_push_unexpected_error", { errorClass: error instanceof Error ? error.name : typeof error });
       return retryable(operation.clientOperationId);
     }
     failure = error;

@@ -82,6 +82,7 @@ The documents under `docs/` remain the product specification; implementation liv
 | [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) | Entities, relations, indexes, retention | Database development |
 | [`docs/SYNC_PROTOCOL.md`](./docs/SYNC_PROTOCOL.md) | Incremental push/pull, conflicts, idempotency, offline replay | Cross-device synchronization |
 | [`docs/SECURITY_PRIVACY.md`](./docs/SECURITY_PRIVACY.md) | Authentication and permission threat model | All auth, sync, and publish changes |
+| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Coolify deployment checklist: proxy and client IP, TLS, environment, checks | Deploying or changing the proxy |
 | [`docs/TEST_PLAN.md`](./docs/TEST_PLAN.md) | Functional, integration, failure-injection, and release tests | Testing and verification |
 | [`docs/ROADMAP.md`](./docs/ROADMAP.md) | Milestones, priorities, definitions of done | Planning and sprint execution |
 | [`docs/PROGRESS.md`](./docs/PROGRESS.md) | **Living handoff**: completed work, blockers, next actions | Start and end of every agent session |

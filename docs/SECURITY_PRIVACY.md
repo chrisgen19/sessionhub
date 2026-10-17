@@ -79,7 +79,7 @@ Design chosen with the user: an RFC 8628-style device flow with SessionHub's own
 6. Revocation (web Devices page "Disconnect", the extension's own Disconnect, or refresh reuse) sets `revoked_at`, bumps `auth_credential_version` and writes an `audit_events` row (`device_revoked` with the reason; `device_paired` on approval). Pairing again from the same installation reuses the device row, clears the revocation and issues fresh credentials; all older ones stay dead.
 7. Extension storage: tokens are kept in the extension's own IndexedDB (`account` table). Web pages can't read it (there are no content scripts and no `externally_connectable`), it is never included in exports, and disconnecting deletes it while keeping every saved session. `chrome.storage.local` with `TRUSTED_CONTEXTS` would need the `storage` permission and wouldn't add protection here, because no untrusted context exists in this extension.
 8. Local account isolation (2026-10-16, `DATA_MODEL.md` section 4): cached account data and queued uploads are scoped by the account id the server returned at pairing. Only the connected account's are visible or editable; signing into another account hides them (nothing is deleted or sent under the new account). The stored account id never changes: if `/devices/me` ever reports a different id, the extension disconnects instead of merging. This browser's own (`local`) sessions are never moved into an account automatically; that needs the user's choice in the upload preview (later slice).
-9. Sync upload (2026-10-16, `SYNC_PROTOCOL.md` 13f): `POST /api/v1/sync/push` accepts only a device Bearer token, requires the body's `deviceId` to match it, a confirmed email (when email is enabled) and one write token per operation. The extension uploads only for the connected account and only when `syncState.enabledAt` (local consent) is set for it; nothing sets it until the opt-in slice, so no session data leaves a browser today. Server logs carry error class names only, never payloads or URLs.
+9. Sync upload (2026-10-16, `SYNC_PROTOCOL.md` 13f): `POST /api/v1/sync/push` accepts only a device Bearer token, requires the body's `deviceId` to match it, a confirmed email (when email is enabled) and one write token per operation. The extension uploads only for the connected account and only when `syncState.enabledAt` (local consent) is set for it; nothing sets it until the opt-in slice, so no session data leaves a browser today. Server logs carry error class names only, never payloads or URLs (8a).
 10. Sync download (2026-10-16, `SYNC_PROTOCOL.md` 13g): pull and bootstrap need the device Bearer token and a confirmed email; cursors are HMAC-bound to the account, so a cursor from another account is refused (queries are user-scoped regardless). Downloaded data lands only in the connected account's scope, never over this browser's own sessions or another account's cache, and a pull never touches tabs (two-profile E2E). Same local consent gate as uploads.
 8. Rate limits: pairing start 5 per client IP, then 1 per minute; token polls and refreshes 30 per IP, then 1 every 2 seconds; the decision and disconnect calls share the account's write budget.
 
@@ -90,10 +90,10 @@ Not covered yet: account switching on one profile (the extension refuses a secon
 - Better Auth 1.7.9 email/password. Passwords are stored hashed by Better Auth (verified: the `account.password` value never contains the plaintext; algorithm is Better Auth's default and was not separately audited).
 - Session cookie is `HttpOnly`, `SameSite=Lax` (verified in E2E). `Secure` is expected when served over HTTPS in production: **not verified yet** (no HTTPS deployment).
 - Sign-in/sign-up go through Better Auth's HTTP endpoints, so its rate limiter and origin checks apply: 3 attempts per window per client IP, then 429 and "Too many attempts" (verified). Server-side `auth.api.*` calls skip the rate limiter and must not be used for credential checks.
-- **Deployment requirement (M6):** the limiter keys on the client IP from `X-Forwarded-For`. Without a proxy setting that header, all clients share one bucket (a handful of bad attempts would briefly block sign-in for everyone); with a proxy, it must overwrite (not trust) client-supplied values, or attackers can rotate the header. Rate-limit storage is in memory: fine for one container, not for several.
-- Post-login redirects only accept same-site relative paths. Server logs record only the error class for failed sign-in/up, never emails, passwords or bodies.
+- **Client IP (since 2026-10-17, section 8b):** the limiter keys on the address the trusted proxy recorded, never on what a client writes into `X-Forwarded-For`. Requests without a usable address share one bucket. Limits are stored in PostgreSQL, shared by all instances.
+- Post-login redirects only accept same-site relative paths. Server logs record only the error class for failed sign-in/up, never emails, passwords or bodies; Better Auth's own messages (e.g. "Invalid password") go through the redacting logger without their arguments (8a).
 - Dashboard authorization: a forged session cookie passes the optimistic proxy but is rejected by the per-page database check (verified in E2E). All dashboard queries filter by the session's user id; seeded data for a second user never appears in lists, counts or search (verified in DB and E2E tests). Soft-deleted and archived sessions are excluded.
-- `/api/v1/sessions` (verified in DB and HTTP E2E tests): requests without a session get 401; another user's session id returns 404 for read, update and delete with nothing written (no change-log row, no clock row); creating with another user's id returns 409 without details. Writes require `Origin` = app origin (CSRF defense for cookie auth), JSON content type, at most 2 MB (checked before parsing) and reject unknown fields such as `userId`. Errors never echo internals; unexpected failures log the error class only. `/api/v1` writes are rate-limited per user (30 burst, then 1/s; 429 + `Retry-After`; verified in HTTP E2E, including that rejected anonymous and cross-origin requests don't consume the budget). The limiter is in memory: with several web instances each enforces its own budget, so move it to shared storage (database or Redis) before scaling out. Reads are not limited yet.
+- `/api/v1/sessions` (verified in DB and HTTP E2E tests): requests without a session get 401; another user's session id returns 404 for read, update and delete with nothing written (no change-log row, no clock row); creating with another user's id returns 409 without details. Writes require `Origin` = app origin (CSRF defense for cookie auth), JSON content type, at most 2 MB (checked before parsing) and reject unknown fields such as `userId`. Errors never echo internals; unexpected failures log the error class only. `/api/v1` writes and reads are rate-limited per user (writes 30 burst then 1/s, reads 120 burst then 2/s; 429 + `Retry-After`; verified in HTTP E2E, including that rejected anonymous and cross-origin requests don't consume the budget). Since 2026-10-16 every limit, Better Auth's sign-in and reset limits included, is stored in PostgreSQL and enforced across all web instances (`SYNC_PROTOCOL.md` 13a). Per-IP limits count the address the trusted proxy recorded (8b).
 - `/api/v1/workspaces` and `/api/v1/devices` (verified in DB and HTTP E2E tests): same 401/403/415/413/rate-limit gate as sessions; another user's workspace or device id is a 404 with nothing written; unknown fields such as `userId` are rejected; workspace `icon` only accepts a short `[a-z0-9-]` key, so it can't carry markup or a URL. Device responses omit the installation id. Revoking a device increments `auth_credential_version` exactly once, which M4 device credentials must check on every request.
 - Saved links in the web app: every URL is re-classified at render time; only http(s) becomes a link (`rel="noopener noreferrer"`), everything else (javascript:, data:, chrome:, file:) is plain text. "Open links" nulls `window.opener` on each new tab. `/app/*` responses send `Referrer-Policy: no-referrer`, so opened sites never learn the session page URL. Tab titles render as text. All verified in E2E (including an HTML/script title and a `javascript:` URL stored as "restorable").
 - Password reset (verified in E2E against Mailpit): "Forgot password?" always answers "If there's an account for X, we've sent it a link", and no email is sent to unknown addresses. Emails are queued with Next.js `after()` and never awaited, so the response doesn't wait on the provider (Better Auth already simulates the token lookup for unknown emails). Reset links are single-use and expire after 1 hour; a used or forged token shows "This link doesn't work anymore" and changes nothing. A reset revokes **every** session of the account (other browsers are signed out) and sends a "password was changed" notice. `/reset-password` (token in the URL) sends `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. Better Auth limits reset and verification requests to 3 per minute per client IP.
@@ -146,6 +146,47 @@ If this bridge isn't robust, omit it from MVP and use the extension's own manage
 - Strong CSP for the extension, no arbitrary remote JavaScript execution.
 - Never expose Prisma/admin DB connection strings or Better Auth secrets to client builds.
 - Limit server logs; audit security-relevant activity without raw tab URLs.
+
+### 8b. Implemented trusted proxy and TLS requirements (2026-10-17)
+
+Operator steps and checks are in `DEPLOYMENT.md`.
+
+- **Client IP:**
+  - Each proxy appends to `X-Forwarded-For`, so the app takes the entry `TRUSTED_PROXY_COUNT` places from the right (default 1: Coolify's Traefik) and ignores the client-written part to its left (`apps/web/src/server/client-ip.ts`). The old code took the leftmost entry, so a client could pick its own per-IP bucket for pairing start and device tokens.
+  - Better Auth gets only the resolved address. Before, a multi-entry header made it fall back to one bucket shared by all such requests.
+  - IPv6 counts by /64 network.
+  - Verified in E2E, including that the same tests fail against the old code.
+- **IP addresses stored:** Better Auth records the client address and user agent on each web sign-in session (`session.ipAddress`, `session.userAgent`). The address is now the resolved one rather than a client-written value. It is never logged.
+- **HTTPS required in production:**
+  - `BETTER_AUTH_URL` must be `https://` unless the host is loopback. Otherwise `/api/health` answers 503 and every auth and API request fails, so a misconfigured deployment never turns healthy.
+  - With an https URL, Better Auth's cookies are `__Secure-` prefixed and `Secure` (verified against the standalone build).
+  - The production build sends `Strict-Transport-Security: max-age=31536000`: this host only, no preload.
+  - The extension build already refuses non-localhost http API origins.
+- **Not covered:** framing protection (`frame-ancestors` / `X-Frame-Options`) is not set yet, so `/app/pair` could be framed by another site (clickjacking of the approval button). This is an open M6 item.
+
+### 8a. Implemented observability and resource limits (2026-10-17)
+
+- **Structured logs** (`apps/web/src/server/observability/`): one JSON object per line, info on stdout, warn and error on stderr. Fields: `time`, `level`, `event`, `requestId`, then event fields.
+- **Redaction happens in the logger**, so no call site can bypass it:
+  - in every string field, URLs (any scheme), email addresses, `shd_*` tokens and `Bearer` values are replaced with placeholders
+  - fields whose names suggest content or secrets (authorization, cookie, token, password, url, link, email, title, name, body, query, cursor, ...) are dropped
+  - text is capped at 300 characters
+- **Request ids:** every `/api/v1` and `/api/auth` request gets an `X-Request-Id`. A proxy's id is kept if it matches `^[A-Za-z0-9._-]{8,128}$` and contains no device credential prefix (`shd_at_`, `shd_rt_`, `shd_dc_`), otherwise a fresh UUID is used. The id is returned on the response and attached to every log line written during the request (AsyncLocalStorage).
+- **Access log:** one `http_request` line per request with `method`, `path` (ids, tokens and numbers replaced with `:id`, query and fragment dropped), `status` and `durationMs`. Never the user, IP address, query, headers or body.
+- **Errors and other events:**
+  - unexpected errors log only the class, plus Prisma's `P####` code when present
+  - mail failures log the provider and redacted message
+  - Better Auth's own messages go through the same logger (`auth_log`, arguments by type only)
+  - `/api/health` isn't logged
+- **Verified:**
+  - unit tests (redaction, paths, ids, immutable redirect responses, error classes)
+  - an E2E for request ids
+  - a run of the production standalone server receiving an email address, a name, a tab title, private URLs, a cursor, a bearer token, a reset token and a client IP: none of them appeared in its 8 log lines
+- **Resource limits:**
+  - **request bodies are read with a hard cap** that stops reading at the limit even without (or with a false) `Content-Length`: `/api/v1` 2 MB, `/api/auth` 64 KB (413 before Better Auth sees the body)
+  - **database pool:** `statement_timeout` 15 s, `idle_in_transaction_session_timeout` 30 s, connection wait 10 s (mutation transactions allow 20 s)
+  - **5,000 live sessions per account** (`LIMIT_REACHED`, web 422 and sync push `rejected`)
+  - outbound mail calls time out after 10 s; list and pull pages are bounded (`SYNC_PROTOCOL.md` 13a and 13g)
 - Dependabot/lockfile management, reproducible release build, malware/static analysis as appropriate.
 - Maintain documented incident response procedure and ability to invalidate all tokens.
 
@@ -169,9 +210,9 @@ If this bridge isn't robust, omit it from MVP and use the extension's own manage
 - [ ] Another user cannot list/read/modify any of the first user's resources.
 - [ ] Revoked devices cannot push/pull; local data remains unaffected.
 - [ ] Browser-to-extension external messages cannot cause destructive actions without confirmation.
-- [ ] No sensitive values appear in URLs, exceptions, client logs, server logs, or telemetry.
+- [ ] No sensitive values appear in URLs, exceptions, client logs, server logs, or telemetry. (server logs verified 2026-10-17, see 8a; emailed links necessarily carry tokens in their URLs; client logs and telemetry not reviewed yet)
 - [ ] Chrome Web Store permission disclosure, privacy policy and Limited Use statements are accurate.
-- [ ] Vulnerability review, dependency scan, TLS verification and backup restore drill completed.
+- [ ] Vulnerability review, dependency scan, TLS verification and backup restore drill completed. (TLS: app-side requirements in 8b; verification on the deployed host per `DEPLOYMENT.md` 3 still pending)
 
 ## 11. Official documentation
 

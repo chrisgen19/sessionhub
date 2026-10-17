@@ -2,11 +2,14 @@ import { API_LIMITS, type ApiErrorCode, type ApiErrorResponse } from "@sessionhu
 import { z } from "zod";
 import { getPrisma } from "@sessionhub/database/client";
 import { getAuth } from "@/server/auth";
+import { clientAddress, rateLimitSubject } from "@/server/client-ip";
 import { authenticateAccessToken, type DevicePrincipal } from "@/server/devices/credentials";
 import { bearerToken } from "@/server/devices/tokens";
 import { getServerEnv } from "@/server/env";
+import { log } from "@/server/observability/logger";
+import { observeRequest, readBodyText } from "@/server/observability/request";
 import { ServiceError } from "@/server/service-errors";
-import { getIpLimiter, getWriteLimiter } from "./rate-limit";
+import { API_READ_LIMIT, API_WRITE_LIMIT, DEVICE_TOKEN_LIMIT, PAIRING_START_LIMIT, takeTokens, type RateLimitPolicy } from "./rate-limit";
 
 /** Error the HTTP layer turns into an `{ error }` JSON response. */
 export class HttpError extends Error {
@@ -63,21 +66,23 @@ const toResponse = (error: unknown): Response => {
     if (bearer) headers["www-authenticate"] = bearer;
     return json({ error: { code: error.code, message: error.message, ...error.details } }, SERVICE_STATUS[error.code] ?? 400, headers);
   }
-  // Class name only: never log request bodies, URLs or user data.
-  console.error(`[api] unexpected ${error instanceof Error ? error.name : typeof error}`);
+  // Class (and Prisma code) only: never request bodies, URLs or user data.
+  const code = (error as { code?: unknown } | null)?.code;
+  log("error", "api_unexpected_error", { errorClass: error instanceof Error ? error.name : typeof error, prismaCode: typeof code === "string" && /^P\d{4}$/.test(code) ? code : undefined });
   return json({ error: { code: "INTERNAL_ERROR", message: "Something went wrong. Try again." } }, 500);
 };
 
-/** Wraps a route handler so every failure becomes a typed JSON error. */
+/** Wraps a route handler: every failure becomes a typed JSON error, and the request gets an id and an access log line. */
 export const handle =
   <C>(fn: (request: Request, context: C) => Promise<Response>) =>
-  async (request: Request, context: C): Promise<Response> => {
-    try {
-      return await fn(request, context);
-    } catch (error) {
-      return toResponse(error);
-    }
-  };
+  (request: Request, context: C): Promise<Response> =>
+    observeRequest(request, async () => {
+      try {
+        return await fn(request, context);
+      } catch (error) {
+        return toResponse(error);
+      }
+    });
 
 /** The signed-in user (Better Auth session cookie). Device tokens for the extension arrive in M4. */
 export const authenticate = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
@@ -98,29 +103,39 @@ export const authenticateDevice = async (request: Request): Promise<DevicePrinci
   return authenticateAccessToken(getPrisma(), token);
 };
 
-/** First client address from X-Forwarded-For (the proxy must overwrite it; see SECURITY_PRIVACY.md). */
-export const clientIp = (request: Request): string => request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
-const rateLimited = (retryAfterSeconds: number) =>
-  new HttpError(429, "RATE_LIMITED", `Too many requests in a short time. Try again in ${retryAfterSeconds} seconds.`, { retryAfterSeconds });
+/** Takes from a shared bucket (all web instances, see rate-limit.ts) or throws 429 with Retry-After. */
+const charge = async (key: string, policy: RateLimitPolicy, cost: number, message: string): Promise<void> => {
+  const decision = await takeTokens(getPrisma(), key, policy, { cost });
+  if (!decision.allowed) {
+    throw new HttpError(429, "RATE_LIMITED", `${message} Try again in ${decision.retryAfterSeconds} seconds.`, { retryAfterSeconds: decision.retryAfterSeconds });
+  }
+};
+
+const IP_POLICIES = { "pairing-start": PAIRING_START_LIMIT, "device-token": DEVICE_TOKEN_LIMIT } as const;
 
 /** Per-IP limit for unauthenticated device endpoints (pairing start, token poll, refresh). */
-export const limitByIp = (request: Request, name: "pairing-start" | "device-token"): void => {
-  const decision = getIpLimiter(name).take(clientIp(request));
-  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
-};
+export const limitByIp = (request: Request, name: keyof typeof IP_POLICIES): Promise<void> =>
+  charge(`ip:${name}:${rateLimitSubject(clientAddress(request.headers))}`, IP_POLICIES[name], 1, "Too many requests in a short time.");
+
+/** Takes `count` writes from the account's shared budget (web and devices alike), or throws 429 without taking any. */
+export const chargeWrites = (userId: string, count: number): Promise<void> => charge(`write:${userId}`, API_WRITE_LIMIT, count, "Too many changes in a short time.");
+
+/** Takes one read from the account's read budget (web and devices alike). */
+export const chargeRead = (userId: string): Promise<void> => charge(`read:${userId}`, API_READ_LIMIT, 1, "Too many requests in a short time.");
 
 /** Device writes share the account's write budget with the web app. */
 export const authorizeDeviceWrite = async (request: Request): Promise<DevicePrincipal> => {
   const principal = await authenticateDevice(request);
-  chargeWrites(principal.userId, 1);
+  await chargeWrites(principal.userId, 1);
   return principal;
 };
 
-/** Takes `count` writes from the account's shared budget, or throws 429 without taking any. */
-export const chargeWrites = (userId: string, count: number): void => {
-  const decision = getWriteLimiter().take(userId, count);
-  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
+/** Device reads: Bearer authentication, then the account's read budget. */
+export const authorizeDeviceRead = async (request: Request): Promise<DevicePrincipal> => {
+  const principal = await authenticateDevice(request);
+  await chargeRead(principal.userId);
+  return principal;
 };
 
 /**
@@ -141,12 +156,14 @@ export const assertSameOrigin = (request: Request): void => {
 export const authorizeWrite = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
   assertSameOrigin(request);
   const user = await authenticate(request);
-  const decision = getWriteLimiter().take(user.userId);
-  if (!decision.allowed) {
-    throw new HttpError(429, "RATE_LIMITED", `Too many changes in a short time. Try again in ${decision.retryAfterSeconds} seconds.`, {
-      retryAfterSeconds: decision.retryAfterSeconds,
-    });
-  }
+  await chargeWrites(user.userId, 1);
+  return user;
+};
+
+/** Gate for every cookie-authenticated /api/v1 read: authentication, then the per-user read limit. */
+export const authorizeRead = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
+  const user = await authenticate(request);
+  await chargeRead(user.userId);
   return user;
 };
 
@@ -155,10 +172,9 @@ export const readJson = async <T extends z.ZodType>(request: Request, schema: T)
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Send the body as application/json.");
   }
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > API_LIMITS.requestBytesMax) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The request body is too large.");
-  const text = await request.text();
-  if (Buffer.byteLength(text) > API_LIMITS.requestBytesMax) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The request body is too large.");
+  // Bounded read: stops at the limit even without (or with a false) Content-Length.
+  const text = await readBodyText(request, API_LIMITS.requestBytesMax);
+  if (text === null) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The request body is too large.");
   let data: unknown;
   try {
     data = JSON.parse(text);

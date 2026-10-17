@@ -190,7 +190,7 @@ flowchart LR
 - `web`: stateless Next.js Docker container; includes API Route Handlers and Better Auth.
 - `postgres`: persistent volume, private network, least-privileged application user. For production, a separately managed DB is also acceptable.
 - `backup`: operator-managed backup job writing encrypted off-host copies, with **tested restores**.
-- `proxy`: HTTPS, secure headers, proper forwarded-host trust. Only externally expose application HTTPS.
+- `proxy`: HTTPS, secure headers, proper forwarded-host trust. Only externally expose application HTTPS. Operator checklist: `DEPLOYMENT.md`.
 
 Prisma migrations occur in an explicit deploy step with safe rollback planning, not separately in every replica at startup. Run web application with server-only generated client. Include `/api/health` that checks readiness without leaking internals; optionally separate liveness and readiness.
 
@@ -200,7 +200,8 @@ Prisma migrations occur in an explicit deploy step with safe rollback planning, 
 |---|---|
 | `DATABASE_URL` | Server-only PostgreSQL connection |
 | `BETTER_AUTH_SECRET` | Server-only auth signing key |
-| `BETTER_AUTH_URL` | Public HTTPS origin |
+| `BETTER_AUTH_URL` | Public HTTPS origin (required in production; plain http only for loopback) |
+| `TRUSTED_PROXY_COUNT` | Reverse proxies in front of the app that append to `X-Forwarded-For`: 1 (default, Coolify's Traefik), 2 with a CDN in front (`DEPLOYMENT.md` 2) |
 | `ALLOWED_EXTENSION_IDS` | Explicit extension IDs for trusted origin/bridge |
 | `APP_BASE_URL` | Web origin used for generated links |
 | `NEXT_PUBLIC_APP_URL` | Safe public web origin only |
@@ -415,6 +416,17 @@ Verified 2026-10-16 (details in `PROGRESS.md`): monorepo skeleton, and the local
 | 2026-10-16 | Five review situations with explicit choices (`packages/sync/src/review.ts`); only choices that can be carried out are offered; nothing resolves automatically | SYNC_PROTOCOL section 9: no destructive merge, deliberate resolution; every outcome keeps at least one copy | Field-level merge rules |
 | 2026-10-16 | "Keep mine" uploads on top of the server's current version (a new conflict if it moved again); "Keep both" keeps the server's under the id and saves this browser's as "<name> (this browser's version)"; a server-deleted session comes back only as a new session | Never a blind overwrite; tombstones can't be edited back | - |
 | 2026-10-16 | User copy says "the other version" and "your account", not "server" | Plain language for the people choosing | - |
+| 2026-10-16 | Rate limits move from per-process memory to PostgreSQL token buckets (`rate_limit_buckets`), one atomic upsert per check on the database clock; Better Auth uses them via `rateLimit.customStorage` | Correct with more than one web instance; no new service (no Redis for the MVP); the database clock avoids skew between instances. Supersedes the in-memory row above | If limiter traffic becomes a measurable share of database load |
+| 2026-10-16 | Per-user read budget (120 burst, 2/s) on every `/api/v1` GET, separate from writes | Pull/bootstrap and dashboard API reads were unbounded; the burst covers a 20-page bootstrap run | Usage data |
+| 2026-10-16 | Better Auth's "max per window" rules become buckets of `max` refilled `max` per window | One mechanism and table; same burst, refilled gradually instead of all at once | - |
+| 2026-10-17 | Client IP = the `X-Forwarded-For` entry `TRUSTED_PROXY_COUNT` places from the right (default 1); Better Auth is handed only that address | Proxies append, so only the rightmost entries are ours; the leftmost is whatever the client sent. A hop count fits Coolify (Traefik appends by default) without listing proxy IP ranges | Better Auth's `trustedProxies` (CIDR list) if the topology gets more complex |
+| 2026-10-17 | Production refuses a non-https `BETTER_AUTH_URL` (loopback excepted); `/api/health` answers 503 while the configuration is invalid | An http URL silently drops the `Secure` cookie flag; a health check that ignores config lets a broken deploy replace a working one | - |
+| 2026-10-17 | HSTS (`max-age=31536000`, this host only) sent by the app in production builds | Travels with the app whatever the proxy config; ignored over plain http, so local production runs are unaffected | `includeSubDomains`/preload once the domain layout is fixed |
+| 2026-10-17 | Structured JSON logs (stdout/stderr) with redaction inside the logger: URLs, emails and tokens scrubbed from every string, content and secret field names dropped; request ids via AsyncLocalStorage, a proxy's id accepted when well-formed | Logs are where URL leaks happen in practice; redacting at the single exit point protects every call site, including Better Auth's messages | A log shipper or metrics backend (keep the same redaction) |
+| 2026-10-17 | Access log: method, id-free path, status, duration only (no user id, IP, query or body) | Enough to debug and spot abuse patterns by request id; nothing personal to protect or delete later | If abuse investigation needs a pseudonymous user key |
+| 2026-10-17 | Request bodies read with a hard byte cap (`/api/v1` 2 MB, `/api/auth` 64 KB) | The old check trusted `Content-Length` and then read everything: a chunked upload could stream an unbounded body into memory | - |
+| 2026-10-17 | Database pool limits: statement 15 s, idle-in-transaction 30 s, connection wait 10 s | A slow query or stuck transaction must not hold locks or connections indefinitely | Real load data |
+| 2026-10-17 | At most 5,000 live sessions per account (`LIMIT_REACHED`), checked after the clock lock | Rate limits bound speed, not total storage; 5,000 is far above normal use | If users need more (or a per-account byte budget) |
 | 2026-10-16 | `packages/sync` created with the pull slice (was deferred) | It now holds real logic (reconciliation rules) | - |
 | 2026-10-16 | `packages/sync` not created yet | Empty packages add no value; created with M3/M4 | M3 / M4 |
 | 2026-10-16 | Web app uses the ESLint CLI with the shared config, not `eslint-config-next` | `next lint` was removed in Next 16; `eslint-config-next` 16.4 depends on `eslint-plugin-react` 7.37, which does not declare ESLint 10 support | eslint-plugin-react supports ESLint 10 |

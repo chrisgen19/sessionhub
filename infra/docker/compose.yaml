@@ -45,8 +45,12 @@ services:
       DATABASE_URL: *database-url
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET (at least 32 random characters)}
       # Must be the exact origin browsers use (Better Auth and the API check it). Unset or
-      # empty, it follows WEB_PORT; behind a proxy, set it to the public HTTPS origin.
+      # empty, it follows WEB_PORT; behind a proxy, set it to the public HTTPS origin (https://
+      # is required in production; plain http only for localhost).
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:${WEB_PORT:-3030}}
+      # Reverse proxies in front of the app (Coolify's Traefik = 1; a CDN in front of it = 2).
+      # See docs/DEPLOYMENT.md before changing it.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
       # Password reset and email confirmation. `disabled` (default): the app says reset by
       # email isn't available. `resend`: needs MAIL_FROM on a domain verified in Resend.
       MAIL_TRANSPORT: ${MAIL_TRANSPORT:-disabled}

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ApiSessionDetail, CreateSessionRequest, UpdateSessionRequest } from "@sessionhub/contracts/api-sessions";
+import { API_LIMITS, type ApiSessionDetail, type CreateSessionRequest, type UpdateSessionRequest } from "@sessionhub/contracts/api-sessions";
 import type { SavedWindow } from "@sessionhub/contracts/session";
 import { buildCanonicalStructure } from "@sessionhub/core/session-structure";
 import type { Prisma, PrismaClient } from "@sessionhub/database/client";
@@ -85,6 +85,10 @@ export const createSessionInTx = async (tx: Tx, userId: string, sequence: bigint
       : null;
     if (first?.checksum === contentChecksum(content)) throw new RollbackWith<WriteResult>({ detail: toDetail(existing), sequence: null });
     throw new ServiceError("ID_IN_USE", "A different session already uses that id. Retry without an id or with a new one.");
+  }
+  // Storage cap per account. Counted after the clock lock, so concurrent creates can't overshoot it.
+  if ((await tx.savedSession.count({ where: { userId, deletedAt: null } })) >= API_LIMITS.sessionsPerAccountMax) {
+    throw new ServiceError("LIMIT_REACHED", `Your account can keep up to ${API_LIMITS.sessionsPerAccountMax.toLocaleString("en")} saved sessions. Delete some you no longer need first.`);
   }
   await assertWorkspace(tx, userId, input.workspaceId);
   const row = await tx.savedSession.create({

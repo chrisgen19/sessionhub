@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { errorFields, log } from "../observability/logger";
 import { getMailConfig, type MailConfig } from "../env";
 import { createMailpitTransport } from "./mailpit";
 import { createResendTransport } from "./resend";
@@ -31,8 +32,8 @@ const send = async (message: MailMessage): Promise<void> => {
   try {
     await active.send(message);
   } catch (error) {
-    // Error class and status only: never the recipient, link or token.
-    console.error(`Email delivery via ${active.name} failed: ${error instanceof Error ? error.message : "unknown error"}`);
+    // Provider and redacted error only: never the recipient, link or token.
+    log("warn", "mail_delivery_failed", { provider: active.name, ...errorFields(error) });
   }
 };
 

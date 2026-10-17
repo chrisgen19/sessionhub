@@ -22,6 +22,6 @@ export const POST = handle(async (request: Request) => {
   if (!emailVerified && isMailEnabled()) {
     throw new HttpError(403, "EMAIL_NOT_CONFIRMED", "Confirm your email to sync this browser.");
   }
-  chargeWrites(device.userId, body.operations.length);
+  await chargeWrites(device.userId, body.operations.length);
   return json({ protocolVersion: SYNC_PROTOCOL_VERSION, results: await pushOperations(getPrisma(), pusher, body.operations) });
 });

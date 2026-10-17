@@ -97,9 +97,9 @@ flowchart LR
 - [ ] Validate required Chrome permissions and MV3 compliance.
 - [ ] Complete privacy policy/user-data disclosures and store copy.
 - [ ] Run abuse/security, race/concurrency and restore failure tests.
-- [ ] Add rate limiting, observability with URL redaction, resource limits.
-- [ ] Production Dockerfile and Coolify deployment checklist. (Dockerfile: done, `infra/docker/web.Dockerfile`; Coolify checklist: pending.)
-- [ ] Verify TLS, trusted proxy, DB migration and off-host backup restore.
+- [x] Add rate limiting, observability with URL redaction, resource limits. (2026-10-16/17: shared PostgreSQL rate limits incl. reads and Better Auth; structured redacted JSON logs with request ids; bounded body reads, database timeouts, 5,000 sessions per account; SECURITY_PRIVACY.md 8a)
+- [ ] Production Dockerfile and Coolify deployment checklist. (Dockerfile: done, `infra/docker/web.Dockerfile`; checklist: `docs/DEPLOYMENT.md` with proxy/client IP, TLS, environment and deploy order, 2026-10-17; backups section pending.)
+- [ ] Verify TLS, trusted proxy, DB migration and off-host backup restore. (App side done 2026-10-17: trusted-proxy client IP, https required in production, HSTS, `Secure` cookies; verifying on a real deployment, `DEPLOYMENT.md` checks, is pending.)
 - [ ] CI production extension ZIP and web build.
 - [ ] Document release/rollback process and known limitations.
 

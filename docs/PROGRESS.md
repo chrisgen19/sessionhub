@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. Next: M5 or M6 (user's priority). M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 hardening started: rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done; trusted-proxy client IP, HTTPS requirements and the Coolify checklist (`docs/DEPLOYMENT.md`) done, not yet deployed. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -12,16 +12,73 @@
 | Chrome extension | **Working local slice** plus **account scope and outbox** (storage only, nothing uploads yet). Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
+| Database | **Schema, 3 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (`236b64a`, CI green), #8 **`feature/m4-sync-pull`** (`13b468b`, CI green), #9 **`feature/m4-sync-ui`** (`e887bf9`, CI green). **`feature/m4-conflict-review`** (off #9, uncommitted at the end of the 2026-10-16 conflict review session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). Every open PR runs `check` (lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services) and, from #2 up, `docker`. Results after the 2026-10-17 restack: latest session entry and the PRs. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive) and #2 (2 findings in the Docker slice, not identified from the API): user's call |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, **restacked 2026-10-17 after the review fixes**; merge bottom-up with merge commits (not squash or rebase): #1 `feature/m1-monorepo-local-slice` -> `main` (`fb0feb8`), #2 `feature/m3-web-docker` (`d5627a4`), #3 `feature/m3-email-auth` (`328d5f9`), #4 `feature/m4-device-pairing` (`c6724fe`), #6 `feature/m4-local-outbox` (`880486d`), #7 `feature/m4-sync-push` (`ce13869`), #8 `feature/m4-sync-pull` (`e602712`), #9 `feature/m4-sync-ui` (`d9f9ba3`), #10 `feature/m4-conflict-review` (`e87f3d4`), #11 **`feature/m6-hardening`** (this progress update on top of `0799082`). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (review fixes on every open PR, then one restack) / Claude Code (Opus 5.5) / all stack branches (macOS laptop)
+
+**Goal:** fix every open Codex review finding on PRs #1 to #11, restack the chain once, and get every PR's `check` and `docker` jobs green (user's request). Several sessions plus one review-fix agent in this session each fixed findings on that PR's own branch; then #2 to #11 were rebased bottom-up.
+
+**Review findings:**
+
+| PR | Finding | Outcome | Commit after the restack |
+|---|---|---|---|
+| #1 | per-tab restore outcomes before retry (P2) | fixed: each tab's outcome is written before the next tab opens; a killed worker can reopen at most one tab | `fb0feb8` |
+| #1 | checkpoint eviction reporting (P2) | fixed | `9e21181` |
+| #2 | `BETTER_AUTH_URL` ignored `WEB_PORT` (P2) | fixed | `cb67190` |
+| #2 | stale "not committed" status in this file (P2) | fixed | `d5627a4` |
+| #3 | `/email-verified` claimed success without checking (P2) | fixed | `4963f62` |
+| #4 | atomic successor claim (P1), single-use lost-response retry (P2) | fixed | `d482118` |
+| #6 | (no review) | - | - |
+| #7 | round cap left sendable work unscheduled (P2) | fixed | `2ca812c` |
+| #7 | idempotency across re-pairing (P2) | not valid: re-pairing keeps the device id | - |
+| #8 | pull bound to the gate's account (P1), backoff cleared by the upload (P2) | fixed | `90b5d7a` |
+| #9 | stop transfers when sync is turned off (P1), honest "Last synced" (P2) | fixed | `ecbfef1` |
+| #10 | keep the account session holding a taken id (P2); deleted refused sessions can leave review (P2) | fixed: new "Drop this change" choice | `e87f3d4` |
+| #11 | credential-shaped `X-Request-Id` kept (P2) | fixed: replaced by a UUID | `b6e5339` |
+| #11 | idle bucket sweep could fail the request (P2) | fixed: at most 500 rows, `FOR UPDATE SKIP LOCKED`, best effort, logged `rate_limit_sweep_failed` | `0799082` |
+
+The #4 and #8 fixes were written by other sessions and committed and pushed from their worktrees by this session (user's choice). Decisions for #1, #10 and #11 are in their commit bodies and in `SYSTEM_DESIGN.md`, `SYNC_PROTOCOL.md`, `UI_UX_DESIGN.md` and `SECURITY_PRIVACY.md`.
+
+**Restack:**
+- #1 unchanged, because `main` didn't move.
+- #2 to #11 were each rebased with `git rebase --onto <new parent> <old base>` and pushed with `--force-with-lease` against the recorded remote SHAs.
+- Conflicts:
+  - `PROGRESS.md` at most levels and `SYSTEM_DESIGN.md` decision rows: both sides kept.
+  - `compose.yaml`:
+    - #3: #2's `WEB_PORT` default plus #3's mail settings
+    - #11: plus `TRUSTED_PROXY_COUNT` and the https note; `.env.example` likewise
+  - `sync-uploader.ts` at #8: #7's round-cap retry kept through #8's `recordSuccess` move and its removal.
+  - `sync-runner.ts` at #9: #9's queued-run structure plus #8's JSDoc sentence.
+  - #9's fix against #8's fix (`sync-gate.ts`, `sync-uploader.ts`, `sync-downloader.ts`, `sync-uploader.test.ts`, `SYNC_PROTOCOL.md`): both kept.
+    - `withRunToken` binds every request's token to the run's account.
+    - `stillOpen` checks consent and account before every round and page, and now reuses `isRunAccount`.
+    - All tests of both fixes are kept.
+- Per level: the new branch differs from its old version only by the fixes below it (`git diff --name-only`), with no conflict markers and no duplicate session entries.
+
+**Validated:** macOS, temporary `docker run` PostgreSQL + Mailpit on 54339/58035.
+- #8 and #9 levels: extension and sync lint, typecheck and tests pass. The #9 merge was tested before the rebase continued.
+- Top (#11):
+  - `pnpm check --force` 17/17; `pnpm --filter @sessionhub/web test:db` 60/60; `pnpm build`.
+  - Web E2E **44/44**. The password-reset test passes here now that PR #3's fix reaches the top.
+  - Extension E2E 8/9: only the pre-existing macOS mid-restore retry failure, failing at the same assertion as before the #1 restore fix.
+- CI after the push: not known when this entry was written; see the PRs.
+
+**Known gaps (seen during the reviews, not fixed):**
+- `browser-restore.ts`: if pinning the first tab fails after the window was created, the whole window is reported failed, so Retry reopens it.
+- "Keep in this browser only" for a refused edit of an already-synced session with no held server copy keeps the same id, so the account's version stays hidden in the extension.
+- Restore now writes one IndexedDB record per tab; large-restore speed is not re-measured (`test:perf` not run).
+- The "Drop this change" button is not checked at mobile width (it uses the same component as the other choices).
+- Pull pages still move `lastSyncAt` per page.
+- The worktrees `sessionhub-pr2-fix`, `-pr3-fix`, `-pr4-fix`, `-pr7-fix`, `-pr8-fix` and `-pr9-fix` still point at pre-restack history; remove them once those sessions are closed.
 
 ### 2026-10-17 (PR #2 review fixes: compose auth URL, progress log) / Claude Code (Opus 5.5) / `feature/m3-web-docker` (macOS laptop)
 
@@ -141,6 +198,113 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 **Known gaps:** the stale-connection window narrows to the moment between the gate check and `withAccessToken` reading the connection; passing the expected account into `withAccessToken` would close it fully. Pull pages still move `lastSyncAt` per page, so a later page failing leaves the time of the last page that arrived.
 
 **Next step:** after PR #9 takes this fix, carry it up the stack (#10, #11). `sync-uploader.ts` `run` also changes in the PR #7 fix (`51b0582`, round-cap continuation), so the rebase of #8 and #9 onto the new #7 meets this code too.
+### 2026-10-17 (M6 trusted proxy and TLS slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
+
+**Goal:** trusted proxy / `X-Forwarded-For` handling and TLS for the Coolify deployment checklist (user's scope). Same branch as PR #11. Behavior in SECURITY_PRIVACY.md 8b, operator steps in the new `docs/DEPLOYMENT.md`, decisions in SYSTEM_DESIGN.md 14 (three rows).
+
+**Found:** `clientIp` took the **leftmost** `X-Forwarded-For` entry (client-controlled whenever the proxy appends, which Traefik does by default), so per-IP limits on pairing start and device tokens could be bypassed by rotating the header. Better Auth 1.7.9 refuses multi-entry headers without `trustedProxies` and fell back to one shared bucket for all such requests. Both are confirmed by the new E2E failing against the old code.
+
+**Implemented:**
+
+- `apps/web/src/server/client-ip.ts` (new):
+  - `clientAddressFrom` takes the entry `TRUSTED_PROXY_COUNT` places from the right, validates it and unwraps IPv4-mapped addresses
+  - `rateLimitSubject` uses IPv6 /64 and `unknown` for no address
+  - `http.ts` per-IP limits use them (the old `clientIp` was removed)
+- `/api/auth/[...all]`: Better Auth gets a fresh `Request` whose `X-Forwarded-For` is only the resolved address (GET and POST). `new Request(request, ...)` fails Next's private-field check, which the full E2E caught.
+- `env.ts`:
+  - `TRUSTED_PROXY_COUNT` (1 to 5, default 1)
+  - `BETTER_AUTH_URL` must be https in production unless loopback
+  - `configurationProblem()`
+- `/api/health` returns 503 `misconfigured` while the configuration is invalid and logs one `config_invalid` line naming the variable.
+- `next.config.ts`: `Strict-Transport-Security: max-age=31536000` on every route in production builds.
+- `infra/docker/compose.yaml` and `.env.example`: `TRUSTED_PROXY_COUNT` passthrough (default 1).
+- Tests:
+  - `client-ip.test.ts` (4)
+  - `env.test.ts` (+3)
+  - `health/route.test.ts` (+1)
+  - `e2e/trusted-proxy.spec.ts` (3): spoofed prefixes don't escape the pairing limit, Better Auth's limit uses the same address, HSTS
+- Docs:
+  - `docs/DEPLOYMENT.md` (new; README links it)
+  - SECURITY_PRIVACY 5a/8b/10
+  - SYNC_PROTOCOL 13a
+  - SYSTEM_DESIGN 6 and 14
+  - ROADMAP M6 notes
+
+**Verified against sources, not memory:**
+- Next.js 16.4.1 fills `X-Forwarded-For` from the socket only when absent (`next/dist/server/base-server.js:567`).
+- Better Auth 1.7.9:
+  - IP parsing in `@better-auth/core/dist/utils/ip.mjs:174`
+  - `Secure`/`__Secure-` exactly when `baseURL` starts with `https://` (`better-auth/dist/cookies/index.mjs:23`)
+  - `getSessionCookie` reads both names (`:266`)
+- Traefik appends by default (`notAppendXForwardedFor` defaults to false, Traefik entrypoints reference).
+- Coolify's generated Traefik config sets no `forwardedHeaders` options (`bootstrap/helpers/proxy.php`).
+
+**Validated commands and results:** macOS, temporary `docker run` PostgreSQL and Mailpit on **54339/58035**, because another session's `pr3-postgres`/`pr3-mailpit` were on the usual ports (left untouched).
+
+- `pnpm check --force`: **pass** (17 tasks). Web unit tests **72** (+8).
+- `pnpm --filter @sessionhub/web test:db`: **56/56**.
+- `e2e/trusted-proxy.spec.ts`: 3/3. Against the old `http.ts` and auth route, 2 of them fail as expected: the 6th spoofed pairing start got 201, and another address got 429 from Better Auth's shared bucket.
+- Full web E2E **43/44**: only the pre-existing macOS password-reset failure.
+- Standalone build with `BETTER_AUTH_URL=https://sessionhub.example`: sign-up sets `__Secure-better-auth.session_token ...; HttpOnly; Secure; SameSite=Lax`, HSTS present.
+- With `http://sessionhub.example`: health 503, auth/API 500, one `config_invalid` log line.
+- Not run:
+  - extension suites (no extension changes)
+  - `pnpm test:docker` (no Compose here; CI's `docker` job covers it)
+  - anything on a real Coolify host (nothing deployed yet)
+
+**Production note:** no migration. After deploying:
+- a production `BETTER_AUTH_URL` that isn't https makes the deploy unhealthy (intended)
+- browsers that visit over https remember HTTPS-only for a year
+- per-IP limits change from the leftmost to the rightmost `X-Forwarded-For` entry (the same single value behind Traefik when clients send none)
+
+**Known gaps:**
+- no framing protection yet: `/app/pair` could be framed for clickjacking (next M6 item)
+- the CDN case relies on the operator setting the count, Traefik `trustedIPs` and a firewall (DEPLOYMENT.md 2)
+- health doesn't check PostgreSQL
+- every DEPLOYMENT.md check still has to run on a real deployment
+
+### 2026-10-17 (M6 observability and resource limits slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
+
+**Goal:** observability with URL redaction (structured logs, request ids, no URLs or tokens) and resource limits (user's scope). Same branch as PR #11. Decisions in SYSTEM_DESIGN.md 14 (five rows); behavior in SECURITY_PRIVACY.md 8a.
+
+**Implemented:**
+
+- `apps/web/src/server/observability/` (new):
+  - `redact.ts`: `redactText` (URLs of any scheme, emails, `shd_*` tokens, `Bearer` values), `redactPath` (query dropped, ids and opaque segments to `:id`), `redactFields` (drops content and secret field names)
+  - `logger.ts`: JSON lines (info stdout, warn/error stderr), request id from AsyncLocalStorage, `captureLogs` for tests, `errorFields`
+  - `request.ts`: `observeRequest` (request id in and out as `X-Request-Id`, one `http_request` access line) and `readBodyText` (hard byte cap while streaming)
+- `http.ts`: `handle()` runs every `/api/v1` route through `observeRequest`; unexpected errors log class plus Prisma code; `readJson` uses the bounded reader (the old code trusted `Content-Length`, then read everything).
+- `/api/auth/[...all]`: request ids and access logs; POST bodies capped at 64 KB before Better Auth sees them (413 `PAYLOAD_TOO_LARGE`). `auth.ts`: Better Auth's logger goes through the redacting logger (debug dropped, arguments by type only).
+- `sync/push.ts` and `mail/deliver.ts`: `console.error` replaced with structured events.
+- `packages/database/src/client.ts`: `DATABASE_LIMITS` on the pg pool (statement 15 s, idle in transaction 30 s, connection wait 10 s).
+- 5,000 live sessions per account: `API_LIMITS.sessionsPerAccountMax`, checked in `createSessionInTx` after the clock lock; `LIMIT_REACHED` is 422 on the web API and a `rejected` push result (contract enum extended), which the extension already shows in review as "Can't be uploaded" with "Keep in this browser only".
+- Tests:
+  - `observability.test.ts` (9)
+  - `limits.db.test.ts` (2)
+  - `e2e/observability.spec.ts` (request ids, a proxy's id kept, a forged one replaced, 413 on a 70 KB sign-in body)
+  - `deliver.test.ts` now asserts on the structured line
+- Docs: SECURITY_PRIVACY 8a and section 10, SYNC_PROTOCOL 13a and push results, SYSTEM_DESIGN 14, ROADMAP (M6 item done).
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit):**
+
+- `pnpm check --force`: **pass** (17 tasks). Web unit tests **64** (+9).
+- `pnpm --filter @sessionhub/web test:db`: **56/56** (+2): the session cap for web creates and sync uploads (deleted sessions don't count, other accounts unaffected), and `SHOW statement_timeout` / `idle_in_transaction_session_timeout` = 15s / 30s on pooled connections.
+- `pnpm build`: pass.
+- Full web E2E **40/41**: only the pre-existing macOS password-reset failure.
+- Extension E2E **8/9**: only the pre-existing macOS restore-retry failure.
+- Leak check against the production standalone build: a scratch script sent sign-up, a wrong password, a list with a token-like cursor and URL query, a create with a private URL and title, an unknown id, a bearer token and a reset-token link. It got 8 JSON log lines; none contained the email, name, title, URLs, cursor, tokens or the client IP.
+- Not run: `pnpm test:docker` (no Compose here; CI's `docker` job covers it) and the database package `test:db` (resets `sessionhub_test`, which Prisma blocks for agents).
+
+**Production note:** no migration. After deploying:
+- every API request writes one log line
+- statements over 15 s are cancelled (the slowest measured query is far below that)
+- auth bodies over 64 KB and the 5,001st live session are refused
+
+**Known gaps:**
+- no log shipping or metrics backend yet (stdout/stderr only)
+- a `LIMIT_REACHED` upload stays in review until the user picks "Keep in this browser only"; there is no retry after deleting sessions elsewhere
+- client-side (extension) logs not reviewed
+- per-IP limits still trust `X-Forwarded-For`
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
@@ -161,6 +325,39 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+### 2026-10-17 (M6 rate limits slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
+
+**Goal:** M6 read rate limits and shared (multi-instance) limiter storage (user's scope). Decisions in SYSTEM_DESIGN.md 14 and SYNC_PROTOCOL.md 13a.
+
+**Implemented:**
+
+- Database: migration `20261016160300_rate_limit_buckets` (additive: table `rate_limit_buckets` + `updated_at` index), applied to the dev database with `prisma migrate deploy`.
+- `apps/web/src/server/api/rate-limit.ts` rewritten:
+  - `takeTokens` is a PostgreSQL token bucket: one atomic upsert per check, on the database clock, with `cost`, and a ~1% sweep of buckets idle over an hour.
+  - Policies: writes 30/1 s, **reads 120/2 s (new)**, pairing start, device tokens.
+  - `authRateLimitStorage` for Better Auth.
+  - The in-memory `TokenBucketLimiter` and its unit tests were removed.
+- `http.ts`:
+  - async `limitByIp` and `chargeWrites`
+  - new `chargeRead`, `authorizeRead` and `authorizeDeviceRead`
+  - every `/api/v1` GET is now charged to the read budget (sessions list/detail, workspaces, devices, devices/me, sync pull/bootstrap)
+- `auth.ts`: `rateLimit.customStorage`.
+- Tests: `rate-limit.db.test.ts` (7) and a read-limit E2E in `api-sessions.spec.ts`.
+- Docs: SYNC_PROTOCOL 13a (limits table) and 13g, SECURITY_PRIVACY, DATA_MODEL, SYSTEM_DESIGN 14 (three rows), ROADMAP.
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit):**
+
+- `pnpm check --force`: **pass** (17 tasks). Web unit tests **55** (the 6 in-memory limiter tests were removed with the class).
+- `pnpm --filter @sessionhub/web test:db`: **54/54** (+7). Covered: burst then Retry-After; refill capped, and denied attempts don't extend the wait; multi-token cost all or nothing; independent keys; **60 concurrent requests from two separate Prisma clients let exactly 30 through**; idle sweep removes only idle buckets; the Better Auth adapter.
+- API, auth, pairing and push E2E: **17/17**, including the new read limit (130 parallel GETs: at least 120 pass, the rest 429 with Retry-After; writes and other users unaffected) and Better Auth's existing wrong-password limit through the new storage (its `auth:` buckets confirmed in `sessionhub_test`).
+- Full web E2E **39/40**: only the pre-existing macOS password-reset failure.
+- Not run:
+  - extension suites: no extension changes in this slice
+  - `pnpm test:docker` and the database package `test:db` (no Compose here; the latter resets `sessionhub_test`, which Prisma blocks for agents)
+
+**Production note:** deploying this runs the new migration (additive) through the `migrate` job; afterwards every limited request does one extra small upsert.
+
+**Known gaps:** per-IP limits still trust `X-Forwarded-For` (the proxy must overwrite it); no observability (URL-redacted logs/metrics) or resource limits yet.
 
 ### 2026-10-16 (M4 conflict review slice) / Claude Code (Opus 5.5) / `feature/m4-conflict-review` (macOS laptop)
 
@@ -724,12 +921,13 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push `feature/m4-conflict-review`, open its PR on top of #9. Then merge the whole stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
-2. M4 is complete. Choose next with the user:
-   - **M5:** side panel, workspaces in the extension (and syncing them), tags/filters, version timeline, device management UX.
-   - **M6:** permissions review, privacy policy, abuse/race testing, observability, Coolify deployment, read rate limits and shared limiter storage, release process.
-3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures (password reset, mid-restore retry).
-4. Production email (Resend) is still untested against the live service.
+1. Once every PR's `check` and `docker` jobs are green after the 2026-10-17 restack, merge bottom-up #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 with **Create a merge commit** (not squash or rebase), deleting each head branch so GitHub retargets the next PR to `main`. Decide GitGuardian on #1 and #2 first (mark as false positives or move the placeholders to CI variables). After that, branch each slice off `main` as a small PR.
+2. Next M6 items:
+   - framing protection (`frame-ancestors 'none'` / `X-Frame-Options: DENY`), at least for `/app/pair` (clickjacking of the approval button)
+   - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
+   - CI builds of the production extension ZIP
+   - permissions review and privacy policy
+3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the macOS-only extension E2E failure (mid-restore retry). The web password-reset failure no longer reproduces at the top of the stack.
 
 ## Open questions / architecture validations
 

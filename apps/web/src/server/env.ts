@@ -1,10 +1,23 @@
 import { z } from "zod";
 import { parseAddress, type MailAddress } from "./mail/types";
 
+/** Hosts a production build may serve over plain http: the machine itself (local Docker runs, E2E). */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** Production must be served over HTTPS: it also makes Better Auth's cookies `Secure` (docs/DEPLOYMENT.md). */
+const isAllowedOrigin = (value: string): boolean => process.env.NODE_ENV !== "production" || value.startsWith("https://") || LOOPBACK_HOSTS.has(new URL(value).hostname);
+
 const serverEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET must be at least 32 characters"),
-  BETTER_AUTH_URL: z.url("BETTER_AUTH_URL must be the app's public origin, e.g. http://localhost:3000"),
+  BETTER_AUTH_URL: z
+    .url("BETTER_AUTH_URL must be the app's public origin, e.g. http://localhost:3000")
+    .refine(isAllowedOrigin, "BETTER_AUTH_URL must use https in production (plain http only for localhost)"),
+  /** Reverse proxies in front of the app that append to X-Forwarded-For (see client-ip.ts). */
+  TRUSTED_PROXY_COUNT: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.coerce.number().int("TRUSTED_PROXY_COUNT must be a whole number").min(1, "TRUSTED_PROXY_COUNT must be 1 to 5").max(5, "TRUSTED_PROXY_COUNT must be 1 to 5").default(1),
+  ),
 });
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
@@ -63,4 +76,19 @@ export const getMailConfig = (): MailConfig => {
   else if (MAIL_TRANSPORT === "mailpit") cachedMail = { transport: "mailpit", from: parseAddress(MAIL_FROM), mailpitUrl: MAILPIT_URL };
   else cachedMail = { transport: "resend", from: parseAddress(MAIL_FROM), resendApiKey: RESEND_API_KEY };
   return cachedMail;
+};
+
+/**
+ * Why this server can't work as configured, or null. Names variables and rules only, never values
+ * (the messages above don't echo them). /api/health reports it so a misconfigured deploy never
+ * turns healthy.
+ */
+export const configurationProblem = (): string | null => {
+  try {
+    getServerEnv();
+    getMailConfig();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Invalid configuration";
+  }
 };
