@@ -24,6 +24,38 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (popup Open and Save tabs, PR 3 of 4) / Claude Code (Opus 5.5) / `feature/popup-open-save-tabs` (macOS laptop, branched from `feature/open-picker`, PR #38)
+
+**Why:** the popup stacked search, the save picker, recent sessions and the footer at about 950 px against Chrome's 600 px limit, with a scroll box inside a scrolling page. It also couldn't open anything. The user chose Open / Save tabs with a fixed header and footer.
+
+**Implemented (docs/UI_UX_DESIGN.md 18k):**
+- `features/popup/popup-app.tsx`:
+  - Root `max-h-[600px]`; fixed header; a tablist Open | Save (arrow keys; remembered in `sessionhub-popup-tab`, Open the first time).
+  - One scrolling `main` (`relative`); fixed footer.
+  - The Save panel stays mounted while hidden.
+- `features/popup/open-tab.tsx`:
+  - Sticky search; up to 20 sessions; a hint saying where Open puts tabs.
+  - A tap shows the session's open picker (`OpenPanel variant="popup"`: the bar sticks to the bottom, the first window expanded, the search carries over) with "← All sessions".
+- `features/popup/session-row.tsx`:
+  - A row button plus a compact Open ▾ split button for the whole session (named `Open "Name" (N tabs) in this window`).
+  - The same remembered destination, a confirm above 50 tabs, a result line, and "See what didn't open" leading to the manager.
+- `features/open/open-command.ts` (`sendOpen`) is shared by the panel and the rows. `OpenPanel` gains `variant`; the result scrolls into view. `SplitButton` gains `size="sm"` and `labelName`, and builds its own classes (no stacked `h-9`/`h-8` utilities).
+- Save tab: the save picker lost its 260 px scroll box; the save bar sticks to the bottom (opaque, `z-10`).
+- E2E helpers moved to `e2e/window-helpers.ts`.
+- Docs: UI_UX_DESIGN 5, 12, 18a, 18i and the new 18k; SYSTEM_DESIGN decision; ROADMAP (selective opening done; lazy loading and window bounds as next items); TEST_PLAN.
+
+**Validated:**
+- `pnpm check`: extension 283 tests (5 new in `features/popup-open.test.tsx`; 2 popup tests updated for the tabs).
+- `pnpm --filter @sessionhub/extension build`, then `test:e2e`: 18/18, including the new `e2e/popup.spec.ts` (3, also repeated 3 times, 9/9):
+  - at 380x600 with 20 sessions and 14 browser pages, both tabs have the root at most 600, no page overflow and `main` scrolling;
+  - tap a session, untick a tab, This window, and the tabs land in the popup's window;
+  - closing the popup right after Open: the new window gets all 8 tabs and the job completes.
+- `test:perf` passes (120 tabs).
+- Playwright screenshots at 380x600, light and dark: Open tab, a row's menu, the tapped session, Save tab.
+- Not run: web E2E (no web change).
+
+**Next step:** commit, push and open the PR (depends on #38, which depends on #37). Then PR 4 (`feature/lazy-open`): the lazy loading spike.
+
 ### 2026-10-17 (open picker in the manager, PR 2 of 4) / Claude Code (Opus 5.5) / `feature/open-picker` (macOS laptop, branched from `feature/restore-targets`, PR #37)
 
 **Why:** with the worker side in place (#37), the manager gets Session Buddy-style opening. Tick windows and tabs in the session's own tree, pick where they open, and open them. This replaces the restore dialog.

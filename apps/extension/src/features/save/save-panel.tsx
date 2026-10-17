@@ -71,12 +71,11 @@ export function SavePanel({ variant }: { variant: "popup" | "page" }) {
     setCustomName(null);
   };
 
-  // `relative` makes the popup's scroll box clip the badges' absolutely positioned sr-only text, which otherwise stretches the page.
   const picker =
     open.windows.length === 0 ? (
       <p className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-fg-muted">No open tabs to save.</p>
     ) : (
-      <div className={variant === "popup" ? "relative max-h-[260px] overflow-y-auto pr-1" : ""}>
+      <div>
         <TabPicker windows={open.windows} currentWindowId={open.currentWindowId} selection={selection} onChange={setSelection} expandAll={variant === "page"} />
       </div>
     );
@@ -92,7 +91,8 @@ export function SavePanel({ variant }: { variant: "popup" | "page" }) {
       onSelectNone={() => setSelection(new Set())}
     />
   );
-  // On the full page the save bar stays in view above a long list; in the popup it follows the list.
+  // The save bar stays in view: above a long list on the full page, at the bottom of the popup's
+  // scroll area (the popup scrolls as one; no nested scroll box).
   return variant === "page" ? (
     <div className="space-y-4">
       <div className="sticky top-0 z-10 rounded-xl border border-line bg-surface p-4 shadow-sm">{bar}</div>
@@ -101,7 +101,7 @@ export function SavePanel({ variant }: { variant: "popup" | "page" }) {
   ) : (
     <div className="space-y-3">
       {picker}
-      {bar}
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-line bg-surface px-4 py-3">{bar}</div>
     </div>
   );
 }

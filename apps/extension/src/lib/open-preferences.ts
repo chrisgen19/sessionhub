@@ -38,3 +38,12 @@ export const saveOpenTarget = (destination: RestoreDestination) => write(TARGET_
 export const readSkipOpen = (): boolean => read(SKIP_OPEN_KEY) !== "false";
 
 export const saveSkipOpen = (skip: boolean) => write(SKIP_OPEN_KEY, String(skip));
+
+const POPUP_TAB_KEY = "sessionhub-popup-tab";
+
+export type PopupTab = "open" | "save";
+
+/** The popup tab used last; Open the first time. */
+export const readPopupTab = (): PopupTab => (read(POPUP_TAB_KEY) === "save" ? "save" : "open");
+
+export const savePopupTab = (tab: PopupTab) => write(POPUP_TAB_KEY, tab);
