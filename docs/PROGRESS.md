@@ -24,6 +24,28 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (CI database without a password) / Claude Code (Opus 5.5) / `bugfix/ci-db-password` (macOS laptop)
+
+**Why:**
+- GitGuardian failed on PR #29 (and #28) with a "Generic Password": `POSTGRES_PASSWORD: sessionhub_ci` in `.github/workflows/ci.yml`.
+- That's the throwaway PostgreSQL service each CI job starts. #28 copied it into the new `e2e-web` job, which is what the scan saw.
+- Not a real secret, but the user chose to remove it after merging #29 (`413cded`).
+
+**Changed:**
+- Both CI PostgreSQL services use `POSTGRES_HOST_AUTH_METHOD: trust`, as `infra/scripts/restore-drill.sh` already does for its disposable container.
+- `TEST_DATABASE_URL` drops the password. No `sessionhub_ci` remains in the repo.
+
+**Validated:**
+- `ci.yml` parses.
+- A local `postgres:18-alpine` with the same settings: web `test:db` 67/67 with the password-free URL; its 20 tables confirm the migrations ran there.
+- The database package's `test:db` runs `prisma migrate reset --force`, which Prisma refuses when an AI agent invokes it. It was only aimed at the empty throwaway container, but the guard was not overridden; CI covers it.
+- `age` isn't installed locally, so CI covers the backup test (which uses `docker exec`, no password).
+
+**Next step:**
+- Open the PR and wait for CI, including GitGuardian.
+- The user marks GitGuardian incident 38275758 as a false positive (the value was a CI-only container password).
+- Still pending: a valid `COOLIFY_TOKEN`.
+
 ### 2026-10-17 (light theme by default, with a theme toggle) / Claude Code (Opus 5.5) / `feature/theme-toggle` (macOS laptop)
 
 **Why:** both apps followed the operating system (`@media (prefers-color-scheme: dark)` in `tokens.css`) with no way to override it. The user asked for light by default and a toggle in both apps.
