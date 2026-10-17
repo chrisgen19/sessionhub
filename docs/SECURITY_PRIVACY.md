@@ -164,7 +164,7 @@ If this bridge isn't robust, omit it from MVP and use the extension's own manage
 ## 10. Release-blocking privacy checks
 
 - [x] Cloud sync cannot start until explicit consent is recorded locally. (2026-10-16: uploads and downloads are gated on `syncState.enabledAt`, which only the Account view's opt-in (disclosure + upload preview + click) sets; unit and E2E tested)
-- [x] Sync off produces zero URL/title uploads. (2026-10-16: with `enabledAt` unset or cleared the uploader and downloader return before any request; unit tested. While off, new saves stay local)
+- [x] Sync off produces zero URL/title uploads. (2026-10-16: with `enabledAt` unset or cleared the uploader and downloader return before any request; unit tested. While off, new saves stay local. 2026-10-17: also checked before every request of a run, so turning sync off or connecting another account mid-run stops it at the next round or page; one request already sent completes; unit tested)
 - [ ] Excluded URLs are filtered before network serialization.
 - [ ] Another user cannot list/read/modify any of the first user's resources.
 - [ ] Revoked devices cannot push/pull; local data remains unaffected.

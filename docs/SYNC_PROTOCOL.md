@@ -350,7 +350,7 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
 
 **Extension uploader** (`pushNow`), following 13e:
 
-1. Runs only while connected (account id known) and when `syncState.enabledAt` is set for that account (local consent; set by the upload-preview slice, not yet built). Respects `nextAttemptAt` unless forced (`sync.pushNow` command).
+1. Runs only while connected (account id known) and when `syncState.enabledAt` is set for that account (local consent; set by the upload-preview slice, not yet built). Respects `nextAttemptAt` unless forced (`sync.pushNow` command). The connection's account and `enabledAt` are checked again before every round (2026-10-17), so turning sync off, disconnecting or connecting another account stops a run before its next request; a request already sent completes.
 2. Per round, in one IndexedDB transaction: select the first pending operation of each session in queue order (sessions with a `conflict` or `rejected` operation are held back entirely), up to 25 operations and 1.5 MB; mark operations that can never fit `rejected`; commit `sending` and `attempts + 1`.
 3. Push with the connection's device id and access token (refresh and revocation handling from 13d).
 4. Apply results in one transaction: `accepted` (and `rejected NOT_FOUND` for a delete) removes the operation and sets `sync.serverVersion` (`synced` when nothing else is waiting); `conflict` and `rejected` keep the operation with its payload (status `conflict` / `rejected`, session state `conflict`); `validation_error` keeps it as `rejected` (session state `error`); `retryable_error` or a missing result leaves it `sending`.
@@ -375,7 +375,7 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 - **`CURSOR_EXPIRED`** when the cursor is ahead of the user's clock (the server lost changes, e.g. a backup restore) or when the change right after it is missing (log pruned). Detection relies on the gap-free log (13a); a false positive only costs a bootstrap. No pruning job exists yet.
 - **Bootstrap** pages through the user's sessions by id, **tombstones included as deletes**, each as a change without a sequence (its current version and detail). `cursor` is the clock read **before** the rows: the client keeps the first page's and pulls from it afterwards; changes written meanwhile replay harmlessly because clients apply by version. Sessions only: workspaces join when the extension stores them.
 
-**Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f, but the backoff covers the whole run and only the pull's success clears it, so a pull that keeps failing backs off even while pushes work):
+**Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f, the gate checked again before every page). A run counts as synced only when its download completes (2026-10-17): that is when `lastSyncAt` moves and the backoff resets. A successful upload records neither, so a failing download keeps backing off even while pushes work, and "Last synced" never covers changes that weren't downloaded.
 
 1. No cursor (first sync of the account) or a rebuild in progress: bootstrap pages. Progress (`syncState.bootstrap`: first cursor + `after`) is stored with each page, so a stopped worker continues.
 2. Otherwise pull pages after `syncState.cursor`. `CURSOR_EXPIRED` or `INVALID_CURSOR` clears the cursor and rebuilds; queued changes are untouched.
@@ -402,7 +402,7 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 Extension only. Commands: `sync.enable { sessionIds }`, `sync.disable`, `sync.now`. Code: `apps/extension/src/lib/sync-consent.ts`, `session-repository.ts` (`saveNewSession`), `sync-runner.ts`; UI in `UI_UX_DESIGN.md` 18e.
 
 - `sync.enable` records consent (`enabledAt`, kept from the first time; the cursor and bootstrap progress are kept) and **moves** each chosen session that is still `local` into the account scope with a queued create, in one transaction. Ids that aren't this browser's sessions are skipped. It needs a connection with an account id.
-- `sync.disable` only clears `enabledAt`: uploads and downloads stop (the gate in 13f/13g), nothing is deleted, queued changes wait.
+- `sync.disable` only clears `enabledAt`: uploads and downloads stop (the gate in 13f/13g), including a run in progress before its next request, nothing is deleted, queued changes wait.
 - While sync is on, `session.capture` and `session.import` save into the account scope with a queued create; their results carry `syncing: true`.
 - The worker runs a sync after `session.capture`, `session.import`, `session.rename`, `session.delete` and `sync.enable`. A sync requested while a run is in progress gets **one follow-up run right after it**, shared by everyone who asked meanwhile. Joining the running run instead would miss a change made after that run's upload (found by the real-extension E2E: a rename waited for the 10-minute alarm).
 

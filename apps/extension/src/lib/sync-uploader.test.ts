@@ -8,12 +8,14 @@ import type { SessionHubDb } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { deleteSession, getSession, updateSession } from "./session-repository";
 import { toSyncPayload } from "./sync-batch";
+import { disableSync } from "./sync-consent";
 import { syncNow } from "./sync-runner";
 import { pushNow } from "./sync-uploader";
 import type { SyncDeps } from "./sync-gate";
 import { connectAs, freshDb, idFactory, sampleSession, sampleWindows, seedAccountSession } from "./test-fixtures";
 
 const ALICE = "AliceAccount00000000000000000000";
+const BOB = "BobAccount0000000000000000000000";
 const SCOPE = accountScope(ALICE);
 const T0 = new Date("2026-10-16T08:00:00.000Z");
 const ids = idFactory(6);
@@ -89,7 +91,7 @@ describe("sync uploader", () => {
     });
     expect(await db.outbox.count()).toBe(0);
     expect((await db.sessions.get(session.id))?.sync).toEqual({ serverVersion: 1, state: "synced" });
-    // The pull that follows in a sync run records it (sync-runner); the upload alone doesn't.
+    // "Last synced" waits for the download that completes the run (sync-runner).
     expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, lastError: null, lastSyncAt: null });
   });
 
@@ -134,6 +136,29 @@ describe("sync uploader", () => {
     expect(calls[1]!.body.operations).toEqual(calls[0]!.body.operations);
     // A whole run (upload, then download) succeeded, so the backoff ends.
     expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, nextAttemptAt: null });
+  });
+
+  it("stops at the next round when sync is turned off during a run", async () => {
+    const { db, deps, calls } = await setup(async (body, database) => {
+      await disableSync(database);
+      return acceptAll(body, database);
+    });
+    for (let prefix = 100; prefix < 130; prefix += 1) await queuedEdit(db, 1, "Edited", prefix);
+
+    expect(await pushNow(deps)).toEqual({ status: "disabled" });
+    expect(calls).toHaveLength(1);
+    expect((await listOutbox(db, SCOPE)).map(({ status }) => status)).toEqual(Array(5).fill("queued"));
+  });
+
+  it("stops at the next round when this browser is connected to another account during a run", async () => {
+    const { db, deps, calls } = await setup(async (body, database) => {
+      await connectAs(database, BOB);
+      return acceptAll(body, database);
+    });
+    for (let prefix = 100; prefix < 130; prefix += 1) await queuedEdit(db, 1, "Edited", prefix);
+
+    expect(await pushNow(deps)).toEqual({ status: "disconnected" });
+    expect(calls).toHaveLength(1);
   });
 
   it("stops when another account connects mid-run, so nothing is sent with its token", async () => {

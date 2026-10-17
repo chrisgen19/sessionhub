@@ -7,6 +7,7 @@ import type { AccountDeps } from "./account-service";
 import type { SessionHubDb } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { deleteSession, putSession, updateSession } from "./session-repository";
+import { disableSync } from "./sync-consent";
 import { pullNow } from "./sync-downloader";
 import type { SyncDeps } from "./sync-gate";
 import { syncNow } from "./sync-runner";
@@ -212,6 +213,23 @@ describe("sync download", () => {
     expect(await pullNow(deps)).toMatchObject({ applied: 1, skipped: 1 });
     expect(await local(db, good.id)).toBeDefined();
     expect((await db.syncState.get(SCOPE))?.cursor).toBe(cursor("9"));
+  });
+
+  it("stops at the next page when sync is turned off during a run", async () => {
+    const s = sampleSession({ name: "New elsewhere" }, 2);
+    const { db, deps, scheduleRetry } = await setup({}, { cursor: cursor("1") });
+    const fetch = vi.fn(async (input: URL | RequestInfo) => {
+      await disableSync(db);
+      return pullPage([upsert(s, 1)], cursor("2"), true)(new URL(String(input)));
+    });
+    deps.account.fetch = fetch as unknown as typeof globalThis.fetch;
+
+    expect(await pullNow(deps)).toEqual({ status: "disabled" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    // The page already on its way is kept; nothing more is asked for.
+    expect(await local(db, s.id)).toBeDefined();
+    expect((await db.syncState.get(SCOPE))?.cursor).toBe(cursor("2"));
+    expect(scheduleRetry).not.toHaveBeenCalled();
   });
 
   it("backs off when the server can't be reached", async () => {

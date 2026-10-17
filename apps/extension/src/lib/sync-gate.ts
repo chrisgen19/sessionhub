@@ -47,6 +47,15 @@ export const withRunToken = <T>(deps: SyncDeps, scope: AccountScope, call: (acce
     return call(token, origin);
   });
 
+/**
+ * Checked again before every request of a run: turning sync off, disconnecting or connecting
+ * another account stops the run at its next round or page. A request already sent can't be recalled.
+ */
+export const stillOpen = async (db: SessionHubDb, scope: AccountScope): Promise<GateClosed | null> => {
+  if (!isRunAccount(await db.account.get("connection"), scope)) return { status: "disconnected" };
+  return (await db.syncState.get(scope))?.enabledAt ? null : { status: "disabled" };
+};
+
 const SIGNED_OUT = new Set(["DEVICE_REVOKED", "INVALID_TOKEN", "UNAUTHENTICATED"]);
 
 /** Backoff after a failed request (Retry-After wins when longer). Revocation already disconnected. */
@@ -61,8 +70,8 @@ export const recordFailure = async (deps: SyncDeps, scope: AccountScope, error: 
 };
 
 /**
- * Ends the backoff after a whole run (push, then pull) succeeded. Only the pull, the run's last
- * step, calls it: if the push cleared it, a pull that keeps failing would never back off further.
+ * A completed run, upload then download: "Last synced" moves and the backoff resets. Only the
+ * download records it, so a failed download after a good upload keeps backing off.
  */
 export const recordSuccess = async (deps: SyncDeps, scope: AccountScope): Promise<void> => {
   await deps.db.syncState.update(scope, { failures: 0, nextAttemptAt: null, lastError: null, lastErrorCode: null, lastSyncAt: deps.now().toISOString() });
