@@ -14,6 +14,7 @@ A session can include private document URLs, unguessable share links, access tok
 - Incognito capture/sync is **off** by default, and should remain out of MVP unless separately designed and disclosed.
 - No cookies, passwords, keystrokes, page content, request bodies, browsing-history surveillance, or third-party ad trackers.
 - Recovery snapshots remain **local-only** by default. Saved sessions/workspaces may sync after consent.
+- A saved session holds only the tabs the user ticked in the save picker, and the picker says before saving whether it stays in this browser or uploads to the account. Browser pages are opt-in (unticked by default). Only tab ids cross from the page to the worker, which reads titles and URLs from Chrome itself (2026-10-17, UI_UX_DESIGN.md 18i).
 - Provide account export, disconnect/revoke, and cloud deletion workflows.
 - Publish an accurate privacy policy and extension permission rationale before Chrome Web Store submission.
 
