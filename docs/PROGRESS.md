@@ -24,6 +24,22 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (stale empty-state copy) / Claude Code (Opus 5.5) / `bugfix/empty-state-copy` (macOS laptop, branched from `feature/extension-0.1.1`)
+
+**Why:** both empty states still pointed at the one-click Save window button that the save picker (PR #25) replaced (noted in the theme toggle entry below).
+
+**Changed:**
+- Popup (`recent-sessions.tsx`): "No saved sessions yet. Choose tabs above and save them to get started." (the save picker sits above the list).
+- Manager (`session-list.tsx`): "Choose tabs to save in Open tabs or from the SessionHub toolbar icon, or import a SessionHub export."
+- `e2e/local-slice.spec.ts`: a comment quoting the old popup copy. `docs/UI_UX_DESIGN.md`: the empty-state table row.
+
+**Validated:**
+- Extension lint, typecheck, unit tests 245/245; extension E2E 11/11 (on the production build below).
+- `WXT_API_BASE_URL=https://sessionhub.cgdev.site pnpm --filter @sessionhub/extension zip:release`: passes, sha256 `8eed4a027e9d9043141139cb19f1506c5344026ab997795fb38a80609759ad7d`, a second build is identical. Built from the uncommitted branch, so rebuild from `main` after merging for the release record.
+- Screenshots from a fresh profile, light: popup at 380 px, manager at 390 and 1280 px, no horizontal overflow.
+
+**Next step:** PR #31 is still open (the merge was blocked by the agent's permission rules; the user merges it). Then commit this branch and open its PR. After both merge, rebuild the 0.1.1 ZIP from `main` and upload it.
+
 ### 2026-10-17 (extension 0.1.1 release ZIP) / Claude Code (Opus 5.5) / `feature/extension-0.1.1` (macOS laptop)
 
 **Why:** the theme toggle and light default (PR #29) were already in the extension on `main`, but the local store ZIP (`sessionhub-0.1.0-chrome.zip`, 18:00) predated the follow-up fix `0f4731f`. RELEASE.md step 5 requires a higher version for each store upload.

@@ -24,7 +24,7 @@ function EmptyList({ searching, workspace }: { searching: boolean; workspace: st
   const title = searching ? "No sessions match your search" : workspace ? `No sessions in ${workspace}` : "No saved sessions yet";
   const hint = workspace
     ? "Open a session and choose its workspace in the details."
-    : "Click the SessionHub toolbar icon and choose Save window, or import a SessionHub export.";
+    : "Choose tabs to save in Open tabs or from the SessionHub toolbar icon, or import a SessionHub export.";
   return (
     <div className="m-4 rounded-xl border border-dashed border-line px-4 py-10 text-center">
       <p className="text-[13px] font-semibold">{title}</p>
