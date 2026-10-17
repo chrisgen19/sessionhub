@@ -57,7 +57,12 @@ export const authenticateAccessToken = async (prisma: PrismaClient, token: strin
   if (!credential || credential.rotatedAt) throw invalid();
   if (credential.device.revokedAt || credential.device.authCredentialVersion !== credential.credentialVersion) throw revoked();
   if (credential.accessExpiresAt <= now) throw new ServiceError("ACCESS_TOKEN_EXPIRED", "The access token expired. Refresh it and retry.");
-  if (!credential.usedAt) await prisma.deviceCredential.update({ where: { id: credential.id }, data: { usedAt: now } });
+  if (!credential.usedAt) {
+    // Conditional, so a lost-response retry rotating this pair at the same moment can't
+    // leave both requests succeeding (the row lock orders them; the loser sees the winner).
+    const { count } = await prisma.deviceCredential.updateMany({ where: { id: credential.id, rotatedAt: null }, data: { usedAt: now } });
+    if (count !== 1) throw invalid();
+  }
   if (!credential.device.lastSeenAt || now.getTime() - credential.device.lastSeenAt.getTime() > LAST_SEEN_PRECISION_MS) {
     await prisma.device.update({ where: { id: credential.deviceId }, data: { lastSeenAt: now } });
   }
@@ -73,14 +78,19 @@ const rotate = async (tx: Tx, refreshToken: string, now: Date): Promise<RefreshO
   if (device.revokedAt || device.authCredentialVersion !== current.credentialVersion) throw revoked();
   if (current.rotatedAt) {
     // Rotated already. Allowed once more only if its successor was never used (the client
-    // lost the refresh response); anything else means two holders: treat as theft.
-    const successor = current.replacedById ? await tx.deviceCredential.findUnique({ where: { id: current.replacedById } }) : null;
-    if (!successor || successor.usedAt || successor.rotatedAt) return { kind: "reuse", deviceId: device.id, userId: device.userId };
-    await tx.deviceCredential.update({ where: { id: successor.id }, data: { rotatedAt: now } });
+    // lost the refresh response); anything else means two holders: treat as theft. The
+    // check and the claim are one conditional update, so the successor's concurrent first
+    // use can't also pass. `replacedById` keeps pointing at the now-dead successor, so a
+    // second retry finds it rotated: the retry is single-use.
+    const claimed = current.replacedById
+      ? await tx.deviceCredential.updateMany({ where: { id: current.replacedById, usedAt: null, rotatedAt: null }, data: { rotatedAt: now } })
+      : { count: 0 };
+    if (claimed.count !== 1) return { kind: "reuse", deviceId: device.id, userId: device.userId };
+    return { kind: "issued", credentials: (await issueCredential(tx, device, now)).credentials };
   }
   const next = await issueCredential(tx, device, now);
   const { count } = await tx.deviceCredential.updateMany({
-    where: { id: current.id, OR: [{ rotatedAt: null }, { replacedById: current.replacedById }] },
+    where: { id: current.id, rotatedAt: null },
     data: { rotatedAt: now, replacedById: next.id, usedAt: current.usedAt ?? now },
   });
   if (count !== 1) throw invalid();

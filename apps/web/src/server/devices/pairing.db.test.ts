@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { authenticateAccessToken, refreshCredential } from "./credentials";
 import { decidePairing, findPendingPairing, redeemPairing, startPairing } from "./pairing";
 import { revokeDevice } from "./service";
+import { hashToken } from "./tokens";
 
 const prisma = getPrisma();
 afterAll(async () => {
@@ -119,6 +120,52 @@ describe("device credentials", () => {
     // Using the lost pair after the retry is theft-like: the device is now revoked.
     expect((await prisma.device.findUniqueOrThrow({ where: { id: device.id } })).revokedAt).not.toBeNull();
     expect(await code(authenticateAccessToken(prisma, retried.accessToken))).toBe("DEVICE_REVOKED");
+  });
+
+  it("allows the lost-response retry only once, then treats the old refresh token as reuse", async () => {
+    const user = await newUser();
+    const { credentials, device } = await pairDevice(user.id);
+    await refreshCredential(prisma, credentials.refreshToken);
+    const retried = await refreshCredential(prisma, credentials.refreshToken);
+    expect(await code(refreshCredential(prisma, credentials.refreshToken))).toBe("DEVICE_REVOKED");
+    expect((await prisma.device.findUniqueOrThrow({ where: { id: device.id } })).revokedAt).not.toBeNull();
+    expect(await code(authenticateAccessToken(prisma, retried.accessToken))).toBe("DEVICE_REVOKED");
+  });
+
+  /**
+   * Runs `during` while another transaction has written `data` to the credential row but not
+   * committed yet (it holds the row lock), then commits. Reproduces two requests overlapping.
+   */
+  const whileUncommitted = async <T>(accessToken: string, data: { usedAt?: Date; rotatedAt?: Date }, during: () => Promise<T>) => {
+    const row = await prisma.deviceCredential.findUniqueOrThrow({ where: { accessTokenHash: hashToken(accessToken) } });
+    let result: Promise<T> | undefined;
+    await prisma.$transaction(async (tx) => {
+      await tx.deviceCredential.update({ where: { id: row.id }, data });
+      result = during();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    return result;
+  };
+
+  it("revokes when the old refresh token is retried while the replacement's first use is in flight", async () => {
+    const user = await newUser();
+    const { credentials, device } = await pairDevice(user.id);
+    const replacement = await refreshCredential(prisma, credentials.refreshToken);
+    const retry = await whileUncommitted(replacement.accessToken, { usedAt: new Date() }, () =>
+      code(refreshCredential(prisma, credentials.refreshToken)),
+    );
+    expect(retry).toBe("DEVICE_REVOKED");
+    expect((await prisma.device.findUniqueOrThrow({ where: { id: device.id } })).revokedAt).not.toBeNull();
+  });
+
+  it("refuses the replacement's first use while a lost-response retry is rotating it", async () => {
+    const user = await newUser();
+    const { credentials } = await pairDevice(user.id);
+    const replacement = await refreshCredential(prisma, credentials.refreshToken);
+    const use = await whileUncommitted(replacement.accessToken, { rotatedAt: new Date() }, () =>
+      code(authenticateAccessToken(prisma, replacement.accessToken)),
+    );
+    expect(use).toBe("INVALID_TOKEN");
   });
 
   it("revokes the device when an old refresh token is reused after the new one was used", async () => {
