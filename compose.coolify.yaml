@@ -1,0 +1,52 @@
+# Production stack for Coolify (Docker Compose build pack): one-shot migrations, then web.
+#
+# PostgreSQL isn't part of this file. DATABASE_URL points at the shared Coolify PostgreSQL over
+# the private network (enable "Connect to Predefined Network" on the application). Assign the
+# domain to the `web` service on port 3000; Coolify's proxy terminates HTTPS. It lives at the
+# repository root because Coolify uses the root as the compose project directory, so `context: .`
+# is the repository. Setup and checks: docs/DEPLOYMENT.md sections 4, 5 and 8.
+
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required (the internal PostgreSQL URL)}
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+      target: runner
+    expose:
+      - "3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required (the internal PostgreSQL URL)}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required (at least 32 random characters)}
+      # The exact public origin, https:// (production refuses plain http except localhost).
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?BETTER_AUTH_URL is required (https://<domain>, no trailing slash)}
+      # Coolify's Traefik is the only proxy in front: 1. With a CDN in front of it: 2.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
+      # Email confirmation and password reset: `resend` needs MAIL_FROM on a Resend-verified domain.
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-disabled}
+      MAIL_FROM: ${MAIL_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache:uid=1000,gid=1000,mode=0755
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

@@ -105,3 +105,26 @@ jobs:
       - name: Compose logs on failure
         if: failure()
         run: docker compose -p sessionhub-smoke -f infra/docker/compose.yaml logs --no-color || true
+
+  deploy:
+    # Ships main to Coolify only after every check has passed (docs/DEPLOYMENT.md section 8).
+    # Coolify's own auto-deploy is off, so merging is what deploys. Until the repository
+    # secrets exist, this skips with a notice instead of failing.
+    needs: [check, extension-zip, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger the Coolify deployment
+        env:
+          WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          if [ -z "$WEBHOOK" ] || [ -z "$TOKEN" ]; then
+            echo "::notice::COOLIFY_DEPLOY_WEBHOOK or COOLIFY_TOKEN isn't set, so nothing was deployed."
+            exit 0
+          fi
+          status=$(curl -sS -X POST -o body.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$WEBHOOK")
+          cat body.json
+          echo
+          test "$status" = "200" || { echo "Coolify returned HTTP $status"; exit 1; }
