@@ -45,6 +45,11 @@ test("sign-up sends a confirmation email; the link confirms it and the banner go
   expect(message.HTML).not.toContain("<b>Bold</b>");
   expect(message.link).toMatch(new RegExp(`^${BASE_URL}/api/auth/verify-email\\?token=`));
 
+  // Opening the page without the link doesn't claim the email is confirmed.
+  await page.goto("/email-verified");
+  await expect(page.getByRole("heading", { name: "Your email isn't confirmed yet" })).toBeVisible();
+  await expect(page.getByRole("main")).toContainText(email);
+
   await page.goto(message.link!);
   await expect(page).toHaveURL(/\/email-verified$/);
   await expect(page.getByRole("heading", { name: "Email confirmed" })).toBeVisible();
@@ -86,6 +91,8 @@ test("password reset: same answer for unknown emails, one-time link, all session
   for (const address of [unknown, email]) {
     await visitor.goto("/login");
     await visitor.getByRole("link", { name: "Forgot password?" }).click();
+    // Wait for the client-side navigation, or the fill can land in the sign-in form's Email field.
+    await expect(visitor.getByRole("heading", { name: "Reset your password" })).toBeVisible();
     await visitor.getByLabel("Email").fill(address);
     await visitor.getByRole("button", { name: "Send reset link" }).click();
     await expect(visitor.getByRole("status")).toContainText(`If there's an account for ${address}, we've sent it a link`);
