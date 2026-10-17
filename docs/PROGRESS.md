@@ -24,6 +24,33 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (web favicon; first CI deploy attempt) / Claude Code (Opus 5.5) / `bugfix/web-favicon` (macOS laptop)
+
+**Why:** `https://sessionhub.cgdev.site` had no favicon: `/favicon.ico`, `/icon.svg` and `/icon.png` were 404 and pages had no `<link rel="icon">`. The web app never had an icon file; only the extension did.
+
+**Implemented:**
+- Icons as Next.js file conventions in `apps/web/src/app/`:
+  - `icon.svg`: a copy of `apps/extension/assets/icon.svg`
+  - `favicon.ico`: 16, 32 and 48 px
+  - `apple-icon.png`: 180 px, full-bleed and opaque, since iOS rounds the corners itself
+- Next adds the links to every page. The proxy only guards `/app`, so the icons are public. They're route outputs, so the standalone server (Docker) serves them; there's no `public/` folder.
+- Rendered with the `sharp` that Next ships, the same way as the extension's PNGs. No dependency changes.
+- `apps/web/e2e/icons.spec.ts`: the three links on a page, and each icon served with status 200 and the right content type.
+
+**Validated (macOS; web E2E on the dev container's `sessionhub_test`):**
+- `pnpm check --force` 17/17; `@sessionhub/web` build. The route table omits `/favicon.ico`, but it's in `.next/standalone`.
+- Web E2E `icons`, `framing` and `privacy` specs: 4/4.
+
+**CI deploy (`COOLIFY_TOKEN` set by the user at 08:56 UTC):**
+- Run `51276c8`, attempt 1: `deploy` skipped. The run started before the secret existed, and each attempt gets the secrets that existed when it started.
+- Attempt 2 (a re-run of `deploy`): Coolify answered **HTTP 401 `Unauthenticated.`**. The workflow sends `Authorization: Bearer $TOKEN` (`.github/workflows/ci.yml:129`); a made-up token or no token gets the same 401, while a valid token without the deploy permission would get 403. So Coolify doesn't recognise the stored value.
+- No deployment was created; production is still `83cdd15` and healthy.
+
+**Next step:**
+- The user creates a new Coolify API token with the **deploy** permission and sets it with `pbpaste | gh secret set COOLIFY_TOKEN -R chrisgen19/sessionhub`.
+- Then re-run the `deploy` job and check that Coolify shows a finished deployment and `/api/health` is ok.
+- Push this branch and open its PR. After it merges, a passing deploy publishes the favicon.
+
 ### 2026-10-17 (save picker: choose which tabs to save) / Claude Code (Opus 5.5) / `feature/save-tab-picker` (macOS laptop)
 
 **Why:** the popup's one-click **Save window** / **Save all (N)** saved every tab without showing anything, and with sync on queued every URL for upload. The user called it dangerous and asked for Session Buddy's approach.
