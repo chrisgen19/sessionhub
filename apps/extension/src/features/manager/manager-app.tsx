@@ -34,7 +34,7 @@ export function ManagerApp() {
           <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
         </div>
         <nav aria-label="Manager" className="order-last flex w-full gap-1 lg:order-none lg:flex-col">
-          <NavLink route={{ view: "sessions", sessionId: null }} current={route.view === "sessions"} icon={<Layers aria-hidden="true" className="size-4" />}>
+          <NavLink route={{ view: "sessions", sessionId: null, workspace: null }} current={route.view === "sessions"} icon={<Layers aria-hidden="true" className="size-4" />}>
             Saved sessions
           </NavLink>
           <NavLink route={{ view: "recovery", snapshotId: null }} current={route.view === "recovery"} icon={<History aria-hidden="true" className="size-4" />}>
@@ -55,7 +55,12 @@ export function ManagerApp() {
       ) : route.view === "recovery" ? (
         <RecoveryView snapshotId={route.snapshotId} onSelect={(snapshotId) => navigate({ view: "recovery", snapshotId })} />
       ) : (
-        <SessionsView sessionId={route.sessionId} onSelect={(sessionId) => navigate({ view: "sessions", sessionId })} />
+        <SessionsView
+          sessionId={route.sessionId}
+          workspace={route.workspace}
+          onSelect={(sessionId) => navigate({ ...route, sessionId })}
+          onWorkspace={(workspace) => navigate({ ...route, workspace })}
+        />
       )}
     </div>
   );

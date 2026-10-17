@@ -10,13 +10,30 @@ interface SessionListProps {
   sessions: SavedSession[];
   selectedId: string | null;
   searching: boolean;
+  /** Name of the workspace the list is filtered to ("No workspace" included), for the empty state. */
+  workspace?: string | null;
+  /** A session's workspace name to show in its row (null: none, or the list is already filtered). */
+  workspaceName?: (id: string) => string | null;
   onSelect: (id: string) => void;
   onRetry: () => void;
 }
 
 const PROBLEM = new Set<SessionSyncLabel>(["conflict", "error"]);
 
-export function SessionList({ state, sessions, selectedId, searching, onSelect, onRetry }: SessionListProps) {
+function EmptyList({ searching, workspace }: { searching: boolean; workspace: string | null }) {
+  const title = searching ? "No sessions match your search" : workspace ? `No sessions in ${workspace}` : "No saved sessions yet";
+  const hint = workspace
+    ? "Open a session and choose its workspace in the details."
+    : "Click the SessionHub toolbar icon and choose Save window, or import a SessionHub export.";
+  return (
+    <div className="m-4 rounded-xl border border-dashed border-line px-4 py-10 text-center">
+      <p className="text-[13px] font-semibold">{title}</p>
+      {!searching && <p className="mt-1 text-xs text-fg-muted">{hint}</p>}
+    </div>
+  );
+}
+
+export function SessionList({ state, sessions, selectedId, searching, workspace = null, workspaceName = () => null, onSelect, onRetry }: SessionListProps) {
   const label = (id: string): SessionSyncLabel => (state.status === "ready" ? (state.syncLabels[id] ?? "local") : "local");
   if (state.status === "loading") {
     return (
@@ -37,22 +54,14 @@ export function SessionList({ state, sessions, selectedId, searching, onSelect, 
       </p>
     );
   }
-  if (sessions.length === 0) {
-    return (
-      <div className="m-4 rounded-xl border border-dashed border-line px-4 py-10 text-center">
-        <p className="text-[13px] font-semibold">{searching ? "No sessions match your search" : "No saved sessions yet"}</p>
-        {!searching && (
-          <p className="mt-1 text-xs text-fg-muted">Click the SessionHub toolbar icon and choose Save window, or import a SessionHub export.</p>
-        )}
-      </div>
-    );
-  }
+  if (sessions.length === 0) return <EmptyList searching={searching} workspace={workspace} />;
 
   return (
     <ul aria-label="Saved sessions" className="divide-y divide-line">
       {sessions.map((session) => {
         const summary = summarizeSession(session);
         const selected = session.id === selectedId;
+        const inWorkspace = workspaceName(session.id);
         return (
           <li key={session.id}>
             <button
@@ -71,6 +80,7 @@ export function SessionList({ state, sessions, selectedId, searching, onSelect, 
                   {session.name}
                 </span>
                 <span className="block truncate text-xs text-fg-muted">
+                  {inWorkspace && <span className="font-semibold text-fg">{inWorkspace} · </span>}
                   {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)}
                 </span>
               </span>

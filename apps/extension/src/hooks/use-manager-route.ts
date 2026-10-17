@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 
+/** The workspace filter value for sessions in no workspace (workspace ids are UUIDs). */
+export const NO_WORKSPACE = "none";
+
 export type ManagerRoute =
-  | { view: "sessions"; sessionId: string | null }
+  /** `workspace`: a workspace id, NO_WORKSPACE, or null for all sessions. */
+  | { view: "sessions"; sessionId: string | null; workspace: string | null }
   | { view: "recovery"; snapshotId: string | null }
   | { view: "account" };
 
-/** `#session=<id>` (popup deep link), `#view=recovery`, `#view=recovery&snapshot=<id>`, `#view=account`. */
+/**
+ * `#session=<id>` (popup deep link), `#workspace=<id|none>&session=<id>`, `#view=recovery`,
+ * `#view=recovery&snapshot=<id>`, `#view=account`.
+ */
 const parse = (): ManagerRoute => {
   const params = new URLSearchParams(window.location.hash.slice(1));
   if (params.get("view") === "account") return { view: "account" };
   return params.get("view") === "recovery"
     ? { view: "recovery", snapshotId: params.get("snapshot") }
-    : { view: "sessions", sessionId: params.get("session") };
+    : { view: "sessions", sessionId: params.get("session"), workspace: params.get("workspace") };
 };
 
 export const routeHref = (route: ManagerRoute): string => {
@@ -19,7 +26,8 @@ export const routeHref = (route: ManagerRoute): string => {
   if (route.view === "recovery") {
     return `#view=recovery${route.snapshotId ? `&snapshot=${encodeURIComponent(route.snapshotId)}` : ""}`;
   }
-  return route.sessionId ? `#session=${encodeURIComponent(route.sessionId)}` : "#";
+  const params = [route.workspace && `workspace=${encodeURIComponent(route.workspace)}`, route.sessionId && `session=${encodeURIComponent(route.sessionId)}`].filter(Boolean);
+  return params.length > 0 ? `#${params.join("&")}` : "#";
 };
 
 /** Manager view and selection, mirrored in the URL hash. */

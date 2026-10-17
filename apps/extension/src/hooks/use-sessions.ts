@@ -7,11 +7,11 @@ import type { SessionSyncLabel } from "../lib/sync-status";
 
 export type SessionsState =
   | { status: "loading" }
-  | { status: "ready"; sessions: SavedSession[]; syncLabels: Record<string, SessionSyncLabel> }
+  | { status: "ready"; sessions: SavedSession[]; syncLabels: Record<string, SessionSyncLabel>; workspaceIds: Record<string, string | null> }
   | { status: "error"; message: string };
 
 /**
- * Live list of saved sessions with each one's sync label. Dexie's liveQuery re-runs when IndexedDB changes in
+ * Live list of saved sessions with each one's sync label and workspace. Dexie's liveQuery re-runs when IndexedDB changes in
  * any extension context (including writes made by the background worker).
  */
 export function useSessions(): { state: SessionsState; retry: () => void } {
@@ -20,7 +20,7 @@ export function useSessions(): { state: SessionsState; retry: () => void } {
 
   useEffect(() => {
     const subscription = liveQuery(() => listSessionsWithSync(getDb())).subscribe({
-      next: ({ sessions, syncLabels }) => setState({ status: "ready", sessions, syncLabels }),
+      next: ({ sessions, syncLabels, workspaceIds }) => setState({ status: "ready", sessions, syncLabels, workspaceIds }),
       error: (error: unknown) =>
         setState({ status: "error", message: error instanceof Error ? error.message : "Couldn't load sessions" }),
     });
