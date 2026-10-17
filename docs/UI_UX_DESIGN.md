@@ -10,7 +10,7 @@
 The product should feel **as fast as a keyboard-powered tab utility, as organized as a project workspace, and as trustworthy as a backup application**.
 
 - **Recognize > recall:** show clear session names, source devices, dates, tab count and favicons.
-- **Two-second task:** saving the current window should require one primary action when the popup opens.
+- **Choose, then save:** saving always shows the open windows and tabs first, with the current window's web pages ticked, so the common save is still "open popup, press Save", and nothing is saved (or uploaded) that the user didn't tick (user's decision, 2026-10-17, after one-click saves were judged dangerous; replaces "one primary action saves the current window"; section 18i).
 - **Safe by default:** restore to new windows; preview before bulk changes; explicit device identity.
 - **Low visual noise:** compact lists for dense data; reserve large cards for a small Overview surface.
 - **Never conceal data status:** local-only, queued, syncing, synced, conflict and failed must be distinct.
@@ -82,7 +82,7 @@ For MVP, `Recovery` on the web must clearly state that local-only automatic snap
 ```text
 Browser toolbar -> Popup
   - Search
-  - Save current window / Save all windows
+  - Save tabs: choose windows and tabs, then save (section 18i)
   - Recent sessions
   - Open manager
   - Open side panel
@@ -183,8 +183,7 @@ Lucide icons, typically 16–18 px. Prefer recognizable browser favicons for ind
 ### Interaction specifics
 
 - Focus search with popup shortcut where Chrome permits; never hijack OS/browser reserved shortcuts.
-- Press primary **Save window** -> immediately commit locally, show `Saved locally` toast; update to `Synced` only after acknowledgment.
-- Save all (N) includes visible number of regular Chrome windows; exclusions explained in help tooltip.
+- (Superseded 2026-10-17 by section 18i: the popup no longer has **Save window** / **Save all (N)**; it shows the save picker.) A save commits locally at once and says `Saved locally`, or that it will sync; `Synced` only after acknowledgment.
 - Recent session click -> short preview sheet with Restore (new window), View in manager, Copy URL list.
 - First run: local capture remains usable without signup. Show small secondary banner to enable optional sync, not a blocking modal.
 - Signed out: `Local only` with optional `Enable sync` action; signed in with sync off must still show `Sync off`.
@@ -495,7 +494,7 @@ Component states must cover default, hover, keyboard-focus, selected, disabled, 
 
 ## 18a. Implementation notes (2026-10-16)
 
-Built so far: popup (search, Save window, Save all (N), recent sessions, Open manager) and the manager's Saved Sessions view (list, search, inspector with window/group/tab tree, rename, export, delete confirmation, restore preview and summary). Deviations from the wireframes, all deliberate for this slice:
+Built so far: popup (search, Save window, Save all (N), recent sessions, Open manager; the save buttons were replaced by the save picker on 2026-10-17, section 18i) and the manager's Saved Sessions view (list, search, inspector with window/group/tab tree, rename, export, delete confirmation, restore preview and summary). Deviations from the wireframes, all deliberate for this slice:
 
 - Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus.
 - Popup has no workspace selector, side-panel button or settings entry yet: those features don't exist, and the UI must not expose actions a surface can't perform.
@@ -595,6 +594,19 @@ Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `uplo
 - **A workspace the account refused** shows "Not added to your account: <reason>. Its sessions wait until you delete it." in the dialog, and under "Needs review" in the Sync card with **Remove workspace**.
 - **Deviations:** native selects (not the customizable `base-select` picker); no workspace in the popup or side panel yet; no "move sessions to..." target on delete (they go to No workspace, user's choice); new saves are not put in the selected workspace.
 - Verified at 1280 and 390 px (list, dialog, delete confirmation, inspector) and the Sync card in dark mode at 390 px: no horizontal overflow.
+
+## 18i. Choosing what to save (2026-10-17)
+
+Replaces the popup's one-click **Save window** and **Save all (N)**, which saved every tab (and, with sync on, uploaded it) without showing anything first. Modelled on Session Buddy v4, whose windows and tabs are selectable "for more precise actions like saving just a portion of a session" (checkboxes, Ctrl/Cmd-click, Shift-click ranges, an action bar), with its ignore rules for browser pages. Code: `apps/extension/src/features/save/` (`save-panel.tsx`, `tab-picker.tsx`, `save-bar.tsx`, `open-tabs-view.tsx`), `hooks/use-open-windows.ts`, rules in `lib/tab-selection.ts`.
+
+- **Where:** the popup's "Save tabs" section (the list scrolls within about 260 px, the current window expanded, others collapsed) and the manager's **Open tabs** view (`#view=open-tabs`, every window expanded, the save bar kept in view above the list), reached from the popup's **Open full view** or the manager nav.
+- **The list:** open normal windows, the current one first with a "This window" badge; tab groups as labelled runs; each tab with a checkbox, favicon, title, address, pin icon and "Won't reopen" for browser pages. Incognito windows and SessionHub's own pages are never listed. It follows the browser live: closed tabs leave the list and the selection; new tabs appear unticked; a ticked web page that turns into a browser page (it navigated to `chrome://...`) is unticked, while a browser page ticked by hand stays ticked (PR #25 review).
+- **Defaults (user's choices):** the current window's web pages are ticked; other windows and every browser page (`chrome://`, new tab, local files) start unticked.
+- **Selecting:** a window's checkbox ticks its web pages (in a window of browser pages only, all of them) and, once checked, unticks the whole window; a partly ticked window shows the mixed state. Single tabs tick or untick; Shift-click sets a range in visible order; **Select all** (web pages of every window) and **Select none**. The chevron hides or shows a window's tabs without changing what is ticked.
+- **Save bar:** "N tabs in M windows selected" (plus "K browser pages kept for reference only"), the name field prefilled with "Window, <date>" or "M windows, <date>" (the user's edit is kept), where it goes *before* saving ("Saves in this browser only." / "Saves to your account: it uploads at the next sync."), and **Save N tabs**, disabled when nothing is ticked and until the destination is known ("Checking where this saves…"; PR #25 review).
+- **After saving:** "Saved locally: …" or "Saved: … It will sync to your account.", plus browser pages saved as reference and ticked tabs that closed before the save. The selection returns to the default.
+- **Worker contract:** the page sends only the ticked tab ids and the name (`session.capture` with `scope: { kind: "tabs" }`); the worker reads titles and URLs from Chrome itself and saves only those tabs still open. `window` and `all-windows` scopes remain for tests and fixtures; no UI sends them. Recovery checkpoints are unchanged: automatic, local-only, never uploaded.
+- Verified at the 380 px popup width and the manager at 1280 and 390 px, light and dark (the manager's mobile nav now wraps to two rows).
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

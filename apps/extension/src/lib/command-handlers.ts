@@ -1,7 +1,7 @@
 import { buildSavedSession, CaptureLimitError, type CaptureWindowInput } from "@sessionhub/core/capture";
-import { defaultSessionName } from "@sessionhub/core/naming";
+import { defaultSessionName, selectionSessionName } from "@sessionhub/core/naming";
 import { planRestore, planRetry, type RestorePlan } from "@sessionhub/core/restore-plan";
-import { InvalidSessionNameError, renameSession } from "@sessionhub/core/session-edit";
+import { InvalidSessionNameError, normalizeSessionName, renameSession } from "@sessionhub/core/session-edit";
 import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { AccountApiError } from "./account-api";
@@ -110,19 +110,31 @@ const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse
   return fail("storage-error", error instanceof Error ? error.message : "Unexpected error");
 };
 
+const captureName = (command: Extract<Command, { type: "session.capture" }>, windowCount: number, now: Date) => {
+  if (command.name !== undefined) return normalizeSessionName(command.name);
+  return command.scope.kind === "tabs" ? selectionSessionName(windowCount, now) : defaultSessionName(command.scope.kind, now);
+};
+
+/** Saves what the scope names; for the picker's `tabs`, exactly the ticked tabs still open. */
 const capture = async (command: Extract<Command, { type: "session.capture" }>, deps: HandlerDeps) => {
-  const windows = await deps.readWindows(command.scope);
+  const { scope } = command;
+  // Validated before reading the browser, so a bad name never costs a capture.
+  if (command.name !== undefined) normalizeSessionName(command.name);
+  const windows = await deps.readWindows(scope);
   const now = deps.now();
   const device = await getOrCreateDevice(deps.db, deps.createId, now);
   const { session, report } = buildSavedSession(windows, {
-    name: defaultSessionName(command.scope.kind, now),
+    name: captureName(command, windows.filter((window) => window.tabs.length > 0).length, now),
     now,
     device: { id: device.installationId, name: device.friendlyName },
     createId: deps.createId,
   });
-  if (report.tabCount === 0) throw new BrowserError("There are no tabs to save in this window");
-  const scope = await saveNewSession(deps.db, session, { now, createId: deps.createId }, { replace: true });
-  return { sessionId: session.id, report, syncing: scope !== "local" };
+  if (report.tabCount === 0) {
+    throw new BrowserError(scope.kind === "tabs" ? "The tabs you chose were closed before saving" : "There are no tabs to save in this window");
+  }
+  const missing = scope.kind === "tabs" ? Math.max(0, new Set(scope.tabIds).size - report.tabCount) : 0;
+  const saved = await saveNewSession(deps.db, session, { now, createId: deps.createId }, { replace: true });
+  return { sessionId: session.id, report, syncing: saved !== "local", missing };
 };
 
 /** Re-validates untrusted file text and inserts it as a brand-new session (never an overwrite). */

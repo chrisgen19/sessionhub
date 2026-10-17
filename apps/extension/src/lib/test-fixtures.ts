@@ -2,6 +2,7 @@ import { buildSavedSession, type CaptureWindowInput } from "@sessionhub/core/cap
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { accountScope } from "./account-scope";
 import { createDb, type ConnectionRecord, type SessionHubDb, type SessionSyncRecord } from "./db";
+import type { OpenWindow } from "./tab-selection";
 
 let dbCounter = 0;
 
@@ -59,3 +60,17 @@ export const sampleSession = (overrides: Partial<SavedSession> = {}, prefix = 1)
   }).session,
   ...overrides,
 });
+
+/** The save picker's view of `sampleWindows`: window 1 (current) with a browser page, window 2 with one tab. */
+export const sampleOpenWindows = (): OpenWindow[] => [
+  {
+    id: 1,
+    tabs: [
+      { id: 101, title: "Fix login PR", url: "https://github.com/acme/pull/42", pinned: true, groupId: null, eligibility: "restorable" },
+      { id: 102, title: "React docs", url: "https://react.dev/learn", pinned: false, groupId: 5, eligibility: "restorable" },
+      { id: 103, title: "Settings", url: "chrome://settings", pinned: false, groupId: null, eligibility: "browser-internal" },
+    ],
+    groups: [{ id: 5, title: "Docs", color: "blue" }],
+  },
+  { id: 2, tabs: [{ id: 201, title: "Example", url: "https://example.com/", pinned: false, groupId: null, eligibility: "restorable" }], groups: [] },
+];

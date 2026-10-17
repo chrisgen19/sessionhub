@@ -63,6 +63,31 @@ describe("handleCommand", () => {
     }
   });
 
+  it("saves only the tabs ticked in the picker, with its name, and reports ticked tabs that closed", async () => {
+    const deps = makeDeps({ readWindows: vi.fn(async () => sampleWindows().slice(0, 1)) });
+    const response = await handleCommand({ type: "session.capture", scope: { kind: "tabs", tabIds: [3, 4, 4, 99] }, name: "  Picked tabs " }, deps);
+    expect(response).toMatchObject({ ok: true, data: { syncing: false, missing: 0, report: { tabCount: 3, windowCount: 1 } } });
+    expect(deps.readWindows).toHaveBeenCalledWith({ kind: "tabs", tabIds: [3, 4, 4, 99] });
+    const sessionId = response.ok ? (response.data as { sessionId: string }).sessionId : "";
+    expect((await getSession(deps.db, sessionId))?.name).toBe("Picked tabs");
+
+    // Three distinct ids ticked, one tab still open: two had closed.
+    const oneLeft = makeDeps({ readWindows: async () => [{ tabs: [{ url: "https://a.test/", title: "A", pinned: false, index: 0, groupKey: null }], groups: [] }] });
+    const partial = await handleCommand({ type: "session.capture", scope: { kind: "tabs", tabIds: [1, 2, 3] } }, oneLeft);
+    expect(partial).toMatchObject({ ok: true, data: { missing: 2, report: { tabCount: 1 } } });
+    expect((await listSessions(oneLeft.db))[0]?.name).toMatch(/^Window, /);
+  });
+
+  it("refuses a bad name before reading the browser, and says so when every ticked tab closed", async () => {
+    const deps = makeDeps();
+    const blank = await handleCommand({ type: "session.capture", scope: { kind: "tabs", tabIds: [1] }, name: "   " }, deps);
+    expect(blank).toMatchObject({ ok: false, error: { code: "invalid-input" } });
+    expect(deps.readWindows).not.toHaveBeenCalled();
+    const gone = await handleCommand({ type: "session.capture", scope: { kind: "tabs", tabIds: [1] } }, makeDeps({ readWindows: async () => [] }));
+    expect(gone).toMatchObject({ ok: false, error: { code: "browser-error", message: "The tabs you chose were closed before saving" } });
+    expect(await handleCommand({ type: "session.capture", scope: { kind: "tabs", tabIds: [] } }, deps)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+  });
+
   it("renames with version checks", async () => {
     const deps = makeDeps();
     const { sessionId } = await capture(deps);

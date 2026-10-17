@@ -24,6 +24,52 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (save picker: choose which tabs to save) / Claude Code (Opus 5.5) / `feature/save-tab-picker` (macOS laptop)
+
+**Why:** the popup's one-click **Save window** / **Save all (N)** saved every tab without showing anything, and with sync on queued every URL for upload. The user called it dangerous and asked for Session Buddy's approach.
+
+**Research:**
+- Session Buddy's docs and release notes: v4 made windows and tabs selectable "for more precise actions like saving just a portion of a session" (checkboxes, Ctrl/Cmd-click, Shift ranges); v4.1 added a selection action bar; browser pages are "never displayed or saved".
+- OneTab reviews: complaints that one click sends every tab.
+- Reddit couldn't be fetched from this environment.
+
+**User's choices:** the picker in the popup and the manager; the current window ticked; browser pages listed but unticked; a prefilled name.
+
+**Implemented:**
+- `packages/core`: `normalizeSessionName` (shared by rename and save), `selectionSessionName`.
+- `apps/extension/src/lib/tab-selection.ts`: the pure selection rules. Header targets, tri-state, toggles, Shift ranges, select all/none, `reconcile` (closed tabs drop out, new tabs unticked), `summarize`, and the worker's `selectTabs`.
+- `lib/tab-segments.ts`: group runs, shared with the saved-session window tree.
+- Worker:
+  - `session.capture` takes `scope: { kind: "tabs", tabIds }` and `name`, and returns `missing`
+  - `browser-capture.ts` keeps only the ticked ids, reading titles and URLs from Chrome
+  - `command-handlers.ts` validates the name before reading the browser
+- UI:
+  - `hooks/use-open-windows.ts`: live windows, current window first, refreshed on tab and window events
+  - `features/save/`: `TabPicker`, `SaveBar`, `SavePanel`, `OpenTabsView`
+  - popup "Save tabs" with "Open full view"; manager nav **Open tabs** (`#view=open-tabs`)
+  - `quick-save-actions.tsx` removed
+  - the manager's mobile nav wraps (four items overflowed at 390 px)
+- Tests:
+  - new: `tab-selection.test.ts` (8), command handler (+2), `save-ui.test.tsx` (4)
+  - popup tests updated to the picker (open windows mocked, since WXT's fake browser has no tab events)
+  - extension E2E: the popup save test now uses the picker, and a new real-Chromium picker test covers a header click, a browser page staying unticked, a ticked tab closed meanwhile, and that only the ticked tab is saved
+- Docs: UI_UX_DESIGN principle and section 18i, USER_FLOWS Flow 2, SECURITY_PRIVACY section 2, SYSTEM_DESIGN decision, TEST_PLAN.
+
+**Validated (macOS; web E2E on temporary `docker run` PostgreSQL and Mailpit at 54369/58065):**
+- `pnpm check --force` 17/17 (extension 240 tests, +14).
+- Extension E2E 10/10; the new picker test 3/3 on repeat.
+- `pnpm build`; full web E2E 54/54.
+- Popup at 380 px and Open tabs at 1280 and 390 px, light and dark: no horizontal overflow after the nav fix.
+
+**Not changed:** recovery checkpoints (automatic, local-only, never uploaded); `window` and `all-windows` scopes stay for tests and fixtures.
+
+**PR #25 review (Codex, 2 P2 findings), both valid and fixed:**
+- *A ticked web page that navigates to a browser page stayed ticked* (`reconcile` only checked the id was open), so a `chrome://` page could be saved and uploaded without opt-in. `reconcile` now takes the previous view and unticks web pages that became browser pages; browser pages ticked by hand stay. Unit test, plus the real-Chromium picker test (navigate to `chrome://settings`: unticked; re-tick by hand; close: gone; 3/3).
+- *Save was enabled before the destination was stated* (while the sync state loaded). The save bar now says "Checking where this saves…" and Save waits for it. UI test added; the storage-full popup test waits for the destination before clicking.
+- `pnpm check --force` 17/17 (extension 242 tests).
+
+**Next step:** PR #25 is open; wait for its Codex review, then merge. PRs #23 (the CI upload fix) and #24 (the deployment results) were merged (`0788ccb`, `94707d4`), and `main` was merged into this branch.
+
 ### 2026-10-17 (first deployment verified: sessionhub.cgdev.site) / Claude Code (Opus 5.5) / `feature/first-deploy-results` (macOS laptop)
 
 **Deployed:** PR #22 merged as `83cdd15` (its CI green: `check`, `docker`, `extension-zip`; `deploy` skipped on the PR by design). The first deployment was built from the PR branch to test Coolify before merging: the GitHub App cloned the private repository, `migrate` ran and exited, `web` became healthy, and no secret appeared in the deployment log (hidden lines included) or as a build argument. The app was then switched back to `main` and redeployed from `83cdd15` (`running:healthy`).

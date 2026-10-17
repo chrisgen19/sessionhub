@@ -14,10 +14,15 @@ import type { RestoreJobRecord } from "./db";
 export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("session.capture"),
+    // The UI sends only `tabs`: what the user ticked in the save picker. `window` and `all-windows`
+    // remain for tests and fixtures. Tab ids are Chrome's runtime ids, valid for this save only.
     scope: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("window"), windowId: z.int() }),
       z.object({ kind: z.literal("all-windows") }),
+      z.object({ kind: z.literal("tabs"), tabIds: z.array(z.int()).min(1).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax) }),
     ]),
+    /** The name from the picker; the worker validates it like a rename. Absent: the default name. */
+    name: z.string().max(SESSION_LIMITS.nameMax * 2).optional(),
   }),
   z.object({
     type: z.literal("session.rename"),
@@ -68,8 +73,11 @@ export const commandSchema = z.discriminatedUnion("type", [
 export type Command = z.infer<typeof commandSchema>;
 
 export interface CommandResults {
-  /** `syncing`: saved into the account (sync is on), so it uploads in the background. */
-  "session.capture": { sessionId: string; report: CaptureReport; syncing: boolean };
+  /**
+   * `syncing`: saved into the account (sync is on), so it uploads in the background. `missing`:
+   * ticked tabs that were closed (or became SessionHub pages) before the save, so they weren't saved.
+   */
+  "session.capture": { sessionId: string; report: CaptureReport; syncing: boolean; missing: number };
   "session.rename": { version: number };
   "session.delete": Record<string, never>;
   "session.import": { sessionId: string; report: ImportReport; syncing: boolean };

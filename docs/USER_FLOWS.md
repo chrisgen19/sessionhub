@@ -22,11 +22,13 @@ flowchart TD
 
 ## Flow 2 — Save current window / all windows
 
+Since 2026-10-17 the user always chooses first (UI_UX_DESIGN.md 18i): the picker lists the open windows and tabs with the current window's web pages ticked and browser pages unticked; saving sends only the ticked tab ids.
+
 ```mermaid
 flowchart TD
-  A[Click Save] --> B[Read Chrome windows/tabs/groups]
+  A[Open popup or Open tabs] --> B[Read Chrome windows/tabs/groups]
   B --> C[Classify supported / excluded URLs]
-  C --> D[Preview or quick save with default name]
+  C --> D[User ticks windows and tabs, names it, presses Save]
   D --> E[Write saved session + outbox atomically]
   E --> F[Show Saved locally]
   F --> G{Sync enabled?}

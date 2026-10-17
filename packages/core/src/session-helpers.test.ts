@@ -1,7 +1,7 @@
 import { sessionExportSchema } from "@sessionhub/contracts/session-export";
 import { describe, expect, it } from "vitest";
 import { buildSavedSession } from "./capture";
-import { defaultSessionName } from "./naming";
+import { defaultSessionName, selectionSessionName } from "./naming";
 import { filterSessions, matchesSessionQuery } from "./search";
 import { InvalidSessionNameError, renameSession } from "./session-edit";
 import { createSessionExport, exportFileName } from "./session-export";
@@ -74,6 +74,8 @@ describe("defaultSessionName", () => {
     const date = new Date("2026-10-16T01:42:00.000Z");
     expect(defaultSessionName("window", date, { timeZone: "UTC" })).toBe("Window, Oct 16, 1:42 AM");
     expect(defaultSessionName("all-windows", date, { timeZone: "UTC" })).toBe("All windows, Oct 16, 1:42 AM");
+    expect(selectionSessionName(1, date, { timeZone: "UTC" })).toBe("Window, Oct 16, 1:42 AM");
+    expect(selectionSessionName(3, date, { timeZone: "UTC" })).toBe("3 windows, Oct 16, 1:42 AM");
     expect(defaultSessionName("checkpoint", date, { timeZone: "UTC" })).toBe("Checkpoint, Oct 16, 1:42 AM");
   });
 });

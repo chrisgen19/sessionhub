@@ -24,7 +24,7 @@ export const connectExtension = async (context: BrowserContext, extensionId: str
   return manager;
 };
 
-/** Saves all of this profile's open windows through the extension, as the popup's Save all does. */
+/** Saves all of this profile's open windows through the worker's command (a test shortcut: the UI saves only ticked tabs). */
 export const captureAllWindows = async (manager: Page): Promise<string> => {
   const response = (await sendCommand(manager, { type: "session.capture", scope: { kind: "all-windows" } })) as { ok: boolean; data: { sessionId: string } };
   expect(response.ok).toBe(true);

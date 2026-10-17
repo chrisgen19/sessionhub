@@ -9,6 +9,14 @@ import { sampleWindows } from "../lib/test-fixtures";
 import { ManagerApp } from "./manager/manager-app";
 import { PopupApp } from "./popup/popup-app";
 
+// The save picker's open windows (WXT's fake browser has no tab events to read them live).
+vi.mock("../hooks/use-open-windows", async () => {
+  const { sampleOpenWindows } = await import("../lib/test-fixtures");
+  // One stable value, as the real hook keeps until Chrome reports a change.
+  const state = { status: "ready", windows: sampleOpenWindows(), currentWindowId: 1 };
+  return { useOpenWindows: () => state };
+});
+
 let windows: CaptureWindowInput[] = sampleWindows();
 
 const deps = async () => {
@@ -40,7 +48,9 @@ describe("storage full in the UI", () => {
   it("popup save explains that storage is full and what to do", async () => {
     vi.spyOn(getDb().sessions, "put").mockImplementation(quota);
     render(<PopupApp />);
-    await userEvent.click(screen.getByRole("button", { name: /save all/i }));
+    // Save is enabled once the picker can say where the session goes.
+    await screen.findByText("Saves in this browser only.");
+    await userEvent.click(screen.getByRole("button", { name: "Save 2 tabs" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/Not saved: Storage for SessionHub is full, so this wasn't saved\. Delete or export sessions/);
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();

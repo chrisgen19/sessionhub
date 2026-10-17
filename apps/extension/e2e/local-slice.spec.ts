@@ -36,13 +36,14 @@ test("capture -> IndexedDB -> list -> restore into a new window, leaving existin
     await chrome.tabs.update(alpha!.id!, { pinned: true });
   }, SITE);
 
-  // Save from the real popup UI.
+  // Save from the real popup UI: its window's web pages start ticked (about:blank doesn't).
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await popup.getByRole("button", { name: /save all/i }).click();
-  await expect(popup.getByText(/saved locally/i)).toBeVisible();
+  await expect(popup.getByText("This window")).toBeVisible();
+  await popup.getByRole("button", { name: "Save 2 tabs" }).click();
+  await expect(popup.getByText(/saved locally: 2 tabs in 1 window/i)).toBeVisible();
   // The popup list updates from IndexedDB written by the background worker.
-  await expect(popup.getByRole("button", { name: /all windows,/i })).toBeVisible();
+  await expect(popup.getByRole("button", { name: /^Window,/ })).toBeVisible();
   await popup.close();
 
   const before = await snapshotWindows(worker);
@@ -51,16 +52,16 @@ test("capture -> IndexedDB -> list -> restore into a new window, leaving existin
   const manager = await context.newPage();
   await manager.goto(`chrome-extension://${extensionId}/manager.html`);
   await manager.getByRole("searchbox").fill("beta");
-  await manager.getByRole("button", { name: /all windows,/i }).click();
+  await manager.getByRole("button", { name: /^Window,/ }).click();
   const inspector = manager.getByRole("article", { name: /session details/i });
   await expect(inspector.getByText("Page beta").first()).toBeVisible();
   await expect(inspector.getByText("Research")).toBeVisible();
+  // Only what was ticked: no about:blank, and never SessionHub's own pages.
+  await expect(inspector.getByText(/can't be reopened/i)).toHaveCount(0);
 
   await inspector.getByRole("button", { name: /restore/i }).click();
   const dialog = manager.getByRole("dialog");
   await expect(dialog.getByText(/opens in new windows/i)).toBeVisible();
-  // about:blank and the extension pages themselves are saved as reference only.
-  await expect(dialog.getByText(/can't be restored/i)).toBeVisible();
   await dialog.getByRole("button", { name: /^restore 2 tabs$/i }).click();
   await expect(dialog.getByText(/opened 2 of 2 tabs in 1 new window/i)).toBeVisible();
 
@@ -80,6 +81,52 @@ test("capture -> IndexedDB -> list -> restore into a new window, leaving existin
       expect.arrayContaining(window.urls.filter((url) => url.startsWith(SITE))),
     );
   }
+});
+
+test("the save picker saves exactly the tabs ticked; a tab that becomes a browser page or closes leaves the selection", async ({ context, worker, extensionId }) => {
+  const other = await worker.evaluate(async (site) => {
+    const window = await chrome.windows.create({ url: [`${site}/three`, `${site}/four`, `${site}/five`], focused: false });
+    await chrome.tabs.create({ windowId: window!.id, url: "chrome://version", active: false });
+    return window!.id;
+  }, SITE);
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#view=open-tabs`);
+  // Tabs opened through chrome.windows.create bypass the test's route, so match them by address.
+  const region = manager.getByRole("region").filter({ hasText: "sessionhub.test/three" });
+  await expect(region.getByRole("checkbox", { name: /sessionhub\.test\/five/ })).toBeVisible();
+
+  await manager.getByRole("button", { name: "Select none" }).click();
+  await expect(manager.getByText("No tabs selected")).toBeVisible();
+  // The window's header ticks its web pages; the browser page stays unticked.
+  await region.getByRole("checkbox", { name: /^Window \d/ }).check();
+  await expect(manager.getByText("3 tabs in 1 window selected")).toBeVisible();
+  await expect(region.getByRole("checkbox", { name: /chrome:\/\/version/ })).not.toBeChecked();
+  await region.getByRole("checkbox", { name: /sessionhub\.test\/four/ }).uncheck();
+
+  // A ticked tab that turns into a browser page is unticked: browser pages stay opt-in.
+  const fiveId = await worker.evaluate(async ({ site, windowId }) => {
+    const [five] = await chrome.tabs.query({ windowId, url: `${site}/five` });
+    await chrome.tabs.update(five!.id!, { url: "chrome://settings" });
+    return five!.id!;
+  }, { site: SITE, windowId: other });
+  await expect(region.getByRole("checkbox", { name: /chrome:\/\/settings/ })).not.toBeChecked();
+  await expect(manager.getByText("1 tab in 1 window selected")).toBeVisible();
+  // Ticked again by hand, then closed elsewhere: it leaves the list and the selection at once.
+  await region.getByRole("checkbox", { name: /chrome:\/\/settings/ }).check();
+  await expect(manager.getByText(/2 tabs in 1 window selected/)).toBeVisible();
+  await worker.evaluate((id) => chrome.tabs.remove(id), fiveId);
+  await expect(region.getByRole("checkbox", { name: /chrome:\/\/settings/ })).toHaveCount(0);
+  await expect(manager.getByText("1 tab in 1 window selected")).toBeVisible();
+
+  await manager.getByRole("textbox", { name: "Session name" }).fill("Only page three");
+  await manager.getByRole("button", { name: "Save 1 tab" }).click();
+  await expect(manager.getByText("Saved locally: 1 tab in 1 window.")).toBeVisible();
+
+  await manager.goto(`chrome-extension://${extensionId}/manager.html`);
+  await manager.getByRole("button", { name: /Only page three/ }).click();
+  const inspector = manager.getByRole("article", { name: /session details/i });
+  await expect(inspector.getByRole("region", { name: "Window 1" }).getByRole("listitem")).toHaveText([/sessionhub\.test\/three/]);
+  await expect(inspector.getByRole("region", { name: "Window 2" })).toHaveCount(0);
 });
 
 test("saved sessions survive a service-worker stop and a browser restart", async ({ context, extensionId, userDataDir }) => {

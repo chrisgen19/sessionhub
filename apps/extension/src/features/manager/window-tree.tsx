@@ -4,25 +4,12 @@ import { Pin } from "lucide-react";
 import { GROUP_COLORS } from "../../components/color-dot";
 import { TabFavicon } from "../../components/tab-favicon";
 import { plural } from "../../lib/format";
+import { toTabSegments, type TabSegment } from "../../lib/tab-segments";
 
-interface Segment {
-  key: string;
-  group: SavedGroup | null;
-  tabs: SavedTab[];
-}
+type Segment = TabSegment<SavedTab, SavedGroup>;
 
-/** Splits tabs (in saved order) into consecutive runs sharing the same group. */
-const toSegments = (window: SavedWindow): Segment[] => {
-  const groupsById = new Map(window.groups.map((group) => [group.id, group]));
-  const segments: Segment[] = [];
-  for (const tab of [...window.tabs].sort((a, b) => a.sortOrder - b.sortOrder)) {
-    const group = (tab.groupId && groupsById.get(tab.groupId)) || null;
-    const last = segments.at(-1);
-    if (last && last.group?.id === group?.id) last.tabs.push(tab);
-    else segments.push({ key: tab.id, group, tabs: [tab] });
-  }
-  return segments;
-};
+/** Tabs in saved order, split into consecutive runs sharing the same group. */
+const toSegments = (window: SavedWindow): Segment[] => toTabSegments([...window.tabs].sort((a, b) => a.sortOrder - b.sortOrder), window.groups);
 
 function TabRow({ tab }: { tab: SavedTab }) {
   const reason = describeEligibility(tab.eligibility);
@@ -71,7 +58,7 @@ export function WindowTree({ session }: { session: SavedSession }) {
           </h3>
           <div className="p-1">
             {toSegments(window).map((segment) => (
-              <SegmentView key={segment.key} segment={segment} />
+              <SegmentView key={segment.tabs[0]?.id} segment={segment} />
             ))}
           </div>
         </section>
