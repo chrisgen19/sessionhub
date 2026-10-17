@@ -67,6 +67,7 @@ Never rely only on mocked `chrome.tabs` for critical browser restoration behavio
 | User revokes Windows device on web | Windows API denied; its local sessions remain |
 | Chrome profile switches accounts | No account A cloud sessions shown to account B |
 | Sync consent disabled | No session URL upload; local backup still works |
+| Theme on a dark system, then Dark, then System | Light by default; Dark is remembered and applied before `<body>` exists (no flash) on the web and in the extension's pages; System follows the system live; the popup follows a choice made in the manager (E2E `theme.spec.ts` in both apps) |
 | Save with the picker (two windows, a browser page) | Only ticked tabs are saved; the current window starts ticked, browser pages unticked; a ticked tab closed meanwhile leaves the selection (E2E `local-slice.spec.ts`) |
 | Workspace made on the web, another in the extension, a session assigned | Both workspaces and the assignment reach the other profile; its switcher filters by them (E2E `sync-workspaces.spec.ts`) |
 | Same workspace renamed in one profile, recolored in the other | Both changes survive (per-field merge) everywhere |

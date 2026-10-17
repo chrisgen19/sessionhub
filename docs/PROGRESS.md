@@ -24,6 +24,48 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (light theme by default, with a theme toggle) / Claude Code (Opus 5.5) / `feature/theme-toggle` (macOS laptop)
+
+**Why:** both apps followed the operating system (`@media (prefers-color-scheme: dark)` in `tokens.css`) with no way to override it. The user asked for light by default and a toggle in both apps.
+
+**User's choices:** Light / Dark / System; always visible (web: every page's header; extension: the popup header and the manager).
+
+**Implemented:**
+- `packages/core/src/theme.ts` (`@sessionhub/core/theme`):
+  - preference parsing and resolution
+  - read, apply and set helpers, plus `subscribeToThemePreference` for `useSyncExternalStore`
+  - `THEME_INIT_SCRIPT`: a self-contained ES5 script that applies the stored choice before the first paint, follows the system while System is chosen, and follows a choice made in another page through `storage`
+- `packages/ui/src/tokens.css`: light on `:root`; dark under `:root[data-theme="dark"]`, no longer under the media query.
+- **Web:**
+  - `layout.tsx`: `<html data-theme="light" suppressHydrationWarning>` and the inline script in `<head>`, per the installed Next.js 16.4.1 guide `preventing-flash-before-hydration.md`
+  - the media-based `themeColor` is removed, since it would follow the OS instead of the choice
+  - `components/theme-toggle.tsx`, re-applying the theme after React's development remount
+  - placed in the home header (which now wraps on narrow screens), the sign-in pages' corner, the dashboard top bar and the privacy page
+- **Extension:**
+  - `wxt.config.ts` generates `theme-init.js` from the same string (`build:publicAssets` hook)
+  - popup and manager load it before their bundle (`vite-ignore` keeps Vite from processing it)
+  - `components/theme-toggle.tsx` in the popup header and the manager's sidebar
+  - a `matchMedia` stub in `vitest.setup.ts`
+- **Tests:**
+  - `core` `theme.test.ts` (6, running the init script against a stub page)
+  - extension `theme-toggle.test.tsx` (2)
+  - E2E `theme.spec.ts` in both apps (real Chromium): light on a dark system; Dark applied before `<body>` exists after a reload or in another page; System follows the system live; the dashboard toggle
+- **Docs:** UI_UX_DESIGN 4.1, SYSTEM_DESIGN decision, TEST_PLAN.
+
+**Validated:**
+- `pnpm check --force`; core, web and extension lint and typecheck.
+- Extension E2E `theme.spec.ts` 3/3 on repeat. Web E2E `theme`, `icons` and `framing` specs.
+- `zip:release` passes with `theme-init.js` in the ZIP, and a second build is identical.
+- `/` and `/privacy` stay static.
+- Next dev server: Dark survives a reload with no console warnings or hydration errors.
+- Screenshots, light and dark, with no horizontal overflow: web home and sign-in at 320, 390 and 1280 px; dashboard at 390 and 1280 px; popup at 380 px; manager at 1280 and 390 px.
+
+**Noticed, not changed (left over from the save picker):**
+- The manager's empty state still says "choose Save window".
+- The popup's says "Save this window to get started".
+
+**Next step:** push and open the PR. Still pending: a valid `COOLIFY_TOKEN`; the deploy job got a 401.
+
 ### 2026-10-17 (web favicon; first CI deploy attempt) / Claude Code (Opus 5.5) / `bugfix/web-favicon` (macOS laptop)
 
 **Why:** `https://sessionhub.cgdev.site` had no favicon: `/favicon.ico`, `/icon.svg` and `/icon.png` were 404 and pages had no `<link rel="icon">`. The web app never had an icon file; only the extension did.
