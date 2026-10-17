@@ -24,6 +24,26 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (two timing-sensitive tests) / Claude Code (Opus 5.5) / `bugfix/flaky-tests` (macOS laptop)
+
+**Why:** two tests failed intermittently, in nothing they test.
+
+**Fixed:**
+- **`apps/web/e2e/api-sessions.spec.ts`, "reads are rate-limited per user too":**
+  - *How it failed:* `main`'s `e2e-web` for the #29 merge (`413cded`): all 130 reads were allowed. The limit is 120 at once plus 2 per second (`apps/web/src/server/api/rate-limit.ts:21`), so a burst that took 5 s or more refilled 10.
+  - *Fix:* the test now sends 200; all of them would only pass if the burst took 40 s.
+- **`apps/extension/src/features/workspaces-ui.test.tsx:86`:**
+  - *How it failed:* it read the workspace switcher's counts once, right after the switcher appeared. Under the full parallel `pnpm check` the counts' query hadn't landed yet (`(0)`).
+  - *Fix:* the assertion now waits for them with `waitFor`.
+
+**Validated:**
+- The rate-limit test 3/3 against the standalone build.
+- `workspaces-ui.test.tsx` 10/10 alone.
+- `pnpm check --force` 17/17 three times in a row (extension 290 tests).
+- Web and extension lint and typecheck.
+
+**Next step:** open the PR. Still pending: a valid `COOLIFY_TOKEN`.
+
 ### 2026-10-17 (keep opened tabs unloaded until clicked, PR 4 of 4) / Claude Code (Opus 5.5) / `feature/lazy-open` (macOS laptop, branched from `feature/popup-open-save-tabs`, PR #39)
 
 **Why:** the user chose lazy loading for big opens, with a spike first and best effort accepted.

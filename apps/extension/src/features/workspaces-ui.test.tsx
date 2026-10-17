@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accountScope } from "../lib/account-scope";
@@ -83,7 +83,10 @@ describe("workspace switcher and assignment", () => {
     render(<ManagerApp />);
 
     const switcher = await screen.findByRole("combobox", { name: "Workspace" });
-    expect(within(switcher).getAllByRole("option").map((option) => option.textContent)).toEqual(["All sessions", "Client Alpha (1)", "No workspace (2)"]);
+    // The counts come from the sessions query, which can land after the switcher renders.
+    await waitFor(() =>
+      expect(within(switcher).getAllByRole("option").map((option) => option.textContent)).toEqual(["All sessions", "Client Alpha (1)", "No workspace (2)"]),
+    );
     expect(await screen.findByText(/Client Alpha ·/)).toBeTruthy();
 
     await userEvent.selectOptions(switcher, ALPHA);
