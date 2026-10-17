@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M2 and M3 done; M0 and M1 each have one open item; M4 in progress (4 of 10: pairing, sync clock/changelog, local account scope + outbox, push); M5 and M6 not started (verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M2 and M3 done; M0 and M1 each have one open item; M4 in progress (8 of 10: open are conflict handling UI and the sync status UX); M5 and M6 not started (verified 2026-10-16). See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -30,7 +30,7 @@ flowchart LR
 - [x] Initialize pnpm/Turborepo, TypeScript strict shared configs.
 - [x] Initialize WXT extension with popup/background/manager entrypoints.
 - [x] Initialize Next.js App Router and shared UI tokens.
-- [ ] Create `packages/core`, `contracts`, `database`, `sync`, `ui` with lint/build boundaries. (core, contracts, ui, database done; `sync` deferred to M4 so no empty package exists)
+- [x] Create `packages/core`, `contracts`, `database`, `sync`, `ui` with lint/build boundaries. (`sync` added 2026-10-16 with the pull rules)
 - [x] Configure Vitest, React Testing Library, Playwright baseline.
 - [x] Set up local dev env docs and CI lint/typecheck/build. (CI workflow written, not yet run on GitHub)
 
@@ -70,12 +70,12 @@ flowchart LR
 - [x] Implement local account scope and durable operation outbox. (2026-10-16: scope + outbox + tombstones in IndexedDB, atomic with each edit; nothing uploads until push exists)
 - [x] Add server per-user sync clock and atomic ordered changelog. (Since M3: `user_sync_clocks` locked first, gap-free `sync_changes` for every session and workspace write; DB-tested including concurrency. `sync/push` will reuse it.)
 - [x] Implement versioned `/api/v1/sync/push` with idempotency receipts. (2026-10-16: receipts for accepted, conflicting and rejected operations; extension uploader with backoff)
-- [ ] Implement paginated `/api/v1/sync/pull` with safe cursors.
-- [ ] Add offline backoff, worker restart continuation, pull echo reconciliation. (upload half done 2026-10-16: backoff with Retry-After, `sending` resent after a worker restart; pull echo pending)
-- [ ] Handle versions/tombstones/conflicts and preserve both copies when needed.
+- [x] Implement paginated `/api/v1/sync/pull` with safe cursors. (2026-10-16: HMAC-bound cursors, `CURSOR_EXPIRED` + `/sync/bootstrap`)
+- [x] Add offline backoff, worker restart continuation, pull echo reconciliation. (2026-10-16: shared backoff with Retry-After; `sending` resent and bootstrap resumed after a worker restart; own echoes ignored, held server copies settled after acceptance)
+- [ ] Handle versions/tombstones/conflicts and preserve both copies when needed. (storage done 2026-10-16: tombstones never undone, conflicts keep the local operation and the server copy; review/resolve UI pending)
 - [ ] UX states for local-only/pending/synced/error/conflict.
-- [ ] Two distinct profile test: Windows-origin session appears on Mac simulation.
-- [ ] Test browser actions are never executed on source/remote device without local confirmation.
+- [x] Two distinct profile test: Windows-origin session appears on Mac simulation. (`apps/web/e2e/sync-two-profiles.spec.ts`: create, rename and delete across two real extension profiles)
+- [x] Test browser actions are never executed on source/remote device without local confirmation. (same spec: tab URLs unchanged on the receiving profile around every pull; pull code has no browser access)
 
 **Done when:** Multi-device saved sessions sync reliably with no data loss under retry/offline/concurrent edits.
 

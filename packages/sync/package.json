@@ -1,0 +1,25 @@
+{
+  "name": "@sessionhub/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./reconcile": "./src/reconcile.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sessionhub/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@sessionhub/eslint-config": "workspace:*",
+    "@sessionhub/typescript-config": "workspace:*",
+    "eslint": "10.12.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

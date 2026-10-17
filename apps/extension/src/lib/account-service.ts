@@ -155,16 +155,23 @@ const refreshConnection = (deps: AccountDeps, connection: ConnectionRecord): Pro
 /**
  * Runs an authenticated call with a valid access token: refreshes ahead of expiry, and once
  * more if the server still says the token expired (clock skew). Revocation disconnects.
+ * `call` also gets the connection the token belongs to, so it can check whose account it is.
  */
-export const withAccessToken = async <T>(deps: AccountDeps, call: (accessToken: string, apiOrigin: string) => Promise<T>): Promise<T> => {
+export const withAccessToken = async <T>(
+  deps: AccountDeps,
+  call: (accessToken: string, apiOrigin: string, connection: ConnectionRecord) => Promise<T>,
+): Promise<T> => {
   let connection = (await deps.db.account.get("connection")) as ConnectionRecord | undefined;
   if (!connection) throw new AccountApiError("UNAUTHENTICATED", "This browser isn't connected to an account.");
   if (new Date(connection.accessExpiresAt).getTime() - REFRESH_MARGIN_MS <= deps.now().getTime()) connection = await refreshConnection(deps, connection);
   try {
-    return await call(connection.accessToken, connection.apiOrigin);
+    return await call(connection.accessToken, connection.apiOrigin, connection);
   } catch (error) {
     if (!(error instanceof AccountApiError)) throw error;
-    if (error.code === "ACCESS_TOKEN_EXPIRED") return call((await refreshConnection(deps, connection)).accessToken, connection.apiOrigin);
+    if (error.code === "ACCESS_TOKEN_EXPIRED") {
+      const refreshed = await refreshConnection(deps, connection);
+      return call(refreshed.accessToken, refreshed.apiOrigin, refreshed);
+    }
     if (error.code === "DEVICE_REVOKED" || error.code === "INVALID_TOKEN") await markDisconnected(deps, error.code === "DEVICE_REVOKED" ? "revoked" : "expired");
     throw error;
   }

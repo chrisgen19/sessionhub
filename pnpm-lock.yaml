@@ -44,6 +44,9 @@ importers:
       '@sessionhub/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@sessionhub/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@sessionhub/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -275,6 +278,28 @@ importers:
       eslint:
         specifier: 10.12.0
         version: 10.12.0(jiti@2.7.0)
+
+  packages/sync:
+    dependencies:
+      '@sessionhub/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@sessionhub/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@sessionhub/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      eslint:
+        specifier: 10.12.0
+        version: 10.12.0(jiti@2.7.0)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.19.2)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@24.19.2)(jiti@2.7.0))
 
   packages/typescript-config: {}
 

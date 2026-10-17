@@ -8,7 +8,9 @@ import type { SessionHubDb } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { deleteSession, getSession, updateSession } from "./session-repository";
 import { toSyncPayload } from "./sync-batch";
-import { pushNow, type SyncDeps } from "./sync-uploader";
+import { syncNow } from "./sync-runner";
+import { pushNow } from "./sync-uploader";
+import type { SyncDeps } from "./sync-gate";
 import { connectAs, freshDb, idFactory, sampleSession, sampleWindows, seedAccountSession } from "./test-fixtures";
 
 const ALICE = "AliceAccount00000000000000000000";
@@ -30,7 +32,11 @@ const setup = async (...handlers: Handler[]) => {
   const clock = { now: T0 };
   const calls: { body: PushBody; authorization: string | null }[] = [];
   const fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-    if (new URL(String(input)).pathname !== "/api/v1/sync/push") throw new TypeError("fetch failed");
+    const path = new URL(String(input)).pathname;
+    // An empty account to download, for runs that also pull (sync.now).
+    if (path === "/api/v1/sync/bootstrap") return json(200, { protocolVersion: 1, cursor: "c1.0.AAAAAAAAAAAAAAAAAAAAAA", nextAfter: null, hasMore: false, items: [] });
+    if (path === "/api/v1/sync/pull") return json(200, { protocolVersion: 1, cursor: "c1.0.AAAAAAAAAAAAAAAAAAAAAA", nextCursor: "c1.0.AAAAAAAAAAAAAAAAAAAAAA", hasMore: false, changes: [] });
+    if (path !== "/api/v1/sync/push") throw new TypeError("fetch failed");
     const body = JSON.parse(String(init?.body)) as PushBody;
     calls.push({ body, authorization: new Headers(init?.headers).get("authorization") });
     const handler = handlers.length > 1 ? handlers.shift()! : handlers[0]!;
@@ -83,7 +89,8 @@ describe("sync uploader", () => {
     });
     expect(await db.outbox.count()).toBe(0);
     expect((await db.sessions.get(session.id))?.sync).toEqual({ serverVersion: 1, state: "synced" });
-    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, lastError: null, lastSyncAt: T0.toISOString() });
+    // The pull that follows in a sync run records it (sync-runner); the upload alone doesn't.
+    expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, lastError: null, lastSyncAt: null });
   });
 
   it("sends one operation per session per push and holds a session back after a conflict", async () => {
@@ -123,9 +130,26 @@ describe("sync uploader", () => {
     expect(await pushNow(deps)).toEqual({ status: "waiting", retryAt: "2026-10-16T08:00:05.000Z" });
 
     clock.now = new Date("2026-10-16T08:00:06.000Z");
-    expect(await pushNow(deps)).toMatchObject({ status: "done", accepted: 1 });
+    expect((await syncNow(deps)).push).toMatchObject({ status: "done", accepted: 1 });
     expect(calls[1]!.body.operations).toEqual(calls[0]!.body.operations);
+    // A whole run (upload, then download) succeeded, so the backoff ends.
     expect(await db.syncState.get(SCOPE)).toMatchObject({ failures: 0, nextAttemptAt: null });
+  });
+
+  it("stops when another account connects mid-run, so nothing is sent with its token", async () => {
+    const { db, deps, calls } = await setup(async (body, db) => {
+      // The first round is in flight when the user disconnects and pairs Bob's account.
+      await connectAs(db, "BobAccount0000000000000000000000", "shd_at_bob");
+      return acceptAll(body, db);
+    });
+    const a = await queuedEdit(db, 3, "A first", 2);
+    for (const operation of await listOutbox(db, SCOPE)) await db.outbox.put({ ...operation, status: "sending" });
+    await updateSession(db, a.id, a.version, (current) => renameSession(current, "A second", T0), { now: T0, createId: ids });
+
+    expect(await pushNow(deps)).toEqual({ status: "disconnected" });
+    expect(calls.map((call) => call.authorization)).toEqual(["Bearer shd_at_test"]);
+    // The second edit stays in Alice's outbox, to be sent when she reconnects.
+    expect(await listOutbox(db, SCOPE)).toHaveLength(1);
   });
 
   it("waits at least as long as the server's Retry-After", async () => {
@@ -224,14 +248,20 @@ describe("sync uploader", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("is reachable from the worker as the `sync.pushNow` command", async () => {
+  it("runs as part of the worker's `sync.now` command, before the download", async () => {
     const { db, deps } = await setup(acceptAll);
     const session = await queuedEdit(db, 2);
     const response = await handleCommand(
-      { type: "sync.pushNow" },
+      { type: "sync.now" },
       { db, readWindows: async () => sampleWindows(), restoreWindow: async () => [], now: deps.now, createId: ids, account: deps.account, sync: { random: deps.random, scheduleRetry: deps.scheduleRetry } },
     );
-    expect(response).toEqual({ ok: true, data: { status: "done", accepted: 1, conflicts: 0, rejected: 0, remaining: 0 } });
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        push: { status: "done", accepted: 1, conflicts: 0, rejected: 0, remaining: 0 },
+        pull: { status: "done", applied: 0, held: 0, skipped: 0, bootstrapped: true },
+      },
+    });
     expect((await getSession(db, session.id))?.name).toBe("Edited");
     expect((await db.sessions.get(session.id))?.sync).toEqual({ serverVersion: 3, state: "synced" });
   });

@@ -1,4 +1,5 @@
 import { Dexie, type EntityTable, type Table } from "dexie";
+import type { ApiSessionDetail } from "@sessionhub/contracts/api-sessions";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import type { RestorePlan } from "@sessionhub/core/restore-plan";
 
@@ -171,6 +172,25 @@ export interface SyncStateRecord {
   failures: number;
   /** No automatic upload before this time (backoff or Retry-After). */
   nextAttemptAt: string | null;
+  /**
+   * A full rebuild in progress (no cursor, or the server said CURSOR_EXPIRED): the first page's
+   * cursor, which pulling resumes from afterwards, and where the next page starts.
+   */
+  bootstrap?: { cursor: string; after: string | null } | null;
+}
+
+/**
+ * The newest server state of a session that has local changes waiting. Pull never overwrites
+ * those, so it holds the server's state here: applied once the local changes are accepted (if it
+ * is newer), or kept for review if they conflict.
+ */
+export interface ServerCopyRecord {
+  id: string;
+  scope: AccountScope;
+  action: "upsert" | "delete";
+  version: number;
+  payload: ApiSessionDetail | null;
+  receivedAt: string;
 }
 
 export type SessionHubDb = Dexie & {
@@ -183,6 +203,7 @@ export type SessionHubDb = Dexie & {
   outbox: Table<OutboxRecord, number>;
   sessionTombstones: EntityTable<SessionTombstoneRecord, "id">;
   syncState: EntityTable<SyncStateRecord, "scope">;
+  serverCopies: EntityTable<ServerCopyRecord, "id">;
 };
 
 export const DB_NAME = "sessionhub";
@@ -208,6 +229,8 @@ export const createDb = (name: string = DB_NAME): SessionHubDb => {
     sessionTombstones: "id, scope",
     syncState: "scope",
   });
+  // v5: server copies held while local changes wait (pull). Additive only.
+  db.version(5).stores({ serverCopies: "id, scope" });
   return db;
 };
 

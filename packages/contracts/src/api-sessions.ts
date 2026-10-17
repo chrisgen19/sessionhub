@@ -132,6 +132,8 @@ export const apiErrorCodeSchema = z.enum([
   "INVALID_JSON",
   "VALIDATION_ERROR",
   "INVALID_CURSOR",
+  /** Sync pull: the cursor is older than the retained change log, or ahead of the server; rebuild from bootstrap. */
+  "CURSOR_EXPIRED",
   "NOT_FOUND",
   "INVALID_WORKSPACE",
   "VERSION_CONFLICT",

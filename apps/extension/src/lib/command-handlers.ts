@@ -17,7 +17,8 @@ import {
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
-import { pushNow, type SyncDeps } from "./sync-uploader";
+import type { SyncDeps } from "./sync-gate";
+import { syncNow } from "./sync-runner";
 import { getSnapshot } from "./recovery-repository";
 import { isQuotaError, RestoreRecordingError, STORAGE_FULL_HINT } from "./storage-errors";
 import { commandSchema, type Command, type CommandResponse, type ErrorCode } from "./messages";
@@ -83,7 +84,7 @@ const NOT_DONE: Record<Command["type"], string> = {
   "account.cancel": "the request wasn't cancelled",
   "account.check": "the connection couldn't be checked",
   "account.disconnect": "this browser wasn't disconnected",
-  "sync.pushNow": "nothing was uploaded",
+  "sync.now": "nothing was synced",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
@@ -257,8 +258,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         if (result.status === "clean") return { ok: true, data: { status: "clean", snapshotId: null, freedForSpace: 0 } };
         return { ok: true, data: { status: result.status, snapshotId: result.snapshotId, freedForSpace: result.freedForSpace } };
       }
-      case "sync.pushNow":
-        return { ok: true, data: await pushNow(toSyncDeps(deps), { force: true }) };
+      case "sync.now":
+        return { ok: true, data: await syncNow(toSyncDeps(deps), { force: true }) };
       default:
         return await runAccountCommand(command, deps);
     }

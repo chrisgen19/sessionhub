@@ -183,9 +183,10 @@ Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 | `account` (v3) | `key` (`"pairing"`, `"connection"`, `"notice"`) | Pending pairing (device code), the connection (API origin, device id, `account: { id, name, email }`, access and refresh tokens) and the last involuntary disconnect reason. `account.id` is absent on connections saved before v4 until the next account check fills it in |
 | `outbox` (v4) | `++seq`, `&id`, `[scope+seq]`, `entityId` | One pending change of an account-scoped session: `id` (clientOperationId), `scope`, `entityType: "savedSession"`, `entityId`, `action` (`upsert` with the full session as `payload`, or `delete` with `null`), `expectedVersion`, `status` (`queued` / `sending` / `conflict` / `rejected`), `attempts`, `nextAttemptAt`, `lastError`, timestamps. `seq` is the upload order. `conflict` and `rejected` keep the payload and hold back the session's later operations until resolved |
 | `sessionTombstones` (v4) | `id`, `scope` | Deleted account-scoped session (`id`, `scope`, `deletedAt`) the server may still list |
-| `syncState` (v4) | `scope` | Per account: `enabledAt` (local consent; nothing uploads without it), `cursor` (pull slice), `lastSyncAt`, `lastError`, `failures` and `nextAttemptAt` (upload backoff). Field additions need no new Dexie version (no index change) |
+| `syncState` (v4) | `scope` | Per account: `enabledAt` (local consent; nothing uploads without it), `cursor` (pull slice), `lastSyncAt`, `lastError`, `failures` and `nextAttemptAt` (upload backoff). Field additions need no new Dexie version (no index change). `bootstrap` (`{ cursor, after }`) while a full rebuild is in progress |
+| `serverCopies` (v5) | `id`, `scope` | The newest server state (`action`, `version`, `payload` = server detail or null) of a session whose local changes are still waiting; settled when they are accepted (`SYNC_PROTOCOL.md` 13g) |
 
-Not yet created: `sessionVersions`, `workspaces`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit an existing version.
+Not yet created: `sessionVersions`, `workspaces`, `conflictDrafts` (for now the conflicting operation keeps the local payload and `serverCopies` the server's), `localPreferences`. Add them as new Dexie versions; never edit an existing version.
 
 **Account scope and outbox (implemented, v4):**
 
@@ -196,7 +197,8 @@ Not yet created: `sessionVersions`, `workspaces`, `conflictDrafts`, `localPrefer
 - **Merging.** While an entity's latest operation is still `queued` (never handed to the network), a new edit replaces its payload under the same id and base version, and a delete turns it into a delete. Deleting a session whose create was never sent drops the create and leaves no tombstone, so nothing about it is ever uploaded. Once `sending`, an operation is immutable and never returns to `queued`; later changes append new operations. The uploader must commit `sending` before the request leaves.
 - **Tombstones** are kept until the server's delete has been pulled back (purged by the pull slice), so a pull can't resurrect a session before its delete is uploaded. They hold no tabs or URLs.
 - **Upload (implemented, `SYNC_PROTOCOL.md` 13f):** session `sync.state` becomes `synced` after the server accepts the last pending operation, `conflict` after a version conflict or a rejection to review, `error` when a change can never be uploaded as is (invalid or too large).
-- **Not yet:** pull, conflict drafts and any UI for these states. Every session still shows "Local only".
+- **Download (implemented, `SYNC_PROTOCOL.md` 13g):** pulled and bootstrapped sessions are written into the account scope as `synced` (local `version` = previous + 1; the server version in `sync.serverVersion`), following `packages/sync/src/reconcile.ts`.
+- **Not yet:** conflict review and any UI for these states. Every session still shows "Local only", which is wrong for pulled sessions; they exist only once sync is enabled, which no UI does yet.
 
 Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are pruned on every worker start (`RESTORE_JOB_RETENTION`: newest 50 within 30 days; the newest job and any `running` job are never pruned).
 

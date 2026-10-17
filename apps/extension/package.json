@@ -36,6 +36,7 @@
   "dependencies": {
     "@sessionhub/contracts": "workspace:*",
     "@sessionhub/core": "workspace:*",
+    "@sessionhub/sync": "workspace:*",
     "@sessionhub/ui": "workspace:*",
     "dexie": "4.4.6",
     "lucide-react": "1.57.0",
