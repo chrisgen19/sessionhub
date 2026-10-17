@@ -17,11 +17,40 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. Current work: `feature/m6-release-hardening` in a separate worktree. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 merged as `8c4102e` (M6 worktree/branches cleaned up). Current fix: `bugfix/local-only-conflict-identity` in `sessionhub-fix-local-only-conflict`. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (issue #5 Smaller leftovers: local-only conflict identity) / Codex / `bugfix/local-only-conflict-identity`
+
+**Scope:** user requested prioritization of Smaller leftovers and an isolated worktree, then authorized implementation. Based on `origin/main` `8c4102e`; worktree `/Users/chrisgen19/projects/sessionhub-fix-local-only-conflict`. The active M5 checkout/merge and its files were left alone. Acceptance and implementation plan recorded first in `WORK_LOG_LOCAL_ONLY_CONFLICT.md`.
+
+**Problem:** a refused edit of an already-synced session could choose "Keep in this browser only" without a held server copy. It kept the original id under `local` scope; account pulls skip another scope's id, hiding the server version. Merely changing the id would still leave an unchanged account version absent if its cursor had already passed it.
+
+**Implemented:**
+- Every local-only review outcome creates a separate session with fresh session/window/group/tab ids, version 1 and preserved contents; no sync metadata or outbox entry for that local copy. The manager receives/selects the new id.
+- Preserve a held account upsert immediately under its original id. Without a held upsert/delete, if the record previously synced or its id was taken, reset only this account's cursor/bootstrap progress in the same resolution transaction. Next ordinary sync reuses the existing durable bootstrap to retrieve the unchanged original.
+- Preserve sync consent, backoff, unrelated account state and pending edits. Sync off stays off, offline recovery waits for normal sync. A known deletion or never-accepted create doesn't need an account rebuild. No network request happens inside resolution, no browser actions or uploads of the local copy occur.
+- Added `syncState` to the existing Dexie transaction; no schema migration or server/API change.
+- Eight new repository/download regression tests cover missing/held/deleted state, taken-id create, disabled sync and another account's cursor, partial bootstrap progress, unrelated queued edits, rollback if recording the refresh fails, and a pull already in flight.
+- Real extension/HTTP/PostgreSQL browser regression: upload an original and advance its cursor; inject a >1.5 MB local edit; the actual uploader rejects it with no held copy; choose local-only through the review dialog; verify canonical and local versions both visible, manager selection follows the new id, server still has only the original and live tabs are unchanged.
+- Updated protocol, data, UX, test, system-design and release notes.
+
+**Validated (macOS, existing Node 24.18.1 / pnpm 11.17.0 dependencies):**
+- `pnpm install --frozen-lockfile --offline`: pass, lockfile unchanged.
+- Before fix: `pnpm --filter @sessionhub/extension exec vitest run src/lib/local-only-recovery.test.ts`: **6 fail / 2 pass**, demonstrating the missing identity/refresh and rollback protection.
+- After fix: `pnpm --filter @sessionhub/extension exec vitest run src/lib/local-only-recovery.test.ts src/lib/review-repository.test.ts src/lib/sync-downloader.test.ts`: **35/35**.
+- `pnpm check --force`: **17/17 tasks**, lint/typecheck and **416 unit tests** (extension 205, web 74, core 84, contracts 36, sync 17). Initial check caught an ambiguous union in the new test fixture; fixed its explicit upsert discriminator. One later parallel check encountered an existing generated-Prisma-client timing race; after build finished, the final check passed. No unrelated task-graph change was made.
+- `pnpm build`: **pass**, extension and standalone web.
+- Isolated local PostgreSQL 18 and Mailpit on `127.0.0.1:54359` / `:58055`, using synthetic accounts/URLs only:
+  - `TEST_DATABASE_URL=postgresql://sessionhub:<test-only-password>@127.0.0.1:54359/sessionhub_test TEST_MAILPIT_URL=http://127.0.0.1:58055 pnpm --filter @sessionhub/web exec playwright test e2e/local-only-recovery.spec.ts`: **1/1**.
+  - Same test env, `pnpm --filter @sessionhub/web test:e2e`: **48/48**, including two-profile sync/conflict and the new rejected-edit recovery flow.
+  - `pnpm --filter @sessionhub/extension test:e2e`: **9/9**, save/restore, offline persistence, worker restart and recovery checkpoints.
+- `git diff --check`: pass. No DB reset suite, separate backend DB suite, Docker image/backup/perf suites or GitHub CI run for this slice (no server, dependency, manifest, backup or restore behavior change). The web browser harness applied migrations non-destructively to the new isolated test database.
+
+**Remaining limits / next work:** newly performed local-only resolutions are fixed; older already-resolved id collisions are not automatically migrated. No production deployment exists. `LIMIT_REACHED` retry after freeing capacity is the next recommended Smaller leftover; revoked-session deep-link preservation, M0 decisions and production log shipping are still pending. Branch is ready for review; not pushed or merged in this task. The two disposable test services are removed after verification; other worktrees/services are untouched.
 
 ### 2026-10-17 (remaining M6 repository work from issue #5) / Codex / `feature/m6-release-hardening`
 
@@ -1036,9 +1065,9 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Review the committed `feature/m6-release-hardening` branch and open a PR when requested. #14 is already merged; do not repeat it.
+1. Review the `bugfix/local-only-conflict-identity` branch and open a PR when requested. #14 and #16 are already merged; do not repeat them.
 2. Before public launch choose the production domain, finalize `/privacy` operator/private contact/provider/retention details, set `EXTENSION_API_BASE_URL` and follow DEPLOYMENT, BACKUPS and RELEASE on the actual host. Record live evidence before checking the remaining two M6 boxes.
-3. Re-review the three dependency advisories before release/by 2026-11-17; current reachability evidence is in SECURITY_REVIEW_M6.
+3. Next Smaller leftover after the local-only fix lands: allow `LIMIT_REACHED` changes to retry with a fresh operation after capacity is freed. Re-review the three dependency advisories before release/by 2026-11-17; current reachability evidence is in SECURITY_REVIEW_M6.
 4. Complete Windows/macOS stable Chrome smoke and final account-flow screenshots/reviewer materials. M5 remains separate. Old fix worktrees belong to other sessions; leave them alone unless asked.
 
 ## Open questions / architecture validations

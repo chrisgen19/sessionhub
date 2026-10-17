@@ -430,8 +430,8 @@ The uploader now stores why an operation was refused (`lastErrorCode`) and, for 
 | `edit-conflict` | upsert answered `VERSION_CONFLICT` | **Keep mine**: one new upload of this browser's current version with `expectedVersion` = the server's version (it conflicts again if the server moved meanwhile, never a blind overwrite). **Keep the other version**: write the server copy, drop local changes. **Keep both**: the server copy stays under the id; this browser's version becomes a new session "<name> (this browser's version)" with a queued create |
 | `deleted-on-server` | upsert answered `NOT_FOUND`, or the held copy is a delete | **Keep mine as a new session** (a tombstone can't be edited back, so: new ids, queued create); **Delete it here too** |
 | `delete-conflict` | delete answered `VERSION_CONFLICT` (edited elsewhere) | **Restore the other version** (write the copy, drop the tombstone); **Delete it everywhere** (a new delete on the server's version) |
-| `id-in-use` | create answered `ID_IN_USE` | **Upload as a new session** (new ids); **Keep in this browser only** (back to `local` scope). Once the account's session holding the id has downloaded, both store it under the id and move this browser's version to new ids. Deleted here: **Drop this change** |
-| `rejected` | `VALIDATION_ERROR` or too large | **Keep in this browser only** (new ids if an account session holding the id has downloaded). Deleted here: **Drop this change** |
+| `id-in-use` | create answered `ID_IN_USE` | **Upload as a new session** (new ids); **Keep in this browser only** (fresh local session/window/group/tab ids, never queued for upload). A downloaded account copy stays under the original id; without one, restart this account's bootstrap so the taken id can be downloaded. Deleted here: **Drop this change** |
+| `rejected` | `VALIDATION_ERROR` or too large | **Keep in this browser only** (always fresh local ids; keep any downloaded account copy under the original id). If this session previously synced and no server copy/delete is held, restart the account bootstrap to recover its unchanged version. Deleted here: **Drop this change** |
 
 - Choices are offered only when they can be carried out.
   - Taking the other version needs the server copy.
@@ -439,7 +439,8 @@ The uploader now stores why an operation was refused (`lastErrorCode`) and, for 
   - Keeping this browser's version needs the local record (it may have been deleted here since).
   - Deleted here after a refused upload: **Drop this change** removes the refused operation, the delete queued behind it and the tombstone. Nothing is uploaded and no server session is deleted.
   - With nothing possible yet, the UI says to Sync now (the pull holds the server's state).
-- Every resolution runs in one IndexedDB transaction:
+- A local-only resolution keeps the session's content under fresh ids and returns the new id to the manager. The original id is reserved for the account's version. If a held upsert exists, apply it immediately; if no copy exists but the session previously synced or its id was taken, clear only this account's `cursor` and `bootstrap` in the same transaction. Next sync restarts bootstrap even if the old cursor passed the unchanged account version. A known server delete or a never-accepted create does not need a rebuild. Consent, backoff and unrelated account/outbox state are preserved. Sync off stays off; recovery waits for sync to be enabled and the server reachable. No network request happens inside resolution and no local copy is automatically uploaded.
+- Every resolution runs in one IndexedDB transaction (including `syncState`):
   - it re-checks that the item and the choice are still current (otherwise `conflict`: "already resolved" / "not available any more")
   - it removes the held operation and everything queued after it for that session
   - it does the choice, then the worker syncs

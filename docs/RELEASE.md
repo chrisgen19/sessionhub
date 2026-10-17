@@ -32,7 +32,8 @@ Take a fresh encrypted off-host backup before migration. Run `prisma migrate dep
 - No self-service account deletion/full account export; server tombstones, historical versions, changes and receipts are not automatically purged. Operator contact and retention must be finalized before registration opens.
 - Recovery checkpoints stay local; browser profile loss/uninstall removes them. Use independent JSON exports.
 - If a worker dies after Chrome opens a tab but before its outcome commits, retry may duplicate that one unrecorded tab. Pin/group metadata are best effort; a failed pin no longer causes retry to reopen an otherwise successful window.
-- A refused edit kept locally without a downloaded server copy can retain the account id and hide its server version. `LIMIT_REACHED` receipt retries need a new operation; the current UI has no dedicated retry after freeing server capacity. Preserve/export those sessions and review rather than clearing queues.
+- `LIMIT_REACHED` receipt retries need a new operation; the current UI has no dedicated retry after freeing server capacity. Preserve/export those sessions and review rather than clearing queues.
+- Local-only conflict resolution now creates a separate local identity and requests account bootstrap when an original may exist without a held copy. Recovery waits for connectivity and existing sync consent. Records already resolved by an older build are not bulk-migrated; this fix changes newly performed resolutions.
 - Logs are redacted stdout/stderr only, with no configured shipper/alerts. Production provider, mail delivery, backup jobs/retention and RPO/RTO remain unverified until deployment.
 - No automated signing/store upload or production promotion. CI artifacts alone are not long-term release storage.
 

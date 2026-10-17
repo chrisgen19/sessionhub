@@ -158,3 +158,9 @@ Test: `apps/extension/e2e/perf.spec.ts`, run with `pnpm test:perf` (builds first
 ### 9.1 Restore remeasurement
 
 2026-10-17, macOS Apple Silicon, Chromium 156.0.8078.4, one run with 4 windows/120 tabs (same local HTTP fixture): capture median 4 ms, checkpoint insert 5 ms, unchanged checkpoint median 4 ms, inspector 41 ms, popup 51 ms, restore **3,638 ms / 30.3 ms per tab**, storage 4,330 KB. All existing guards passed. This includes per-tab outcome persistence. Hardware differs from the WSL baseline in section 5.1; no cross-machine speedup claim. An initial simultaneous E2E/perf run collided in Playwright's output directory; the recorded pass ran after the extension suite finished.
+
+## 10. Local-only conflict identity regression (2026-10-17)
+
+`apps/extension/src/lib/local-only-recovery.test.ts` exercises the transactional repository and real download application against fake IndexedDB: a rejected synced edit without a held copy, cursor already past the unchanged account version, taken-id create, held upsert/delete, unaccepted create, sync disabled and another account's cursor, partial bootstrap restart, unrelated pending work, rollback if recording the refresh fails, and an in-flight old pull that must not overwrite the reset cursor.
+
+`apps/web/e2e/local-only-recovery.spec.ts` drives the real extension and HTTP API/PostgreSQL: upload an original, advance its cursor, inject an oversized local edit, let the actual uploader reject it, confirm no held copy exists, choose the local-only action in the real review dialog, and verify the original downloads again alongside the local draft. It checks manager navigation/labels, no queued or server-uploaded local copy, and unchanged live tabs. Exact results are in PROGRESS.
