@@ -39,7 +39,8 @@ test("capture -> IndexedDB -> list -> restore into a new window, leaving existin
   // Save from the real popup UI: its window's web pages start ticked (about:blank doesn't).
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await expect(popup.getByText("This window")).toBeVisible();
+  // Exact: getByText otherwise also matches the empty state's "Save this window to get started".
+  await expect(popup.getByText("This window", { exact: true })).toBeVisible();
   await popup.getByRole("button", { name: "Save 2 tabs" }).click();
   await expect(popup.getByText(/saved locally: 2 tabs in 1 window/i)).toBeVisible();
   // The popup list updates from IndexedDB written by the background worker.
