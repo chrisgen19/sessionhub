@@ -20,6 +20,8 @@ export default defineConfig({
   // Lets E2E build a copy pointed at the test server without touching .output.
   outDir: process.env.SESSIONHUB_EXT_OUT_DIR ?? ".output",
   modules: ["@wxt-dev/module-react"],
+  // Store upload name: sessionhub-<version>-chrome.zip (checked by scripts/check-release-zip.ts).
+  zip: { name: "sessionhub" },
   // Explicit imports keep module boundaries readable and greppable.
   imports: false,
   manifest: () => ({

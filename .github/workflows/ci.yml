@@ -56,6 +56,32 @@ jobs:
           path: apps/extension/test-results
           retention-days: 7
 
+  extension-zip:
+    # The Chrome Web Store ZIP, built twice to prove it is reproducible, then checked by
+    # apps/extension/scripts/check-release-zip.ts (docs/DEPLOYMENT.md section 6). The server it
+    # talks to is the repository variable EXTENSION_API_BASE_URL (the production BETTER_AUTH_URL);
+    # without it the build targets https://sessionhub.invalid, which never resolves, and nothing is uploaded.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WXT_API_BASE_URL: ${{ vars.EXTENSION_API_BASE_URL || 'https://sessionhub.invalid' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sessionhub/extension zip:release
+      - uses: actions/upload-artifact@v4
+        if: vars.EXTENSION_API_BASE_URL != ''
+        with:
+          name: sessionhub-extension-${{ github.sha }}
+          path: apps/extension/.output/sessionhub-*-chrome.zip
+          if-no-files-found: error
+          retention-days: 30
+
   docker:
     # Builds the production images and tests the compose stack (infra/docker/compose.yaml).
     runs-on: ubuntu-latest

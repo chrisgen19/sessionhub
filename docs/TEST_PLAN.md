@@ -139,7 +139,7 @@ Test: `apps/extension/e2e/perf.spec.ts`, run with `pnpm test:perf` (builds first
 - [ ] Offline save, worker termination and two-device sync tests pass.
 - [ ] Multi-user security tests pass.
 - [ ] Privacy disclosures/permission rationale reviewed.
-- [ ] Chrome extension ZIP is reproducible and source code complies with Web Store MV3 rules.
+- [ ] Chrome extension ZIP is reproducible and source code complies with Web Store MV3 rules. (Reproducibility and the manifest and bundle rules have been checked in CI since 2026-10-17, `DEPLOYMENT.md` section 6; a full Web Store policy review is still pending, and icons are missing.)
 - [ ] Docker image builds and starts; migrations completed safely.
 - [ ] PostgreSQL backup restored successfully on test environment.
 - [ ] All final feature claims backed by tests/manual verification.

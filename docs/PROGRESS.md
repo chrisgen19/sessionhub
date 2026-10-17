@@ -17,11 +17,49 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. Latest change: `feature/m6-framing-protection` (framing protection). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. Latest change: `feature/m6-extension-zip-ci` (CI release ZIP). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (M6 CI release ZIP) / Claude Code (Opus 5.5) / `feature/m6-extension-zip-ci` (macOS laptop)
+
+**Goal:** CI builds of the production extension ZIP (user's scope; ROADMAP M6 "CI production extension ZIP and web build"). The web half was already covered by the `docker` job. Operator steps in `DEPLOYMENT.md` section 6; decision in SYSTEM_DESIGN.md 14.
+
+**Implemented:**
+- `apps/extension/scripts/check-release-zip.ts` (new; runs on Node 24's built-in TypeScript support, no new packages, reads the ZIP with the system `unzip`).
+  - `checkRelease()`:
+    - **errors:** MV3 and package version; permissions exactly the documented four; `host_permissions` exactly the https API origin; no content scripts, `externally_connectable`, `web_accessible_resources` or optional permissions; no source maps; no remote scripts in HTML; the service worker contains the origin; no `localhost:3000` dev fallback anywhere in the JS
+    - **warnings:** no icons; placeholder origin
+  - The CLI also fails when a second build's ZIP isn't byte-identical.
+- `apps/extension/package.json`: `zip:release`, which runs `wxt zip`, a second `wxt zip` into `.output/reproduce`, then the check.
+- `wxt.config.ts`: `zip.name` set, so the file is `sessionhub-<version>-chrome.zip`.
+- `src/styles/app.css`: `@source not "../../scripts"`. Tailwind scans every package file, and the word "contents" in the new test had added `.contents{display:contents}` to the shipped CSS.
+- `tsconfig.json` and `vitest.config.ts` now include `scripts/`.
+- `.github/workflows/ci.yml`: new `extension-zip` job.
+  - `WXT_API_BASE_URL` comes from `vars.EXTENSION_API_BASE_URL`, or `https://sessionhub.invalid` when unset.
+  - It uploads `sessionhub-extension-<sha>` (30 days) only when the variable is set.
+- Tests: `scripts/check-release-zip.test.ts` (5).
+- Docs: DEPLOYMENT.md 6, SECURITY_PRIVACY 6, SYSTEM_DESIGN 6 and 14, ROADMAP (item done), TEST_PLAN 8 note, README.
+
+**Validated (macOS):**
+- Extension lint, typecheck and tests pass, including the 5 new ones.
+- `zip:release` for the placeholder origin: passes with the two expected warnings, and the second build is identical (`d5d38ed6...`).
+  - That is the same hash as a ZIP built from unchanged `main`, so the shipped extension is unchanged.
+  - A build into a different directory gives the same bytes.
+- Negative runs, all exit 1:
+  - a build for `http://localhost:3000` (https error, plus the dev server found in `background.js` and the manager chunk)
+  - a tampered second ZIP (not reproducible)
+  - no origin set (usage error)
+- `pnpm check --force` 17/17; `pnpm build`.
+- Extension E2E 9/9.
+- Not run here: the GitHub job itself (`unzip` and Node 24 are on ubuntu runners; the PR's run is the first real one), and web E2E (no web change).
+
+**Known gaps:**
+- No icons yet (a store requirement; warned in CI).
+- Nothing is uploaded until `EXTENSION_API_BASE_URL` is set.
+- No signing or automated store upload.
 
 ### 2026-10-17 (M6 framing protection) / Claude Code (Opus 5.5) / `feature/m6-framing-protection` (macOS laptop)
 
@@ -968,10 +1006,10 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Merge the framing protection PR (`feature/m6-framing-protection`) once its CI is green. From now on: one small PR per slice, off `main`.
+1. Merge the release ZIP PR (`feature/m6-extension-zip-ci`) once its CI (`check`, `extension-zip`, `docker`) is green, then set the repository variable `EXTENSION_API_BASE_URL` when the production domain is known. From now on: one small PR per slice, off `main`.
 2. Next M6 items:
    - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
-   - CI builds of the production extension ZIP
+   - extension icons (at least 128x128) and the store listing, before the first Web Store submission
    - permissions review and privacy policy
 3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work. Both former macOS-only E2E failures are gone (password reset since the PR #3 fix, mid-restore retry since `bugfix/restore-retry-e2e`). Remove the other sessions' worktrees (`sessionhub-pr2-fix` to `-pr9-fix`): their branches are merged.
 
