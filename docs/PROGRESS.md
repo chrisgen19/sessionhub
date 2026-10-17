@@ -17,11 +17,53 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. Latest change: `feature/m6-extension-zip-ci` (CI release ZIP). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`, PR #14 (CI release ZIP) as `1b9dd50`. Latest change: `feature/m5-workspaces` (workspace sync, server side). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (M5 workspaces, part 1: sync server side) / Claude Code (Opus 5.5) / `feature/m5-workspaces` (macOS laptop)
+
+**Goal:** workspace switcher and assignment in the extension (user's scope).
+
+**Found:**
+- `/api/v1/workspaces` is cookie-only (web), and the extension talks to the server only through sync.
+- Sync push accepted only sessions, and only `{ name, windows }`: SYNC_PROTOCOL.md 13f made the workspace a web-only field.
+- Pull already sent workspace changes, but the extension skipped them (`sync-apply.ts:45`).
+- `SYNC_PROTOCOL.md` says "MVP synced: Workspace".
+
+**Decisions** (user's choices): workspaces sync both ways; server first, extension in the next PR. Recorded in SYSTEM_DESIGN.md 14.
+
+**Implemented:**
+- `packages/contracts/src/api-sync.ts`:
+  - the push operation is a union of `savedSession` and `workspace` operations
+  - the session payload gets an optional `workspaceId` (absent keeps the server's, `null` unassigns)
+  - new `syncWorkspacePayloadSchema` (`name`, plus optional `description`, `icon`, `color`, `position`; absent keeps the server's)
+  - new rejected code `WORKSPACE_NOT_EMPTY`
+- `packages/contracts/src/api-workspaces.ts`: `workspaceFieldSchemas` is shared with sync.
+- `apps/web/src/server/workspaces/service.ts`: `createWorkspaceInTx`, `updateWorkspaceInTx`, `deleteWorkspaceInTx`, with the REST wrappers unchanged in behavior.
+- `apps/web/src/server/sync/push.ts`:
+  - `applySession` (passes `workspaceId` through) and `applyWorkspace`
+  - one `acceptedOrRepeat` wrapper for the services' idempotent repeats
+- `apps/web/src/server/sync/pull.ts`: the first bootstrap page carries every workspace (tombstones as deletes) ahead of the sessions; `nextAfter` still pages sessions only, so current extensions keep working.
+- Tests:
+  - `packages/contracts/src/api-sync.test.ts` (3, new)
+  - `push.db.test.ts` (+4): workspace create, edit and delete with receipts; absent fields keep the web's; repeat and conflict; assign, keep and unassign in one push; not-empty and other-account refusals
+  - `pull.db.test.ts` (+2): bootstrap order and first page only
+  - `e2e/sync-push.spec.ts` (+1): the full round trip between device and web over HTTP
+- Docs: SYNC_PROTOCOL 13f and 13g, SYSTEM_DESIGN 14, ROADMAP M5 note.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54339/58035):**
+- Contracts tests 3/3; sync and workspace DB tests 24/24; the new round-trip E2E passes.
+- Typecheck with `--force`: Turbo had served the dependents' typecheck from cache after the contracts change, and only the forced run found the `push.ts` error.
+- `pnpm check --force` 17/17; `pnpm --filter @sessionhub/web test:db` **66/66** (+6); `pnpm build`.
+- Full web E2E **47/47** (+1). That includes pairing and two-profile sync with the real, unchanged extension against the new server: current extensions still work, and they skip workspace items.
+- Not run: the extension E2E suite (no extension change).
+
+**Known gaps (for the extension PR):**
+- Workspace edit conflicts need a policy.
+- A workspace's tombstones are sent on every first bootstrap page (small, but unbounded over time).
 
 ### 2026-10-17 (M6 CI release ZIP) / Claude Code (Opus 5.5) / `feature/m6-extension-zip-ci` (macOS laptop)
 
@@ -1006,7 +1048,14 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Merge the release ZIP PR (`feature/m6-extension-zip-ci`) once its CI (`check`, `extension-zip`, `docker`) is green, then set the repository variable `EXTENSION_API_BASE_URL` when the production domain is known. From now on: one small PR per slice, off `main`.
+1. Merge the workspace sync PR (`feature/m5-workspaces`, server side) once its CI is green, then build the extension half on a new branch off `main`:
+   - a `workspaces` table (Dexie v6) and `workspaceId` on local sessions
+   - pull and bootstrap applying workspace changes, and uploads of workspace operations and assignments (workspace first, unassign before delete)
+   - a workspace switcher (a per-browser view; new saves go into the active workspace)
+   - assigning sessions, and moving a session's workspace along when local sessions move into the account
+   - deleting a workspace by unassigning its sessions first, after confirmation
+
+   From now on: one small PR per slice, off `main`. Set `EXTENSION_API_BASE_URL` when the production domain is known.
 2. Next M6 items:
    - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
    - extension icons (at least 128x128) and the store listing, before the first Web Store submission

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createSessionRequestSchema } from "./api-sessions";
+import { workspaceFieldSchemas } from "./api-workspaces";
 
 /** Sync push contracts (docs/SYNC_PROTOCOL.md sections 5 and 13f). */
 
@@ -10,24 +11,52 @@ export const SYNC_LIMITS = {
   operationsPerPushMax: 25,
 } as const;
 
-/** What a saved-session upsert carries: name and structure. Web-only fields stay as they are. */
+/**
+ * What a saved-session upsert carries: name, structure and optionally its workspace. An absent
+ * `workspaceId` keeps the server's assignment (extensions without workspaces never send it), null
+ * removes it, and an id must be a live workspace of the account (else `INVALID_WORKSPACE`). The
+ * other web-only fields (description, pinned, archived) stay as they are.
+ */
 export const syncSessionPayloadSchema = z.strictObject({
   name: createSessionRequestSchema.shape.name,
   windows: createSessionRequestSchema.shape.windows,
+  workspaceId: z.uuid().nullable().optional(),
 });
 export type SyncSessionPayload = z.infer<typeof syncSessionPayloadSchema>;
 
-const operationFields = {
-  clientOperationId: z.uuid(),
-  entityType: z.literal("savedSession"),
-  entityId: z.uuid(),
-};
+/**
+ * What a workspace upsert carries: its name, plus any other field the client changes. Absent fields
+ * keep the server's value (a create uses the defaults), so a client never overwrites what it doesn't edit.
+ */
+export const syncWorkspacePayloadSchema = z.strictObject({
+  name: workspaceFieldSchemas.name,
+  description: workspaceFieldSchemas.description.optional(),
+  icon: workspaceFieldSchemas.icon.optional(),
+  color: workspaceFieldSchemas.color.optional(),
+  position: workspaceFieldSchemas.position.optional(),
+});
+export type SyncWorkspacePayload = z.infer<typeof syncWorkspacePayloadSchema>;
 
-export const pushOperationSchema = z.discriminatedUnion("action", [
-  /** expectedVersion 0 creates the session with entityId as its id. */
-  z.strictObject({ ...operationFields, action: z.literal("upsert"), expectedVersion: z.int().min(0), payload: syncSessionPayloadSchema }),
-  z.strictObject({ ...operationFields, action: z.literal("delete"), expectedVersion: z.int().positive(), payload: z.null() }),
+const ids = { clientOperationId: z.uuid(), entityId: z.uuid() };
+/** expectedVersion 0 creates the entity with entityId as its id. */
+const upsertVersion = z.int().min(0);
+
+const sessionOperationSchema = z.discriminatedUnion("action", [
+  z.strictObject({ ...ids, entityType: z.literal("savedSession"), action: z.literal("upsert"), expectedVersion: upsertVersion, payload: syncSessionPayloadSchema }),
+  z.strictObject({ ...ids, entityType: z.literal("savedSession"), action: z.literal("delete"), expectedVersion: z.int().positive(), payload: z.null() }),
 ]);
+
+const workspaceOperationSchema = z.discriminatedUnion("action", [
+  z.strictObject({ ...ids, entityType: z.literal("workspace"), action: z.literal("upsert"), expectedVersion: upsertVersion, payload: syncWorkspacePayloadSchema }),
+  z.strictObject({ ...ids, entityType: z.literal("workspace"), action: z.literal("delete"), expectedVersion: z.int().positive(), payload: z.null() }),
+]);
+
+/**
+ * One change to upload. Operations apply in request order, so a push that creates a workspace and
+ * assigns sessions to it sends the workspace first, and one that empties a workspace unassigns its
+ * sessions before deleting it (docs/SYNC_PROTOCOL.md 13f).
+ */
+export const pushOperationSchema = z.discriminatedUnion("entityType", [sessionOperationSchema, workspaceOperationSchema]);
 export type PushOperation = z.infer<typeof pushOperationSchema>;
 
 /**
@@ -70,8 +99,12 @@ export const pushResultSchema = z.discriminatedUnion("status", [
     status: z.literal("rejected"),
     clientOperationId: z.uuid(),
     entityId: z.uuid(),
-    /** NOT_FOUND: missing, deleted or another account's; ID_IN_USE: a create collided; LIMIT_REACHED: the account holds the maximum number of sessions. */
-    code: z.enum(["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE", "LIMIT_REACHED"]),
+    /**
+     * NOT_FOUND: missing, deleted or another account's; ID_IN_USE: a create collided; INVALID_WORKSPACE:
+     * the session's workspace isn't a live one of this account; LIMIT_REACHED: the account holds the
+     * maximum number of sessions or workspaces; WORKSPACE_NOT_EMPTY: live sessions are still in it.
+     */
+    code: z.enum(["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE", "LIMIT_REACHED", "WORKSPACE_NOT_EMPTY"]),
     message: z.string(),
     replayed: z.boolean(),
   }),

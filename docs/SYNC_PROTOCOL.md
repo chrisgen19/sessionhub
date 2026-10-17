@@ -346,20 +346,27 @@ Contracts: `packages/contracts/src/api-sync.ts`. Server: `apps/web/src/server/sy
 | Confirmed email (when this server can send email) | 403 `EMAIL_NOT_CONFIRMED` |
 | Write budget: one token **per operation** from the account's shared budget (13a) | 429 `RATE_LIMITED` + `Retry-After`, nothing applied |
 
-Then 200 `{ protocolVersion: 1, results }`, one result per operation in request order. Operations are validated **one at a time** (a malformed one can't block the others) and each runs in **its own transaction**: lock the user's clock, look up the receipt `(user, device, clientOperationId)`, run the shared session mutation (`createSessionInTx` / `updateSessionInTx` / `deleteSessionInTx`, with the device as provenance), write the receipt. A push is not all-or-nothing.
+Then 200 `{ protocolVersion: 1, results }`, one result per operation in request order. Operations are validated **one at a time** (a malformed one can't block the others) and each runs in **its own transaction**: lock the user's clock, look up the receipt `(user, device, clientOperationId)`, run the shared session or workspace mutation (`createSessionInTx` / `updateSessionInTx` / `deleteSessionInTx` with the device as provenance; `createWorkspaceInTx` / `updateWorkspaceInTx` / `deleteWorkspaceInTx`, the same rules as the REST API in 13b), write the receipt. A push is not all-or-nothing.
 
 | `status` | Meaning | Receipt |
 |---|---|---|
 | `accepted` | `serverVersion`, `serverSequence` (null when the service's own idempotent repeat changed nothing: same create content again, delete of a tombstone) | yes, in the mutation's transaction (none for the service's idempotent repeat) |
 | `conflict` | `code: VERSION_CONFLICT`, `expectedVersion`, `serverVersion` (no server state: the pull brings it) | yes |
-| `rejected` | `NOT_FOUND` (missing, tombstoned or another account's: indistinguishable), `ID_IN_USE` (create collided), `INVALID_WORKSPACE`, `LIMIT_REACHED` (the account already holds 5,000 live sessions; the extension offers "keep in this browser only") | yes |
+| `rejected` | `NOT_FOUND` (missing, tombstoned or another account's: indistinguishable), `ID_IN_USE` (create collided), `INVALID_WORKSPACE` (the session's `workspaceId` isn't a live workspace of the account), `LIMIT_REACHED` (the account already holds 5,000 live sessions or 100 workspaces; the extension offers "keep in this browser only"), `WORKSPACE_NOT_EMPTY` (a workspace delete while live sessions are still in it) | yes |
 | `validation_error` | `issues`; `clientOperationId` null if it wasn't a UUID | no (recomputed identically) |
 | `retryable_error` | unexpected server failure; send the same operation again | no |
 
 - **Repeats:** a receipt hit returns the stored result with `replayed: true` (this replaces section 5's `duplicate` status, so clients have one code path). 20 concurrent deliveries of one operation make exactly one change (tested).
 - **Conflict and rejection receipts** are written after the mutation rolled back (it used no change-log sequence, which stays gap-free). If a concurrent copy recorded first, its result is returned. Because they are stored, a retry can never turn a stale edit into an accepted one, even after the server later reaches the version the client expected (tested).
 - **Not used:** section 5's `permission_denied` (another account's session is `NOT_FOUND`).
-- **Payload of an upsert:** `{ name, windows }` with the same window/group/tab input rules as 13a; `expectedVersion` 0 creates with `entityId` as the id. Web-only fields (description, workspace, pinned, archived) are left as they are.
+- **Session upsert** (`entityType: savedSession`): `{ name, windows, workspaceId? }` with the same window/group/tab input rules as 13a; `expectedVersion` 0 creates with `entityId` as the id.
+  - **`workspaceId` (since 2026-10-17):** absent keeps the server's assignment, which is what uploads from extensions without workspaces do. `null` removes it. An id assigns the session, and must be a live workspace of the account (else `INVALID_WORKSPACE`).
+  - The other web-only fields (description, pinned, archived) are left as they are.
+- **Workspace upsert and delete** (`entityType: workspace`, since 2026-10-17):
+  - The upsert carries `{ name, description?, icon?, color?, position? }`, with the rules of 13b. Absent fields keep the server's value; a create uses the defaults.
+  - A delete is `expectedVersion` plus `payload: null`. It is refused with `WORKSPACE_NOT_EMPTY` while live sessions are still in the workspace, as on the web: moving sessions out is always an explicit edit of each session.
+  - A repeated delete of the tombstone is `accepted` with `serverSequence: null`.
+- **Order inside a push matters:** operations apply in request order. A client that creates a workspace and assigns sessions to it sends the workspace first; one that empties and deletes a workspace sends the session unassignments first (tested in DB and HTTP).
 
 **Extension uploader** (`pushNow`), following 13e:
 
@@ -386,7 +393,7 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 - **Changes** are `{ sequence, entityType: savedSession \| workspace, entityId, action: upsert \| delete, version, payload }`, in sequence order, with the stored DTO as `payload` (null for deletes). A page also stops once its payloads pass 4 MB (it always holds at least one change).
 - **Cursors** are `c1.<sequence>.<mac>`: an HMAC-SHA256 over (user id, sequence) with a key derived from `BETTER_AUTH_SECRET`, truncated to 22 characters, compared in constant time. Another account's or an edited cursor is `INVALID_CURSOR` (tested). It is never authorization: every query is scoped to the authenticated user. Rotating the secret invalidates all cursors, and clients rebuild.
 - **`CURSOR_EXPIRED`** when the cursor is ahead of the user's clock (the server lost changes, e.g. a backup restore) or when the change right after it is missing (log pruned). Detection relies on the gap-free log (13a); a false positive only costs a bootstrap. No pruning job exists yet.
-- **Bootstrap** pages through the user's sessions by id, **tombstones included as deletes**, each as a change without a sequence (its current version and detail). `cursor` is the clock read **before** the rows: the client keeps the first page's and pulls from it afterwards; changes written meanwhile replay harmlessly because clients apply by version. Sessions only: workspaces join when the extension stores them.
+- **Bootstrap** pages through the user's sessions by id, **tombstones included as deletes**, each as a change without a sequence (its current version and detail). `cursor` is the clock read **before** the rows: the client keeps the first page's and pulls from it afterwards; changes written meanwhile replay harmlessly because clients apply by version. **The first page also carries every workspace** of the account, tombstones included as deletes, ahead of the sessions that reference them (since 2026-10-17). There are at most 100 live workspaces plus their tombstones, so they don't page, and `nextAfter` keeps paging sessions only. Extensions that don't store workspaces skip these items.
 
 **Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f, the gate checked again before every page). A run counts as synced only when its download completes (2026-10-17): that is when `lastSyncAt` moves and the backoff resets. A successful upload records neither, so a failing download keeps backing off even while pushes work, and "Last synced" never covers changes that weren't downloaded.
 
@@ -408,7 +415,7 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 6. Up to 20 pages per run, then a follow-up run is scheduled. Triggers: as 13f, plus a 10-minute `sync-periodic` alarm and the `sync.now` command (push then pull, which replaces `sync.pushNow`).
 7. A pull never opens, closes or navigates tabs: it touches only IndexedDB (verified on both profiles of the two-profile E2E around every pull).
 
-**Local fields not stored:** description, workspace, pinned and archived stay on the server (an upload doesn't change them). Pulled sessions keep the server's `sourceDeviceId`/`sourceDeviceName`.
+**Local fields not stored:** description, pinned and archived stay on the server (an upload doesn't change them). The workspace is stored too once the extension has workspaces (the M5 extension slice, next PR); until then an upload without `workspaceId` leaves it unchanged. Pulled sessions keep the server's `sourceDeviceId`/`sourceDeviceName`.
 
 ## 13h. Implemented: opt-in, upload preview and sync status (2026-10-16)
 

@@ -82,7 +82,7 @@ flowchart LR
 ## M5 — Full experience / refinement
 
 - [ ] Side panel with live tab tree, search, focus/move/group.
-- [ ] Workspace switcher and saved-session assignment.
+- [ ] Workspace switcher and saved-session assignment. (2026-10-17: server and sync side done: sync push takes workspace operations and a session's `workspaceId`, bootstrap carries workspaces, SYNC_PROTOCOL.md 13f/13g. Extension store, switcher and assignment: next PR.)
 - [ ] Advanced session inspector, tags/filters/sort/bulk select.
 - [ ] Versions and recovery timeline with useful preview.
 - [ ] Device management and revocation UX.

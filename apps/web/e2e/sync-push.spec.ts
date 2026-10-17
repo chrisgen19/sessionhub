@@ -55,6 +55,39 @@ test("push takes only this device's Bearer token and one operation per session, 
   expect(await code(await push([upsert()]))).toEqual([403, "EMAIL_NOT_CONFIRMED"]);
 });
 
+test("workspaces round-trip: created and assigned by a device, renamed on the web, and pulled back", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: BASE_URL, extraHTTPHeaders: { origin: BASE_URL, "x-forwarded-for": randomIp() } });
+  const { deviceId, bearer } = await pairOverHttp(api);
+  const push = async (operations: unknown[]) =>
+    (await (await api.post("/api/v1/sync/push", { headers: bearer, data: { protocolVersion: 1, deviceId, operations } })).json()).results as { status: string; code?: string }[];
+  const [space, session] = [randomUUID(), randomUUID()];
+  const createSpace = { clientOperationId: randomUUID(), entityType: "workspace", entityId: space, action: "upsert", expectedVersion: 0, payload: { name: "Client Alpha", color: "green" } };
+  const assigned = { ...upsert(session), payload: { ...upsert().payload, workspaceId: space } };
+  expect((await push([createSpace, assigned])).map((result) => result.status)).toEqual(["accepted", "accepted"]);
+
+  // The website sees what the device uploaded (cookie API).
+  const listed = (await (await api.get("/api/v1/workspaces")).json()).items as { id: string; name: string; sessionCount: number; version: number }[];
+  expect(listed).toEqual([expect.objectContaining({ id: space, name: "Client Alpha", sessionCount: 1, version: 1 })]);
+  expect((await (await api.get(`/api/v1/sessions/${session}`)).json()).workspaceId).toBe(space);
+
+  // Renamed on the web: the device pulls the change, and a fresh bootstrap carries the workspace first.
+  expect((await api.patch(`/api/v1/workspaces/${space}`, { data: { expectedVersion: 1, name: "Client Alpha (web)" } })).ok()).toBe(true);
+  const pulled = (await (await api.get("/api/v1/sync/pull", { headers: bearer })).json()).changes as { entityType: string; entityId: string; version: number; payload: { name?: string } }[];
+  expect(pulled.filter((change) => change.entityType === "workspace").map((change) => [change.entityId, change.version, change.payload.name])).toEqual([
+    [space, 1, "Client Alpha"],
+    [space, 2, "Client Alpha (web)"],
+  ]);
+  const boot = (await (await api.get("/api/v1/sync/bootstrap", { headers: bearer })).json()).items as { entityType: string; entityId: string }[];
+  expect(boot.map((item) => [item.entityType, item.entityId])).toEqual([["workspace", space], ["savedSession", session]]);
+
+  // Not deletable while it holds the session; unassign and delete in one push.
+  const remove = { clientOperationId: randomUUID(), entityType: "workspace", entityId: space, action: "delete", expectedVersion: 2, payload: null };
+  expect(await push([remove])).toEqual([expect.objectContaining({ status: "rejected", code: "WORKSPACE_NOT_EMPTY" })]);
+  const unassign = { ...upsert(session), expectedVersion: 1, payload: { ...upsert().payload, workspaceId: null } };
+  expect((await push([unassign, { ...remove, clientOperationId: randomUUID() }])).map((result) => result.status)).toEqual(["accepted", "accepted"]);
+  expect((await (await api.get("/api/v1/workspaces")).json()).items).toEqual([]);
+});
+
 test("the real extension uploads what the user chose when turning sync on, then edits, deletes and new saves", async () => {
   const { context, extensionId, close } = await launchWithExtension({ "x-forwarded-for": randomIp() });
   try {
