@@ -24,6 +24,12 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (local dev setup; README database section) / Claude Code (Opus 5.5) / `bugfix/readme-db-setup` (macOS laptop)
+
+**Dev environment (no code change):** this laptop has no Docker Compose plugin (Colima), so `pnpm db:up` fails. Started `sessionhub-dev-postgres` (127.0.0.1:54329, volume `sessionhub-dev_sessionhub-postgres`) and `sessionhub-dev-mailpit` (127.0.0.1:58025) with `docker run` and the `compose.dev.yaml` settings, applied the 3 migrations with `pnpm --filter @sessionhub/database db:deploy`; the user's running `next dev` then answered `/api/health` 200. Extension built for `http://localhost:3000`.
+
+**README:** documents that `docker run` fallback (with a readiness wait), `db:deploy`, and which DB test command resets: root `pnpm test:db` runs the database package first, which resets `sessionhub_test` (`prisma migrate reset --force`), then the web package, which only runs `migrate deploy`. An earlier remark in this session that "test:db doesn't reset" was wrong (only the web package's setup had been read); corrected before writing the README. No reset was run in this session: only `pnpm --filter @sessionhub/web test:db`, against throwaway containers.
+
 ### 2026-10-17 (stale sync copy on the dashboard) / Claude Code (Opus 5.5) / `bugfix/web-sync-copy` (macOS laptop)
 
 **Goal (user's scope):** fix the out-of-date sync wording in the sidebar and on Overview. Branched off `main` at `4cd07de` (PR #19 merged at the user's request while its `check` and `docker` jobs were still running).

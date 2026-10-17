@@ -26,10 +26,29 @@ Database (M3, needs Docker):
 ```bash
 cp packages/database/.env.example packages/database/.env
 pnpm db:up                   # PostgreSQL 18 on 127.0.0.1:54329 (dev db + sessionhub_test) and Mailpit on http://127.0.0.1:58025
-pnpm db:migrate              # prisma migrate dev against the dev database
-pnpm test:db                 # resets sessionhub_test, applies all migrations, runs integration tests
+pnpm db:migrate              # prisma migrate dev against the dev database (when changing the schema)
+pnpm --filter @sessionhub/database db:deploy   # or only apply the committed migrations (prisma migrate deploy: never resets, never creates one)
+pnpm test:db                 # database package: resets sessionhub_test (prisma migrate reset --force) and applies every migration; then web: migrate deploy + DB tests
+pnpm --filter @sessionhub/web test:db   # web DB tests only: prisma migrate deploy on sessionhub_test, no reset
 pnpm db:down                 # stop (add -v to delete the data volume)
 ```
+
+Without the Docker Compose plugin (`docker: unknown command: docker compose`, for example Colima installed without it), `pnpm db:up` fails. Start the same two services with `docker run` from the repository root: same images, ports, init script and data volume as `infra/docker/compose.dev.yaml`, and the same dev-only password as `packages/database/.env.example`.
+
+```bash
+docker run -d --name sessionhub-dev-postgres --restart unless-stopped \
+  -e POSTGRES_USER=sessionhub -e POSTGRES_PASSWORD=sessionhub_dev -e POSTGRES_DB=sessionhub \
+  -p 127.0.0.1:54329:5432 -v sessionhub-dev_sessionhub-postgres:/var/lib/postgresql \
+  -v "$PWD/infra/docker/postgres-init:/docker-entrypoint-initdb.d:ro" postgres:18-alpine
+docker run -d --name sessionhub-dev-mailpit --restart unless-stopped \
+  -e MP_MAX_MESSAGES=2000 -p 127.0.0.1:58025:8025 axllent/mailpit:v1.31.3
+until docker exec sessionhub-dev-postgres pg_isready -q -U sessionhub -d sessionhub_test; do sleep 1; done
+pnpm --filter @sessionhub/database db:deploy                  # apply the migrations to the dev database
+docker stop sessionhub-dev-postgres sessionhub-dev-mailpit    # stop; `docker start` the same names later (data is kept)
+docker rm -f sessionhub-dev-postgres sessionhub-dev-mailpit && docker volume rm sessionhub-dev_sessionhub-postgres   # remove everything, data included
+```
+
+The init script creates `sessionhub_test` only when the volume is first created, which is why the wait checks that database. `--restart unless-stopped` starts both again with Docker until you stop them. The volume has the name Compose gives it, so after installing the plugin, remove the two containers (`docker rm -f`, same ports) before `pnpm db:up`; Compose finds the data in that volume (it warns that it didn't create the volume).
 
 Production-like stack (web image + migrations + PostgreSQL, needs Docker):
 
@@ -41,9 +60,9 @@ pnpm test:docker             # builds the images and tests the stack in an isola
 
 Migrations run as their own one-shot `migrate` service (`prisma migrate deploy`) before `web` starts; to apply new migrations on an existing stack: `docker compose -f infra/docker/compose.yaml run --rm migrate`.
 
-Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Email (password reset, confirmation) goes to Mailpit in development (`MAIL_TRANSPORT=mailpit`; read it at http://127.0.0.1:58025); production uses `MAIL_TRANSPORT=resend` with `RESEND_API_KEY` and a `MAIL_FROM` on a domain verified in Resend. Without email, reset is shown as unavailable. API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a); extension sync `POST /api/v1/sync/push` (13f), `GET /api/v1/sync/pull` and `GET /api/v1/sync/bootstrap` (13g), all with a Bearer device token. Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
+Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Email (password reset, confirmation) goes to Mailpit in development (`MAIL_TRANSPORT=mailpit`; read it at http://127.0.0.1:58025); production uses `MAIL_TRANSPORT=resend` with `RESEND_API_KEY` and a `MAIL_FROM` on a domain verified in Resend. Without email, reset is shown as unavailable. API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a); extension sync `POST /api/v1/sync/push` (13f), `GET /api/v1/sync/pull` and `GET /api/v1/sync/bootstrap` (13g), all with a Bearer device token. Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs the database running first (`pnpm db:up`, or the `docker run` setup above).
 
-AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when an agent runs it. Ask the user for explicit consent **for each run** and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never reuse earlier consent, invent it, or bypass the check.
+AI agents: Prisma 7 blocks `prisma migrate reset` when an agent runs it. The database package's tests use it, so root `pnpm test:db` and `pnpm --filter @sessionhub/database test:db` need it; `pnpm --filter @sessionhub/web test:db` only runs `migrate deploy` and doesn't. Ask the user for explicit consent **for each run** and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never reuse earlier consent, invent it, or bypass the check.
 
 First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec playwright install chromium`.
 
