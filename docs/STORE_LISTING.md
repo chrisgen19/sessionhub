@@ -10,7 +10,7 @@ Prepared 2026-10-17 from shipped code. Submission remains pending a production o
 
 **Description:**
 
-Keep collections of Chrome tabs ready to reopen. Save your current window or all normal windows, including pinned tabs and tab groups. Search by session name, tab title or URL. Preview a restore and open it in new windows, with a result summary and retry for failed tabs. Existing windows stay open.
+Keep collections of Chrome tabs ready to reopen. Save your current window or all normal windows, including pinned tabs and tab groups. Search by session name, tab title or URL. Choose the windows and tabs to reopen, then open them in new windows, in one new window or in the window you're in, with a result summary and retry for failed tabs. Existing tabs stay open.
 
 Sessions and automatic recovery checkpoints are saved in this browser. No account is needed for local use. Export and import versioned JSON to keep independent copies. Protect exports: they contain readable tab titles and complete URLs.
 
@@ -52,7 +52,7 @@ Certify Limited Use only after reviewing the deployed service: no sale, no unrel
 
 ## Visuals and reviewer handoff
 
-Included under `docs/store-assets`: real 1280x800 manager, restore preview and result captures with synthetic URLs (see the provenance README). Regenerate with `node infra/scripts/capture-store-screenshots.mjs`. Additional account-flow captures require a review service. Capture real release-build screenshots with synthetic URLs only: popup save/search, manager tree, restore preview/results, Account upload preview and conflict review. Supply images matching the dashboard's current size requirements. Prepare the small promotional tile if required. Never use real personal tab data.
+Included under `docs/store-assets`: real 1280x800 manager, open picker (with its destination menu) and result captures with synthetic URLs (see the provenance README). Regenerate with `node infra/scripts/capture-store-screenshots.mjs`. Additional account-flow captures require a review service. Capture real release-build screenshots with synthetic URLs only: popup save/search, manager tree, restore preview/results, Account upload preview and conflict review. Supply images matching the dashboard's current size requirements. Prepare the small promotional tile if required. Never use real personal tab data.
 
 Use a dedicated test account and documented pairing flow for reviewers. Provide access through the store's private reviewer fields, never a committed password. Include an explanation that local save/restore works without an account, and cloud sync requires pairing plus separate opt-in. Verify the exact ZIP's host permission matches the review server.
 

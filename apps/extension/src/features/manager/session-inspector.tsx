@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Download, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
@@ -8,13 +8,12 @@ import { downloadSessionExport } from "../../lib/export-download";
 import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import type { SessionSyncLabel } from "../../lib/sync-status";
 import { useReviewItems } from "../../hooks/use-review";
+import { OpenPanel } from "../open/open-panel";
 import { ReviewDialog } from "../review/review-dialog";
 import { WorkspacePicker } from "../workspaces/workspace-picker";
 import { DeleteDialog } from "./delete-dialog";
 import { LastRestore } from "./last-restore";
 import { RenameTitle } from "./rename-title";
-import { RestoreDialog } from "./restore-dialog";
-import { WindowTree } from "./window-tree";
 
 interface SessionInspectorProps {
   session: SavedSession;
@@ -25,13 +24,14 @@ interface SessionInspectorProps {
   onDeleted: () => void;
   /** Opens another session (after a review that kept this browser's version as a new one). */
   onOpen: (id: string) => void;
+  /** The list's search, for the open picker's "Select matches". */
+  query?: string;
 }
 
-export function SessionInspector({ session, syncLabel, workspaceId, onBack, onDeleted, onOpen }: SessionInspectorProps) {
-  const [dialog, setDialog] = useState<"restore" | "delete" | "review" | null>(null);
+export function SessionInspector({ session, syncLabel, workspaceId, onBack, onDeleted, onOpen, query }: SessionInspectorProps) {
+  const [dialog, setDialog] = useState<"delete" | "review" | null>(null);
   const review = useReviewItems()?.find((item) => item.sessionId === session.id);
   const summary = summarizeSession(session);
-  const notRestorable = summary.tabCount - summary.restorableTabCount;
 
   return (
     <article aria-label="Session details" className="space-y-5 p-5 lg:p-6">
@@ -55,15 +55,6 @@ export function SessionInspector({ session, syncLabel, workspaceId, onBack, onDe
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={buttonClass.primary}
-          disabled={summary.restorableTabCount === 0}
-          onClick={() => setDialog("restore")}
-        >
-          <RotateCcw aria-hidden="true" className="size-4" />
-          Restore…
-        </button>
         <button type="button" className={buttonClass.secondary} onClick={() => downloadSessionExport(session)}>
           <Download aria-hidden="true" className="size-4" />
           Export JSON
@@ -87,17 +78,8 @@ export function SessionInspector({ session, syncLabel, workspaceId, onBack, onDe
 
       <LastRestore session={session} />
 
-      {notRestorable > 0 && (
-        <p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">
-          <AlertTriangle aria-hidden="true" className="mt-px size-4 shrink-0" />
-          {plural(notRestorable, "tab")} can't be reopened (browser pages, local files or unsupported links). They're kept here
-          for reference.
-        </p>
-      )}
+      <OpenPanel key={session.id} session={session} query={query} />
 
-      <WindowTree session={session} />
-
-      {dialog === "restore" && <RestoreDialog session={session} onClose={() => setDialog(null)} />}
       {dialog === "review" && review && (
         <ReviewDialog
           item={review}

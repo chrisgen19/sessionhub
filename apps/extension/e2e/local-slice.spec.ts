@@ -60,11 +60,9 @@ test("capture -> IndexedDB -> list -> restore into a new window, leaving existin
   // Only what was ticked: no about:blank, and never SessionHub's own pages.
   await expect(inspector.getByText(/can't be reopened/i)).toHaveCount(0);
 
-  await inspector.getByRole("button", { name: /restore/i }).click();
-  const dialog = manager.getByRole("dialog");
-  await expect(dialog.getByText(/opens in new windows/i)).toBeVisible();
-  await dialog.getByRole("button", { name: /^restore 2 tabs$/i }).click();
-  await expect(dialog.getByText(/opened 2 of 2 tabs in 1 new window/i)).toBeVisible();
+  // The ticked tree is the preview: everything that can reopen starts ticked, in new windows.
+  await inspector.getByRole("button", { name: "Open 2 tabs in 1 new window" }).click();
+  await expect(inspector.getByText(/opened 2 of 2 tabs in 1 new window/i)).toBeVisible();
 
   const isNew = (window: { id?: number }) => !before.windows.some((old) => old.id === window.id);
   // New tabs report an empty url until navigation commits, so poll.
@@ -209,9 +207,8 @@ test("export -> import round trip creates a separate session that restores", asy
   expect(new Set(ids).size).toBe(2);
 
   const before = await snapshotWindows(worker);
-  await inspector.getByRole("button", { name: /restore/i }).click();
-  await manager.getByRole("dialog").getByRole("button", { name: /^restore 1 tab$/i }).click();
-  await expect(manager.getByRole("dialog").getByText(/opened 1 of 1 tab/i)).toBeVisible();
+  await inspector.getByRole("button", { name: "Open 1 tab in 1 new window" }).click();
+  await expect(inspector.getByText(/opened 1 of 1 tab/i)).toBeVisible();
   await expect
     .poll(async () => (await snapshotWindows(worker)).windows.find((window) => !before.windows.some((old) => old.id === window.id))?.urls)
     .toEqual([`${SITE}/gamma`]);
@@ -278,11 +275,11 @@ test("a real mid-restore failure can be retried from the summary", async ({ cont
     chrome.windows.onCreated.addListener(closer);
   });
   await manager.goto(`chrome-extension://${extensionId}/manager.html#session=${sessionId}`);
-  await manager.getByRole("button", { name: /restore/i }).click();
-  const dialog = manager.getByRole("dialog");
-  await dialog.getByRole("button", { name: /^restore 3 tabs$/i }).click();
-  await expect(dialog.getByText(/the window was closed before this tab could open/i).first()).toBeVisible();
-  const retryButton = dialog.getByRole("button", { name: /^retry \d+ tabs?$/i });
+  // The summary shows inline in the inspector, under the open bar.
+  const inspector = manager.getByRole("article", { name: /session details/i });
+  await inspector.getByRole("button", { name: /^Open 3 tabs in \d new windows?$/ }).click();
+  await expect(inspector.getByText(/the window was closed before this tab could open/i).first()).toBeVisible();
+  const retryButton = inspector.getByRole("button", { name: /^retry \d+ tabs?$/i });
   await expect(retryButton).toBeVisible();
   const failedCount = Number((await retryButton.textContent())?.match(/\d+/)?.[0]);
 
@@ -291,8 +288,8 @@ test("a real mid-restore failure can be retried from the summary", async ({ cont
   );
   const before = await snapshotWindows(worker);
   await retryButton.click();
-  await expect(dialog.getByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeVisible();
-  await expect(dialog.getByRole("button", { name: /^retry/i })).toHaveCount(0);
+  await expect(inspector.getByText(/opened 3 of 3 tabs after 2 attempts/i)).toBeVisible();
+  await expect(inspector.getByRole("button", { name: /^retry/i })).toHaveCount(0);
 
   // Only the tabs that failed were reopened, in one new window. A tab that hasn't started loading
   // yet reports an empty URL, so wait for the window to settle instead of reading it once. Saved
@@ -352,10 +349,9 @@ test("browser changes trigger an automatic checkpoint via a real alarm, restorab
   await page.close();
   const before = await snapshotWindows(worker);
   await today.getByRole("button").click();
-  await manager.getByRole("article", { name: /checkpoint details/i }).getByRole("button", { name: /restore/i }).click();
-  const dialog = manager.getByRole("dialog");
-  await dialog.getByRole("button", { name: /^restore 1 tab$/i }).click();
-  await expect(dialog.getByText(/opened 1 of 1 tab/i)).toBeVisible();
+  const inspector = manager.getByRole("article", { name: /checkpoint details/i });
+  await inspector.getByRole("button", { name: "Open 1 tab in 1 new window" }).click();
+  await expect(inspector.getByText(/opened 1 of 1 tab/i)).toBeVisible();
   await expect
     .poll(async () => (await snapshotWindows(worker)).windows.find((w) => !before.windows.some((old) => old.id === w.id))?.urls)
     .toEqual([`${SITE}/checkpoint-me`]);

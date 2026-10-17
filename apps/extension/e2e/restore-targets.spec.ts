@@ -63,10 +63,14 @@ const countRestoreJobs = (page: Page) =>
       }),
   );
 
-/** Saves exactly these tabs once every one has committed its URL (the worker saves `url || pendingUrl`). */
+/** True once every tab in the window has finished loading with a committed URL. */
+const loaded = (worker: Worker, windowId: number) =>
+  worker.evaluate(async (windowId) => (await chrome.tabs.query({ windowId })).every((tab) => tab.status === "complete" && tab.url !== ""), windowId);
+
+/** Saves exactly these tabs once they have loaded: mid-navigation, a tab's url and pendingUrl can both be empty. */
 const saveTabs = async (worker: Worker, manager: Page, windows: { windowId: number; tabIds: number[] }[]) => {
   for (const { windowId, tabIds } of windows) {
-    await expect.poll(async () => (await readWindow(worker, windowId)).every((tab) => tab.page !== "")).toBe(true);
+    await expect.poll(() => loaded(worker, windowId)).toBe(true);
     expect(tabIds.length).toBeGreaterThan(0);
   }
   const saved = await send(manager, { type: "session.capture", scope: { kind: "tabs", tabIds: windows.flatMap((window) => window.tabIds) } });
@@ -140,4 +144,31 @@ test("a closed target window opens nothing and leaves no job", async ({ worker, 
   expect(await countRestoreJobs(manager)).toBe(0);
   expect(await windowIds(worker)).toEqual(windowsBefore);
   expect(await readWindow(worker, saved.windowId)).toEqual([{ page: "kept", pinned: false, group: null }]);
+});
+
+test("the open picker: untick a tab, choose This window, and only the ticked tabs join the manager's window", async ({ worker, context, extensionId }) => {
+  const manager = await context.newPage();
+  await manager.goto(`chrome-extension://${extensionId}/manager.html`);
+  const saved = await openWindow(worker, { pages: ["keep-one", "leave-out", "keep-two"] });
+  const sessionId = await saveTabs(worker, manager, [saved]);
+  const managerWindow = await worker.evaluate(async (id) => (await chrome.tabs.query({ url: `chrome-extension://${id}/manager.html*` }))[0]!.windowId, extensionId);
+
+  await manager.goto(`chrome-extension://${extensionId}/manager.html#session=${sessionId}`);
+  const inspector = manager.getByRole("article", { name: /session details/i });
+  await expect(inspector.getByRole("button", { name: "Open 3 tabs in 1 new window" })).toBeVisible();
+  const before = await readWindow(worker, managerWindow);
+  await inspector.getByRole("checkbox", { name: /leave-out/ }).uncheck();
+  await inspector.getByRole("button", { name: "Choose where to open" }).click();
+  await manager.getByRole("menuitemradio", { name: "This window" }).click();
+  await inspector.getByRole("button", { name: "Open 2 tabs in this window" }).click();
+  await expect(inspector.getByText("Opened 2 of 2 tabs in this window.")).toBeVisible();
+
+  await expect.poll(() => readWindow(worker, managerWindow)).toEqual([
+    ...before,
+    { page: "keep-one", pinned: false, group: null },
+    { page: "keep-two", pinned: false, group: null },
+  ]);
+  // The choice is remembered for the next open, here and in the popup.
+  await manager.reload();
+  await expect(inspector.getByRole("button", { name: "Open 3 tabs in this window" })).toBeVisible();
 });

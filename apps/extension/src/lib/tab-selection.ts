@@ -62,7 +62,8 @@ export const toggleWindow = (selection: TabSelection, window: OpenWindow): TabSe
   return next;
 };
 
-export const toggleTab = (selection: TabSelection, tabId: number): TabSelection => {
+/** Generic over the id: Chrome's numeric tab ids here, saved tab ids (strings) in the open picker. */
+export const toggleTab = <Id>(selection: ReadonlySet<Id>, tabId: NoInfer<Id>): ReadonlySet<Id> => {
   const next = new Set(selection);
   if (next.has(tabId)) next.delete(tabId);
   else next.add(tabId);
@@ -71,9 +72,15 @@ export const toggleTab = (selection: TabSelection, tabId: number): TabSelection 
 
 /**
  * Shift-click: every tab from the anchor to the clicked tab, in visible order, takes the state the
- * clicked tab is switching to. Without a usable anchor it is a plain toggle.
+ * clicked tab is switching to. Without a usable anchor it is a plain toggle. Pass only tabs that can
+ * be ticked as `visibleOrder`.
  */
-export const toggleRange = (selection: TabSelection, visibleOrder: number[], anchorId: number | null, tabId: number): TabSelection => {
+export const toggleRange = <Id>(
+  selection: NoInfer<ReadonlySet<Id>>,
+  visibleOrder: Id[],
+  anchorId: NoInfer<Id> | null,
+  tabId: NoInfer<Id>,
+): ReadonlySet<Id> => {
   const from = anchorId === null ? -1 : visibleOrder.indexOf(anchorId);
   const to = visibleOrder.indexOf(tabId);
   if (from < 0 || to < 0) return toggleTab(selection, tabId);

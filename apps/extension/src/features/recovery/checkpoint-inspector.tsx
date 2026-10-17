@@ -1,16 +1,13 @@
-import { ArrowLeft, Download, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Download } from "lucide-react";
 import { summarizeSession } from "@sessionhub/core/session-summary";
 import { buttonClass } from "../../components/modal";
 import type { RecoverySnapshotRecord } from "../../lib/db";
 import { downloadSessionExport } from "../../lib/export-download";
 import { formatFullDate, plural } from "../../lib/format";
 import { LastRestore } from "../manager/last-restore";
-import { RestoreDialog } from "../manager/restore-dialog";
-import { WindowTree } from "../manager/window-tree";
+import { OpenPanel } from "../open/open-panel";
 
 export function CheckpointInspector({ snapshot, onBack }: { snapshot: RecoverySnapshotRecord; onBack: () => void }) {
-  const [restoring, setRestoring] = useState(false);
   const summary = summarizeSession(snapshot.session);
 
   return (
@@ -30,10 +27,6 @@ export function CheckpointInspector({ snapshot, onBack }: { snapshot: RecoverySn
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={buttonClass.primary} disabled={summary.restorableTabCount === 0} onClick={() => setRestoring(true)}>
-          <RotateCcw aria-hidden="true" className="size-4" />
-          Restore…
-        </button>
         <button type="button" className={buttonClass.secondary} onClick={() => downloadSessionExport(snapshot.session)}>
           <Download aria-hidden="true" className="size-4" />
           Export JSON
@@ -43,8 +36,7 @@ export function CheckpointInspector({ snapshot, onBack }: { snapshot: RecoverySn
       <p className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-fg-muted">
         Checkpoints are replaced over time. To keep this one, export it and import the file as a saved session.
       </p>
-      <WindowTree session={snapshot.session} />
-      {restoring && <RestoreDialog session={snapshot.session} kind="snapshot" onClose={() => setRestoring(false)} />}
+      <OpenPanel key={snapshot.id} session={snapshot.session} kind="snapshot" />
     </article>
   );
 }

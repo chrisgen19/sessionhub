@@ -71,7 +71,7 @@ describe("Recovery view", () => {
     expect(await screen.findByText(/nothing changed since the last checkpoint/i)).toBeTruthy();
   });
 
-  it("inspects a checkpoint and restores it through the safe preview", async () => {
+  it("inspects a checkpoint and opens it from its tree", async () => {
     const result = await checkpoint();
     const snapshotId = "snapshotId" in result ? result.snapshotId : null;
     window.history.replaceState(null, "", `/manager.html#view=recovery&snapshot=${snapshotId}`);
@@ -81,11 +81,8 @@ describe("Recovery view", () => {
     expect(within(inspector).getByText(/saved automatically/i)).toBeTruthy();
     expect(within(inspector).getByRole("list", { name: "Group Docs" })).toBeTruthy();
 
-    await userEvent.click(within(inspector).getByRole("button", { name: /restore/i }));
-    const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText(/opens in new windows/i)).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole("button", { name: "Restore 3 tabs" }));
-    expect(await within(dialog).findByText(/opened 3 of 3 tabs/i)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: /^Open 3 tabs in \d new windows?$/ }));
+    expect(await within(inspector).findByText(/opened 3 of 3 tabs/i)).toBeTruthy();
     expect(restoredUrls).toEqual(["https://github.com/acme/pull/42", "https://react.dev/learn", "https://example.com/"]);
   });
 });

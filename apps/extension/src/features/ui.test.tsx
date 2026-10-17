@@ -58,22 +58,35 @@ describe("ManagerApp", () => {
     expect(within(inspector).getByRole("list", { name: "Group Docs" })).toBeTruthy();
   });
 
-  it("previews a restore in new windows, lists skipped tabs and respects window selection", async () => {
+  it("ticks windows and tabs, can't tick tabs that won't reopen, and remembers where to open", async () => {
     const session = sampleSession();
     await putSession(getDb(), session);
     window.history.replaceState(null, "", `/manager.html#session=${session.id}`);
     render(<ManagerApp />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /restore/i }));
-    const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText(/opens in new windows/i)).toBeTruthy();
-    expect(within(dialog).getByText(/1 tab can't be restored/i)).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: "Restore 3 tabs" })).toBeTruthy();
+    const inspector = await screen.findByRole("article", { name: /session details/i });
+    expect(within(inspector).getByRole("button", { name: "Open 3 tabs in 2 new windows" })).toBeTruthy();
+    expect(within(inspector).getByText("3 of 3 tabs · 2 windows")).toBeTruthy();
+    expect((within(inspector).getByRole("checkbox", { name: /Settings/ }) as HTMLInputElement).disabled).toBe(true);
+    expect(within(inspector).getByRole("link", { name: "React docs" }).getAttribute("href")).toBe("https://react.dev/learn");
+    expect(within(inspector).queryByRole("link", { name: "Settings" })).toBeNull();
 
-    await userEvent.click(within(dialog).getByRole("checkbox", { name: /window 2/i }));
-    expect(within(dialog).getByRole("button", { name: "Restore 2 tabs" })).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole("checkbox", { name: /window 1/i }));
-    expect((within(dialog).getByRole("button", { name: "Restore 0 tabs" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(within(inspector).getByRole("checkbox", { name: /window 2/i }));
+    expect(within(inspector).getByRole("button", { name: "Open 2 tabs in 1 new window" })).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("checkbox", { name: /React docs/ }));
+    expect(within(inspector).getByRole("button", { name: "Open 1 tab in 1 new window" })).toBeTruthy();
+    expect((within(inspector).getByRole("checkbox", { name: /window 1/i }) as HTMLInputElement).indeterminate).toBe(true);
+
+    await userEvent.click(within(inspector).getByRole("button", { name: "Choose where to open" }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "This window" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(inspector).getByRole("button", { name: "Open 1 tab in this window" })).toBeTruthy();
+    expect((within(inspector).getByRole("checkbox", { name: "Skip tabs already open here" }) as HTMLInputElement).checked).toBe(true);
+    expect(localStorage.getItem("sessionhub-open-target")).toBe("this-window");
+
+    await userEvent.click(within(inspector).getByRole("button", { name: "Select none" }));
+    expect(within(inspector).getByText("No tabs selected")).toBeTruthy();
+    expect((within(inspector).getByRole("button", { name: "Open" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("requires explicit confirmation before deleting", async () => {

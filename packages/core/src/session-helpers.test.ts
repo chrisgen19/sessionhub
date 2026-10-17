@@ -2,7 +2,7 @@ import { sessionExportSchema } from "@sessionhub/contracts/session-export";
 import { describe, expect, it } from "vitest";
 import { buildSavedSession } from "./capture";
 import { defaultSessionName, selectionSessionName } from "./naming";
-import { filterSessions, matchesSessionQuery } from "./search";
+import { filterSessions, matchesSessionQuery, tabMatchesQuery } from "./search";
 import { InvalidSessionNameError, renameSession } from "./session-edit";
 import { createSessionExport, exportFileName } from "./session-export";
 import { summarizeSession } from "./session-summary";
@@ -28,6 +28,14 @@ describe("search", () => {
 
   it("treats a blank query as match-all", () => {
     expect(filterSessions([session], "   ")).toEqual([session]);
+  });
+
+  it("matches a single tab on its own title and url only, never on a blank query", () => {
+    const [github] = session.windows[0]!.tabs;
+    expect(tabMatchesQuery(github!, "LOGIN pull/42")).toBe(true);
+    // The session name matches, but the tab doesn't.
+    expect(tabMatchesQuery(github!, "alpha")).toBe(false);
+    expect(tabMatchesQuery(github!, "  ")).toBe(false);
   });
 });
 

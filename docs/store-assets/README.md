@@ -1,10 +1,10 @@
 # Store screenshots
 
-Captured 2026-10-17 from the actual built extension on branch `feature/m6-release-hardening`, based on `1b9dd50`, Chromium 156.0.8078.4 on macOS. Light theme, **1280x800**, unmodified UI; all tab names/URLs are synthetic under the reserved `.example` domain. A default `about:blank` tab is intentionally retained so restore preview shows the real unsupported-tab behavior. No account, credentials or personal browsing data is used.
+Captured 2026-10-17 from the actual built extension on branch `feature/open-picker` (the open picker replaced the restore dialog), based on `cb50c50`, Chromium 156.0.8078.4 on macOS. Light theme, **1280x800**, unmodified UI; all tab names/URLs are synthetic under the reserved `.example` domain. A default `about:blank` tab is intentionally retained so the open picker shows the real unsupported-tab behavior. No account, credentials or personal browsing data is used.
 
 - `manager.png`: saved session inspector and group/pinned metadata.
-- `restore-preview.png`: additive restore consent and skipped browser-page disclosure.
-- `restore-result.png`: per-tab outcome after the actual restore.
+- `restore-preview.png`: the open picker: ticked tree, destination menu (new windows, one new window, this window) and the browser page that won't open.
+- `restore-result.png`: the inline summary after the actual open, with the skipped browser page.
 
 Regenerate from the repository root after building the extension:
 

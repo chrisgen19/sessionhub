@@ -45,9 +45,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  A[Select saved session] --> B[Open restore preview]
-  B --> C[Choose windows/tabs and target]
-  C --> D[Confirm - new windows by default]
+  A[Select saved session] --> B[Tick windows/tabs in its tree]
+  B --> C[Choose where: new windows, one new window or this window]
+  C --> D[Open - confirm only above 50 tabs]
   D --> E[Persist restore plan / job ID]
   E --> F[Create Chrome windows + tabs incrementally]
   F --> G{All supported tabs restored?}
@@ -56,7 +56,7 @@ flowchart TD
   I --> J[Retry only failed items]
 ```
 
-**Safety guarantees:** Never close existing tabs by default. Run restore only on the device where the user confirmed. Respect tab order/pin/group metadata when the browser supports it. Protect against repeating the same restore job unintentionally.
+**Safety guarantees:** Never close existing tabs (every destination is additive; no replace). Run restore only on the device where the user confirmed. Respect tab order/pin/group metadata when the browser supports it. Protect against repeating the same restore job unintentionally.
 
 ## Flow 4 — Windows save -> macOS restore
 
@@ -75,7 +75,7 @@ sequenceDiagram
   M->>DB: Register new installation
   M->>DB: Pull user sessions after cursor
   DB-->>M: Windows-origin saved session
-  U->>M: Preview + Restore to new window
+  U->>M: Tick tabs + Open in new window(s) or this window
   M->>M: Open local Chrome tabs
   Note over W,M: Windows live tabs are unchanged
 ```

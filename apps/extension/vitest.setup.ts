@@ -2,7 +2,11 @@ import "fake-indexeddb/auto";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  // Remembered choices (theme, open destination) must not leak between tests.
+  localStorage.clear();
+});
 
 // findBy* waits up to 1s by default, too tight under a fully parallel Turbo run.
 configure({ asyncUtilTimeout: 5_000 });
