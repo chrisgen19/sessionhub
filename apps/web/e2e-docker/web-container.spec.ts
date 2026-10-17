@@ -6,6 +6,14 @@ import { BASE_URL, compose, COMPOSE_FILE, PROJECT } from "./stack";
 const psql = (sql: string) => compose(["exec", "-T", "postgres", "psql", "-U", "sessionhub", "-d", "sessionhub", "-tAc", sql]).trim();
 const inWeb = (...command: string[]) => compose(["exec", "-T", "web", ...command]).trim();
 
+/** `docker compose config` with only `env` set (plus PATH/HOME), not the running stack's variables. */
+const isolatedConfig = (args: string[], env: Record<string, string>) =>
+  execFileSync("docker", ["compose", "-p", `${PROJECT}-config`, "-f", COMPOSE_FILE, "config", ...args], {
+    encoding: "utf8",
+    env: { NODE_ENV: "test", PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
 test("the stack is healthy and migrations ran as their own completed step", async () => {
   const states = JSON.parse(`[${compose(["ps", "-a", "--format", "json"]).trim().split("\n").join(",")}]`) as {
     Service: string;
@@ -61,17 +69,28 @@ test("the web container is locked down", () => {
 test("compose refuses to start without the required secrets", () => {
   const run = (env: Record<string, string>) => {
     try {
-      execFileSync("docker", ["compose", "-p", `${PROJECT}-config`, "-f", COMPOSE_FILE, "config", "--quiet"], {
-        env: { NODE_ENV: "test", PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      isolatedConfig(["--quiet"], env);
       return "ok";
     } catch (error) {
-      return String((error as { stderr?: Buffer }).stderr ?? error);
+      return String((error as { stderr?: string }).stderr ?? error);
     }
   };
   const secret = randomBytes(32).toString("hex");
   expect(run({ BETTER_AUTH_SECRET: secret })).toMatch(/POSTGRES_PASSWORD/);
   expect(run({ POSTGRES_PASSWORD: "x" })).toMatch(/BETTER_AUTH_SECRET/);
   expect(run({ POSTGRES_PASSWORD: "x", BETTER_AUTH_SECRET: secret })).toBe("ok");
+});
+
+test("BETTER_AUTH_URL follows WEB_PORT unless it is set, so the API's origin check matches", () => {
+  const secrets = { POSTGRES_PASSWORD: "x", BETTER_AUTH_SECRET: randomBytes(32).toString("hex") };
+  // Empty strings mirror `.env.example` and override any local infra/docker/.env.
+  const authUrl = (env: Record<string, string>) => {
+    const config = JSON.parse(isolatedConfig(["--format", "json"], { ...secrets, ...env })) as {
+      services: { web: { environment: Record<string, string> } };
+    };
+    return config.services.web.environment.BETTER_AUTH_URL;
+  };
+  expect(authUrl({ WEB_PORT: "", BETTER_AUTH_URL: "" })).toBe("http://localhost:3030");
+  expect(authUrl({ WEB_PORT: "8080", BETTER_AUTH_URL: "" })).toBe("http://localhost:8080");
+  expect(authUrl({ WEB_PORT: "8080", BETTER_AUTH_URL: "https://sessions.example.com" })).toBe("https://sessions.example.com");
 });
