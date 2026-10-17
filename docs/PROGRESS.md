@@ -1,7 +1,7 @@
 # SessionHub — Persistent Implementation Handoff
 
 > **This is the first file a returning coding agent should read.**  
-> **Last updated:** 2026-10-16
+> **Last updated:** 2026-10-17
 > **Current milestone:** M3 (backend, web account) **complete**: database package, email/password auth with password reset and email confirmation, dashboard shell, session/workspace/device APIs (rate-limited writes), session detail page and production Docker image + compose stack. Next: M4 (cross-device sync). M2 complete.
 
 ## Current truth (verified 2026-10-16)
@@ -39,6 +39,26 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** none new.
 
+### 2026-10-17 (PR #3 review fix: email confirmation page status) / Claude Code (Opus 5.5) / `bugfix/email-verified-page` (worktree `sessionhub-pr3-fix`, based on `feature/m3-email-auth`)
+
+**Goal:** address the Codex review finding on PR #3 (P2, `apps/web/src/app/(auth)/email-verified/page.tsx`). Without `?error`, the page said "Email confirmed" to anyone, including a signed-in user with an unconfirmed email who opened `/email-verified` directly.
+
+**Checked in Better Auth 1.7.9** (`dist/api/routes/email-verification.mjs`): `verify-email` redirects to the callback with `?error=<code>` on failure, and with no query both on success and when the address was already confirmed. The URL can't prove a confirmation, so the page now asks the session instead. `session.cookieCache` isn't enabled, so `getSession` reads `emailVerified` from the database on every request.
+
+**Implemented:**
+
+- `email-verified/page.tsx`: a signed-in visitor whose email isn't confirmed sees "Your email isn't confirmed yet" with their address and a Settings link (the resend hint only when mail is enabled). Signed-out visitors without `?error` still see "Email confirmed": that is the usual result of opening the link on another device (no auto sign-in), and there is no account state to check. The error view is unchanged.
+- `e2e/email.spec.ts`: the sign-up test opens `/email-verified` before following the link and expects the unconfirmed view. The reset test now waits for the "Reset your password" heading after clicking "Forgot password?". Before, `fill` could land in the sign-in form's Email field while the client-side navigation was still running, so an empty form was submitted (failed 3/3 on this laptop before any change here).
+
+**Validated commands and results:**
+
+- New assertion against the unfixed page: **fail** as expected (rendered "Email confirmed" for an unconfirmed, signed-in user).
+- Reset test on the unmodified PR code: **fail** 3/3 (`--repeat-each 3`), empty Email field submitted; **pass** 3/3 with the heading wait.
+- `pnpm --filter @sessionhub/web lint`, `typecheck`: **pass**. `pnpm check`: **pass** (14 tasks).
+- `e2e/email.spec.ts --repeat-each 3`: **18/18** (the 375px test now renders the unconfirmed view with a long address). Full web E2E (`playwright test` in `apps/web`): **32/32**.
+- This laptop runs Colima without the `docker compose` plugin, so `pnpm db:up` fails ("unknown shorthand flag: 'f'"). E2E ran against `postgres:18-alpine` and `axllent/mailpit:v1.31.3` started with `docker run --rm` on the same ports, env and init script as `compose.dev.yaml`.
+
+**Next step:** after PR #3 takes this fix, carry it up the stack (PRs #4, #6 to #11): the page and both tests are unchanged up to `feature/m6-hardening`.
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
