@@ -24,6 +24,25 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (one folder for the unpacked extension) / Claude Code (Opus 5.5) / `feature/unpacked-extension-folder` (macOS laptop)
+
+**Why:** the user's unpacked SessionHub was loaded from a different folder than the builds. Chrome derives an unpacked extension's ID from its folder path, and IndexedDB and localStorage belong to that ID, so loading a new folder starts with no saved sessions. The user wants one folder that updates overwrite.
+
+**User's choice:** `~/SessionHub/extension`, outside the repo, so worktrees, clones, `git clean`, `pnpm build` (localhost) and E2E runs can't touch it.
+
+**Implemented:**
+- `apps/extension/package.json` `build:unpacked`: `wxt build` into `.output/unpacked` against `https://sessionhub.cgdev.site` (or `WXT_API_BASE_URL`), then `scripts/update-unpacked.ts`.
+- `scripts/update-unpacked.ts`: copies the build to `<folder>.updating` and swaps it in only when complete. Refuses a build that isn't SessionHub's, and a non-empty folder that isn't a SessionHub build. `SESSIONHUB_UNPACKED_DIR` overrides the folder. WXT itself deletes its output folder before every build (`wxt/dist/core/utils/building/internal-build.mjs:35`), which is why the build doesn't go straight into the folder Chrome loads.
+- `scripts/update-unpacked.test.ts` (4): first run creates the folder and its parents; an update leaves none of the old files and no staging folder; a folder with other files is refused and untouched; a non-SessionHub build is refused and the last build kept.
+- Docs: `CLAUDE.md` (new "Local unpacked extension" section), README "Load the extension in Chrome".
+
+**Validated:**
+- Extension lint, typecheck, unit tests 249/249 (4 new).
+- `pnpm --filter @sessionhub/extension build:unpacked` twice: creates `~/SessionHub/extension` (0.1.1, host `https://sessionhub.cgdev.site/*`), then replaces it.
+- Playwright Chromium, same profile, before and after an update of the folder: same extension ID (`fogpeloeklfnfadlmlcaidjleeenjmbk`), and a value stored before the update was still there.
+
+**Next step:** the user loads `~/SessionHub/extension` with Load unpacked, then moves the sessions from the old install: connect the new one to the same account so sync brings back the synced ones, and for local-only sessions use Export JSON per session in the old manager, then Import in the new one (there is no export-all). Remove the old install only after checking. Commit, push and open the PR.
+
 ### 2026-10-17 (extension 0.1.1 release ZIP from `main`) / Claude Code (Opus 5.5) / `main` at `60f4f63` (macOS laptop)
 
 **Merged:** PR #31 (version 0.1.1) as `50fe160` and PR #32 (empty-state copy) as `60f4f63`, after #32's CI passed (check, docker, both E2E jobs, extension-zip). Both branches deleted on the remote.

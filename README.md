@@ -70,7 +70,7 @@ First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec
 
 **Release ZIP:** `WXT_API_BASE_URL=https://<domain> pnpm --filter @sessionhub/extension zip:release` builds `apps/extension/.output/sessionhub-<version>-chrome.zip` twice and checks it (CI does the same, `docs/DEPLOYMENT.md` section 6).
 
-**Load the extension in Chrome:** run `pnpm build`, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `apps/extension/.output/chrome-mv3`.
+**Load the extension in Chrome:** run `pnpm --filter @sessionhub/extension build:unpacked`, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `~/SessionHub/extension`. Load it once: later runs replace that folder's contents (only after a successful build), so click the extension's reload button to update. Chrome derives an unpacked extension's ID, and with it the saved sessions, from the folder path, so always load the same folder rather than `apps/extension/.output` or a worktree. It builds against `https://sessionhub.cgdev.site`; set `WXT_API_BASE_URL` for another server (e.g. `http://localhost:3000`) and `SESSIONHUB_UNPACKED_DIR` for another folder.
 
 | Workspace | Purpose |
 |---|---|
