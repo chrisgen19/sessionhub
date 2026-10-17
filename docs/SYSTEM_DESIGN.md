@@ -443,6 +443,10 @@ Verified 2026-10-16 (details in `PROGRESS.md`): monorepo skeleton, and the local
 - Pinning/grouping are best effort after a URL opens. The first tab's successful open commits before pinning so a cosmetic failure cannot make retry duplicate the window. Interrupted unrecorded opens still have the documented one-tab ambiguity.
 - Public `/privacy` and store materials describe implemented behavior, including complete URL upload and no site/query exclusions. Operator/private contact/providers/retention must be finalized before public registration. No production claim is inferred from local tests.
 
+### Local-only conflict recovery decision (2026-10-17)
+
+A local-only review outcome always receives fresh ids so account and browser-only records cannot occupy the same IndexedDB primary key. A held account copy is restored immediately. Otherwise, when the source was previously synced or its id was taken, the resolution transaction clears this account's cursor/bootstrap progress to request a full rebootstrap. Merely freeing the id would leave an unchanged original invisible when the cursor already passed it. Reuse the existing consent-gated, restartable bootstrap with account isolation and pending-change protection; no new endpoint, token scope, schema migration or network call inside the transaction. Never reset consent, backoff or another account's state. A known server deletion or a never-accepted create needs no refresh.
+
 ## 15. Authoritative references
 
 - [Chrome extension service-worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)

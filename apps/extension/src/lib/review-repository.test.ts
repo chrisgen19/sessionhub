@@ -136,9 +136,11 @@ describe("resolving the other situations", () => {
   it("an id taken on the server, or a session the server can't accept, can go back to this browser only", async () => {
     for (const code of ["ID_IN_USE", "TOO_LARGE"]) {
       const { db, session } = await refused({ status: "rejected", code, copy: null });
-      await resolveReview(db, session.id, "local-only", context);
+      const { sessionId } = await resolveReview(db, session.id, "local-only", context);
+      expect(sessionId).not.toBe(session.id);
+      expect(await db.sessions.get(sessionId)).toMatchObject({ name: session.name, scope: "local", version: 1 });
       const after = await state(db, session.id);
-      expect(after.record).toEqual({ ...session, scope: "local" });
+      expect(after.record).toBeUndefined();
       expect(after.operations).toEqual([]);
     }
   });
