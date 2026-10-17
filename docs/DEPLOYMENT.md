@@ -138,7 +138,7 @@ Set up with the `coolify` CLI (and the Coolify API for the three settings CLI 1.
 | Application | `sessionhub` (`v5tdb1gh3vky09itrppd4t33`): GitHub App `vast-vicuna-sso40848s4wcgokgg` (the one JobTrack uses), `chrisgen19/sessionhub` `main`, Docker Compose build pack, `/compose.coolify.yaml` |
 | Domain | `https://sessionhub.cgdev.site` on the `web` service (`*.cgdev.site` already points at the server); force HTTPS on |
 | Network | **Connect to Predefined Network** on, so `web` and `migrate` reach the database's internal hostname |
-| Auto-deploy | **Off.** The CI `deploy` job deploys `main` after `check`, `extension-zip` and `docker` pass |
+| Auto-deploy | **Off.** The CI `deploy` job deploys `main` after `check`, `e2e-extension`, `e2e-web`, `extension-zip` and `docker` pass |
 | Database | Shared PostgreSQL 17 (`o0cc0cgwcc0wccc04k880gg4`, project "Postgres Database"): role `sessionhub` (login, not superuser, no CREATEDB) owning database `sessionhub`; `CONNECT` revoked from `PUBLIC`. The app connects over the private network: `postgresql://sessionhub:<password>@o0cc0cgwcc0wccc04k880gg4:5432/sessionhub` |
 | Backups | `sessionhub` added to that instance's daily schedule (`z4fynbkees3nazddvjvacbv0`: 18:00 UTC, S3 on, 7 local / 30 days on S3). The encrypted off-host procedure in `BACKUPS.md` is still to do |
 | Environment | Runtime only, literal: `DATABASE_URL`, `BETTER_AUTH_SECRET` (random, 64 hex), `BETTER_AUTH_URL=https://sessionhub.cgdev.site`, `TRUSTED_PROXY_COUNT=1`, `MAIL_TRANSPORT=resend`, `MAIL_FROM=SessionHub <noreply@support.cgdiomampo.dev>`, `RESEND_API_KEY` (JobTrack's key) |
