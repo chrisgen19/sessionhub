@@ -9,19 +9,21 @@ import { browser } from "wxt/browser";
 const faviconSrc = (pageUrl: string) =>
   `chrome-extension://${browser.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(pageUrl)}&size=32`;
 
-export function TabFavicon({ url, restorable }: { url: string; restorable: boolean }) {
+/** `small` (12px) is for previews that fit several icons in one tile. */
+export function TabFavicon({ url, restorable, small = false }: { url: string; restorable: boolean; small?: boolean }) {
   const [failed, setFailed] = useState(false);
+  const size = small ? "size-3" : "size-4";
   if (!restorable || failed) {
-    return <Globe aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />;
+    return <Globe aria-hidden="true" className={`${size} shrink-0 text-fg-muted`} />;
   }
   return (
     <img
       src={faviconSrc(url)}
       alt=""
-      width={16}
-      height={16}
+      width={small ? 12 : 16}
+      height={small ? 12 : 16}
       loading="lazy"
-      className="size-4 shrink-0 rounded-sm"
+      className={`${size} shrink-0 rounded-sm`}
       onError={() => setFailed(true)}
     />
   );

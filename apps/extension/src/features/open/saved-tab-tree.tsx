@@ -31,18 +31,23 @@ function TabRow({ tab, checked, onToggle }: { tab: SavedTab; checked: boolean; o
   const title = tab.title || displayUrl(tab.url);
   return (
     <li>
-      <label className="flex cursor-pointer items-center gap-2.5 rounded-md py-1.5 pr-1 pl-2 select-none hover:bg-surface-muted" title={`${tab.title}\n${tab.url}`}>
+      <label className="flex cursor-pointer items-center gap-2.5 rounded-md py-1.5 pr-1 pl-2 select-none hover:bg-surface-muted @2xl:py-2" title={`${tab.title}\n${tab.url}`}>
         <input type="checkbox" checked={checked} disabled={reason !== null} onChange={onToggle} className={checkboxClass} />
         <TabFavicon url={tab.url} restorable={reason === null} />
-        <span className="min-w-0 flex-1">
+        {/*
+          Wide trees (the manager's inspector) show one line per tab: the wrapper dissolves and the URL
+          moves to a fixed-width last column (a share of the tree's width), so URLs line up whatever
+          sits between them and the title (pin, "Won't open", group indent).
+        */}
+        <span className="min-w-0 flex-1 @2xl:contents">
           {reason === null ? (
-            <a href={tab.url} target="_blank" rel="noopener noreferrer" className="block truncate text-[13px] hover:text-brand hover:underline">
+            <a href={tab.url} target="_blank" rel="noopener noreferrer" className="block truncate text-[13px] hover:text-brand hover:underline @2xl:min-w-0 @2xl:flex-1">
               {title}
             </a>
           ) : (
-            <span className="block truncate text-[13px] text-fg-muted">{title}</span>
+            <span className="block truncate text-[13px] text-fg-muted @2xl:min-w-0 @2xl:flex-1">{title}</span>
           )}
-          <span className="block truncate text-[11px] text-fg-muted">{displayUrl(tab.url)}</span>
+          <span className="block truncate text-[11px] text-fg-muted @2xl:order-last @2xl:w-[30cqw] @2xl:shrink-0 @2xl:pl-4 @2xl:text-xs">{displayUrl(tab.url)}</span>
         </span>
         {tab.pinned && <Pin aria-label="Pinned" className="size-3.5 shrink-0 text-fg-muted" />}
         {reason !== null && (
@@ -90,7 +95,7 @@ export function SavedTabTree({ session, selection, onChange, expandAll }: SavedT
     });
 
   return (
-    <div className="space-y-2">
+    <div className="@container space-y-2">
       {session.windows.map((window, index) => {
         const state = savedWindowState(window, selection);
         const open = expanded(window.id, index);

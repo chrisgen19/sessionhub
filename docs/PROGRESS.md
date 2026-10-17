@@ -24,6 +24,28 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (manager layout: list rail and wide inspector) / Claude Code (Opus 5.5) / `feature/manager-layout` (macOS laptop, worktree `../sessionhub-manager-layout`, branched from `main` at `9f442b3`)
+
+**Why:** the user reported that on Saved sessions the list was much wider than the inspector, although the inspector holds the tab tree. Asked first; the user chose a narrow list with a fluid detail, and keeping the current look while fixing the structure. Spec change recorded in `docs/UI_UX_DESIGN.md` 18l (supersedes the 320 to 380 px inspector width in 4.3 and section 7 for the manager).
+
+**Changed (extension only):**
+- `components/master-detail.tsx`: `360px | 1fr` (400 px from 1536 px), both panes scroll on their own. Used by Saved sessions and Recovery.
+- `features/manager/sessions-view.tsx`, `session-list.tsx`, new `session-favicons.tsx` and `lib/session-preview.ts` (+ test): the rail header sticks; rows put name and date on one line, counts and sync status on the next; a favicon tile of up to four sites replaces the stack icon.
+- `features/manager/session-inspector.tsx`, `rename-title.tsx`, `features/recovery/checkpoint-inspector.tsx`: header with title, pencil and Export/Delete on one row, facts under it, a border before the open picker.
+- `features/open/saved-tab-tree.tsx`, `open-bar.tsx`: container queries (>= 672 px): one line per tab with an aligned URL column, and a one-row open bar. The popup is unchanged.
+- `components/tab-favicon.tsx`: optional `small` (12 px) size.
+- `features/recovery/recovery-view.tsx`, `checkpoint-list.tsx`: rail padding and title size.
+- `features/workspaces-ui.test.tsx`: reads a row's name from `span[title]` instead of the first nested span.
+
+**Verified:**
+- `pnpm --filter @sessionhub/extension lint`, `typecheck`: pass. `test`: 39 files, 293 tests pass (3 new in `session-preview.test.ts`).
+- `pnpm --filter @sessionhub/extension build` then `test:e2e`: 19 passed.
+- Screenshots (throwaway Playwright script, seeded sessions with groups, pins, a long name and a search) at 1920, 1440, 1180, 820 and 390 px, dark theme, Recovery with a checkpoint, and the popup (unchanged).
+
+**Not done:** `~/SessionHub/extension` wasn't rebuilt from this branch (`build:unpacked` after merge). The empty inspector still shows only "Select a session..."; auto-selecting the newest session at >= 1280 px is a possible follow-up. This entry and PR #42's both sit at the top of the session log, so one of them may need a trivial merge.
+
+**Next step:** review and merge this PR, then `build:unpacked`. The next ROADMAP item is still restoring window size and position.
+
 ### 2026-10-17 (keep opened tabs unloaded until clicked, PR 4 of 4) / Claude Code (Opus 5.5) / `feature/lazy-open` (macOS laptop, branched from `feature/popup-open-save-tabs`, PR #39)
 
 **Why:** the user chose lazy loading for big opens, with a spike first and best effort accepted.

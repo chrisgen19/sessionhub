@@ -1,9 +1,9 @@
-import { Layers } from "lucide-react";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
 import type { SessionsState } from "../../hooks/use-sessions";
 import { formatListDate, plural, sessionSourceLabel } from "../../lib/format";
 import { SESSION_SYNC_TEXT, type SessionSyncLabel } from "../../lib/sync-status";
+import { SessionFavicons } from "./session-favicons";
 
 interface SessionListProps {
   state: SessionsState;
@@ -68,26 +68,26 @@ export function SessionList({ state, sessions, selectedId, searching, workspace 
               type="button"
               aria-current={selected ? "true" : undefined}
               onClick={() => onSelect(session.id)}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted ${
+              className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted lg:px-6 xl:px-4 ${
                 selected ? "bg-brand-soft shadow-[inset_3px_0_0_var(--sh-brand)]" : ""
               }`}
             >
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-muted text-brand">
-                <Layers aria-hidden="true" className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold" title={session.name}>
-                  {session.name}
+              <SessionFavicons session={session} />
+              {/* The date and sync status don't shrink, so the narrow list rail never truncates them away. */}
+              <span className="min-w-0 flex-1 space-y-0.5">
+                <span className="flex items-baseline gap-3">
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={session.name}>
+                    {session.name}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-fg-muted">{formatListDate(session.updatedAt)}</span>
                 </span>
-                <span className="block truncate text-xs text-fg-muted">
-                  {inWorkspace && <span className="font-semibold text-fg">{inWorkspace} · </span>}
-                  {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)}
+                <span className="flex items-baseline gap-3">
+                  <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">
+                    {inWorkspace && <span className="font-semibold text-fg">{inWorkspace} · </span>}
+                    {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)}
+                  </span>
+                  <span className={`shrink-0 text-[11px] font-semibold ${PROBLEM.has(label(session.id)) ? "text-warning" : "text-fg-muted"}`}>{SESSION_SYNC_TEXT[label(session.id)]}</span>
                 </span>
-              </span>
-              {/* Sync status keeps its own line so narrow widths never truncate it away. */}
-              <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
-                <span className="text-xs tabular-nums text-fg-muted">{formatListDate(session.updatedAt)}</span>
-                <span className={`text-[11px] font-semibold ${PROBLEM.has(label(session.id)) ? "text-warning" : "text-fg-muted"}`}>{SESSION_SYNC_TEXT[label(session.id)]}</span>
               </span>
             </button>
           </li>

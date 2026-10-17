@@ -70,10 +70,11 @@ export function SessionsView({ sessionId, workspace, onSelect, onWorkspace }: Se
       }
       list={
         <>
-          <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6">
+          {/* In the list rail (>=1280px) the header stays put while the sessions scroll under it. */}
+          <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6 xl:sticky xl:top-0 xl:z-10 xl:px-4 xl:py-4">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-baseline gap-3">
-                <h1 className="text-2xl font-bold tracking-tight">Saved sessions</h1>
+              <div className="flex min-w-0 items-baseline gap-3">
+                <h1 className="text-2xl font-bold tracking-tight xl:text-xl">Saved sessions</h1>
                 {state.status === "ready" && (
                   <span className="hidden text-xs whitespace-nowrap tabular-nums text-fg-muted sm:inline">{plural(inScope.length, "session")}</span>
                 )}
@@ -81,7 +82,7 @@ export function SessionsView({ sessionId, workspace, onSelect, onWorkspace }: Se
               <ImportControl onImported={onSelect} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex min-w-[min(100%,220px)] max-w-xl flex-1 items-center gap-2 rounded-lg border border-line bg-canvas px-3 focus-within:outline-2 focus-within:outline-focus">
+              <label className="flex min-w-[min(100%,220px)] max-w-xl flex-1 items-center gap-2 rounded-lg border border-line bg-canvas px-3 focus-within:outline-2 focus-within:outline-focus xl:max-w-none">
                 <Search aria-hidden="true" className="size-4 text-fg-muted" />
                 <span className="sr-only">Search sessions, tab titles and URLs</span>
                 <input

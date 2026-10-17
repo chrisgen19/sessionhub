@@ -70,7 +70,7 @@ const seed = async () => {
   return { inAlpha, loose, mine };
 };
 
-const sessionNames = () => within(screen.getByRole("list", { name: "Saved sessions" })).getAllByRole("button").map((row) => row.querySelector("span span")?.textContent);
+const sessionNames = () => within(screen.getByRole("list", { name: "Saved sessions" })).getAllByRole("button").map((row) => row.querySelector("span[title]")?.textContent);
 
 beforeEach(async () => {
   await Promise.all(getDb().tables.map((table) => table.clear()));

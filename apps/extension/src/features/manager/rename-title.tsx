@@ -34,8 +34,9 @@ export function RenameTitle({ session }: { session: SavedSession }) {
 
   if (!editing) {
     return (
-      <div className="flex items-start gap-2">
-        <h2 className="min-w-0 flex-1 text-xl font-bold tracking-tight break-words">{session.name}</h2>
+      <div className="flex items-start gap-1.5">
+        {/* The pencil follows the name rather than the far edge, so it reads as part of the title. */}
+        <h2 className="min-w-0 text-2xl font-bold tracking-tight break-words">{session.name}</h2>
         <button
           type="button"
           onClick={startEditing}
