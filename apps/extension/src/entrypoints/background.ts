@@ -43,7 +43,18 @@ const SYNC_RETRY_ALARM = "sync-retry";
 const SYNC_PERIODIC_ALARM = "sync-periodic";
 const SYNC_PERIODIC_MINUTES = 10;
 /** Commands after which the outbox may hold something new to upload. */
-const SYNC_AFTER = new Set(["session.capture", "session.import", "session.rename", "session.delete", "sync.enable", "sync.resolve"]);
+const SYNC_AFTER = new Set([
+  "session.capture",
+  "session.import",
+  "session.rename",
+  "session.delete",
+  "session.assign",
+  "sync.enable",
+  "sync.resolve",
+  "workspace.create",
+  "workspace.update",
+  "workspace.delete",
+]);
 
 /** Syncs in the background (upload, then download); exits at once when disconnected or sync is off. */
 const syncSoon = () => void syncNow(toSyncDeps(deps())).catch(() => undefined);

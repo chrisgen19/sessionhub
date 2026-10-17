@@ -67,6 +67,9 @@ Never rely only on mocked `chrome.tabs` for critical browser restoration behavio
 | User revokes Windows device on web | Windows API denied; its local sessions remain |
 | Chrome profile switches accounts | No account A cloud sessions shown to account B |
 | Sync consent disabled | No session URL upload; local backup still works |
+| Workspace made on the web, another in the extension, a session assigned | Both workspaces and the assignment reach the other profile; its switcher filters by them (E2E `sync-workspaces.spec.ts`) |
+| Same workspace renamed in one profile, recolored in the other | Both changes survive (per-field merge) everywhere |
+| Workspace with sessions deleted in one profile | Sessions move to No workspace first, then the workspace goes everywhere; no session is deleted, no tab changes |
 
 Test with distinct extension installations/profiles, not merely two browser tabs sharing one IndexedDB.
 

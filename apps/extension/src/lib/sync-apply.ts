@@ -3,11 +3,12 @@ import type { BootstrapItem } from "@sessionhub/contracts/api-sync";
 import { savedSessionSchema } from "@sessionhub/contracts/session";
 import { reconcileHeldCopy, reconcileRemoteChange, toLocalSession, type LocalEntity } from "@sessionhub/sync/reconcile";
 import type { AccountScope, LocalSessionRecord, SessionHubDb } from "./db";
+import { applyWorkspaceChange } from "./workspace-sync";
 
 /**
  * Applies server state to the local cache following `@sessionhub/sync` rules. Every function here
- * runs inside the caller's transaction, which must include sessions, outbox, sessionTombstones and
- * serverCopies. Nothing here touches the browser: a pull never opens or closes tabs.
+ * runs inside the caller's transaction, which must include sessions, outbox, sessionTombstones,
+ * serverCopies and workspaces. Nothing here touches the browser: a pull never opens or closes tabs.
  */
 
 const readLocalEntity = async (db: SessionHubDb, scope: AccountScope, id: string): Promise<{ entity: LocalEntity; record?: LocalSessionRecord }> => {
@@ -29,7 +30,7 @@ const readLocalEntity = async (db: SessionHubDb, scope: AccountScope, id: string
 export const writeServerSession = async (db: SessionHubDb, scope: AccountScope, detail: ApiSessionDetail, version: number, previous?: LocalSessionRecord): Promise<boolean> => {
   const session = savedSessionSchema.safeParse(toLocalSession(detail, previous?.scope === scope ? previous.version : null));
   if (!session.success) return false;
-  await db.sessions.put({ ...session.data, scope, sync: { serverVersion: version, state: "synced" } });
+  await db.sessions.put({ ...session.data, scope, sync: { serverVersion: version, state: "synced" }, workspaceId: detail.workspaceId });
   await db.serverCopies.delete(detail.id);
   return true;
 };
@@ -41,8 +42,7 @@ export type ApplyOutcome = "applied" | "held" | "skipped";
  * payload that doesn't validate) is skipped, so one bad change can never block a page forever.
  */
 export const applyRemoteChange = async (db: SessionHubDb, scope: AccountScope, change: BootstrapItem, now: string): Promise<ApplyOutcome> => {
-  // Workspaces aren't stored by the extension yet.
-  if (change.entityType !== "savedSession") return "skipped";
+  if (change.entityType === "workspace") return applyWorkspaceChange(db, scope, change);
   let detail: ApiSessionDetail | null = null;
   if (change.action === "upsert") {
     const parsed = apiSessionDetailSchema.safeParse(change.payload);
@@ -50,6 +50,11 @@ export const applyRemoteChange = async (db: SessionHubDb, scope: AccountScope, c
     detail = parsed.data;
   }
   const { entity, record } = await readLocalEntity(db, scope, change.entityId);
+  // A session cached before workspaces were stored learns its workspace from the same version
+  // (the v6 rebuild), even though the version itself is not new.
+  if (detail && record?.scope === scope && record.workspaceId === undefined && record.sync?.serverVersion === change.version) {
+    await db.sessions.update(record.id, { workspaceId: detail.workspaceId });
+  }
   const decision = reconcileRemoteChange(scope, entity, change);
   switch (decision.kind) {
     case "write":

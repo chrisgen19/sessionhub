@@ -9,6 +9,7 @@ import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import type { SessionSyncLabel } from "../../lib/sync-status";
 import { useReviewItems } from "../../hooks/use-review";
 import { ReviewDialog } from "../review/review-dialog";
+import { WorkspacePicker } from "../workspaces/workspace-picker";
 import { DeleteDialog } from "./delete-dialog";
 import { LastRestore } from "./last-restore";
 import { RenameTitle } from "./rename-title";
@@ -18,13 +19,15 @@ import { WindowTree } from "./window-tree";
 interface SessionInspectorProps {
   session: SavedSession;
   syncLabel: SessionSyncLabel;
+  /** Its account workspace (null: none). */
+  workspaceId: string | null;
   onBack: () => void;
   onDeleted: () => void;
   /** Opens another session (after a review that kept this browser's version as a new one). */
   onOpen: (id: string) => void;
 }
 
-export function SessionInspector({ session, syncLabel, onBack, onDeleted, onOpen }: SessionInspectorProps) {
+export function SessionInspector({ session, syncLabel, workspaceId, onBack, onDeleted, onOpen }: SessionInspectorProps) {
   const [dialog, setDialog] = useState<"restore" | "delete" | "review" | null>(null);
   const review = useReviewItems()?.find((item) => item.sessionId === session.id);
   const summary = summarizeSession(session);
@@ -48,6 +51,7 @@ export function SessionInspector({ session, syncLabel, onBack, onDeleted, onOpen
           </span>
           <SessionSyncBadge label={syncLabel} />
         </div>
+        <WorkspacePicker sessionId={session.id} inAccount={syncLabel !== "local"} workspaceId={workspaceId} />
       </div>
 
       <div className="flex flex-wrap gap-2">

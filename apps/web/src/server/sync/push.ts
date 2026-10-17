@@ -94,15 +94,21 @@ const applySession = (tx: Tx, pusher: Pusher, sequence: bigint, operation: Sessi
     return { version: detail.version, sequence: written };
   });
 
-/** A workspace upload through the workspace service (same rules as the REST API). Absent fields keep the server's. */
+/**
+ * A workspace upload through the workspace service (same rules as the REST API). Absent fields keep
+ * the server's, so an update may carry only the fields the device changed (its per-field merge).
+ */
 const applyWorkspace = (tx: Tx, userId: string, sequence: bigint, operation: WorkspaceOperation) =>
   acceptedOrRepeat(operation, async () => {
     if (operation.action === "delete") return deleteWorkspaceInTx(tx, userId, sequence, operation.entityId, operation.expectedVersion);
     const { name, description, icon, color, position } = operation.payload;
-    const { workspace, sequence: written } =
-      operation.expectedVersion === 0
-        ? await createWorkspaceInTx(tx, userId, sequence, { id: operation.entityId, name, description: description ?? null, icon: icon ?? null, color: color ?? null, position: position ?? 0 })
-        : await updateWorkspaceInTx(tx, userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, description, icon, color, position });
+    if (operation.expectedVersion > 0) {
+      const { workspace, sequence: written } = await updateWorkspaceInTx(tx, userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, description, icon, color, position });
+      return { version: workspace.version, sequence: written };
+    }
+    // Unreachable: the operation schema refuses a create without a name.
+    if (name === undefined) throw new Error("Workspace create without a name");
+    const { workspace, sequence: written } = await createWorkspaceInTx(tx, userId, sequence, { id: operation.entityId, name, description: description ?? null, icon: icon ?? null, color: color ?? null, position: position ?? 0 });
     return { version: workspace.version, sequence: written };
   });
 

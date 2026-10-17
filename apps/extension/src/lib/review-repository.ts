@@ -28,7 +28,7 @@ export class ReviewGoneError extends Error {
   override name = "ReviewGoneError";
 }
 
-const toSaved = ({ scope: _scope, sync: _sync, ...session }: LocalSessionRecord): SavedSession => session;
+const toSaved = ({ scope: _scope, sync: _sync, workspaceId: _workspaceId, ...session }: LocalSessionRecord): SavedSession => session;
 
 /** Builds the item for one session from its first held operation (direct Dexie awaits). */
 const reviewItemFor = async (db: SessionHubDb, scope: AccountScope, held: OutboxRecord): Promise<ReviewItem> => {
@@ -59,6 +59,8 @@ const heldOperations = async (db: SessionHubDb, scope: AccountScope): Promise<Ou
   const operations = await db.outbox.where("[scope+seq]").between([scope, Dexie.minKey], [scope, Dexie.maxKey]).toArray();
   const firstHeld = new Map<string, OutboxRecord>();
   for (const operation of operations) {
+    // Workspaces never need review (13j): their refusals resolve on their own or show on the workspace.
+    if (operation.entityType !== "savedSession") continue;
     if ((operation.status === "conflict" || operation.status === "rejected") && !firstHeld.has(operation.entityId)) firstHeld.set(operation.entityId, operation);
   }
   return [...firstHeld.values()];
@@ -85,10 +87,14 @@ interface Resolution {
   context: OutboxContext;
 }
 
-/** Puts a session into the account as a brand-new session with its create queued. */
-const addAsNew = async ({ db, scope, context }: Resolution, session: SavedSession) => {
-  await db.sessions.add({ ...session, scope, sync: { serverVersion: null, state: "pending" } });
-  await enqueueSessionUpsert(db, scope, session, null, context);
+/** This browser's workspace for the session, if it knows one (absent leaves the server's as it is). */
+const workspaceOf = (record: LocalSessionRecord | undefined) => (record?.workspaceId === undefined ? {} : { workspaceId: record.workspaceId });
+
+/** Puts a session into the account as a brand-new session with its create queued, in this browser's workspace for it. */
+const addAsNew = async ({ db, scope, context, record }: Resolution, session: SavedSession) => {
+  const workspace = record?.scope === scope ? workspaceOf(record) : {};
+  await db.sessions.add({ ...session, ...workspace, scope, sync: { serverVersion: null, state: "pending" } });
+  await enqueueSessionUpsert(db, scope, { ...session, ...workspace }, null, context);
 };
 
 const takeServer = async ({ db, scope, sessionId, copy, record }: Resolution) => {
@@ -115,7 +121,7 @@ type Handler = (resolution: Resolution) => Promise<string>;
 /** Upload this browser's version on top of the server's current one (a new conflict if it moves again). */
 const uploadMineOver: Handler = async (r) => {
   if (!r.item.local || r.version === null) throw unavailable();
-  await enqueueSessionUpsert(r.db, r.scope, r.item.local, r.version, r.context);
+  await enqueueSessionUpsert(r.db, r.scope, { ...r.item.local, ...workspaceOf(r.record) }, r.version, r.context);
   await r.db.sessions.update(r.sessionId, { sync: { serverVersion: r.version, state: "pending" } });
   await r.db.serverCopies.delete(r.sessionId);
   return r.sessionId;
