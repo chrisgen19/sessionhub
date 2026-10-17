@@ -17,11 +17,54 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. Current work: `feature/m6-release-hardening` in a separate worktree. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 (M6 release hardening, from a separate worktree) merged as `8c4102e`. Latest change: PR #15 `feature/m5-workspaces` (workspace sync, server side). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (M5 workspaces, part 1: sync server side) / Claude Code (Opus 5.5) / `feature/m5-workspaces` (macOS laptop)
+
+**Goal:** workspace switcher and assignment in the extension (user's scope).
+
+**Found:**
+- `/api/v1/workspaces` is cookie-only (web), and the extension talks to the server only through sync.
+- Sync push accepted only sessions, and only `{ name, windows }`: SYNC_PROTOCOL.md 13f made the workspace a web-only field.
+- Pull already sent workspace changes, but the extension skipped them (`sync-apply.ts:45`).
+- `SYNC_PROTOCOL.md` says "MVP synced: Workspace".
+
+**Decisions** (user's choices): workspaces sync both ways; server first, extension in the next PR. Recorded in SYSTEM_DESIGN.md 14.
+
+**Implemented:**
+- `packages/contracts/src/api-sync.ts`:
+  - the push operation is a union of `savedSession` and `workspace` operations
+  - the session payload gets an optional `workspaceId` (absent keeps the server's, `null` unassigns)
+  - new `syncWorkspacePayloadSchema` (`name`, plus optional `description`, `icon`, `color`, `position`; absent keeps the server's)
+  - new rejected code `WORKSPACE_NOT_EMPTY`
+- `packages/contracts/src/api-workspaces.ts`: `workspaceFieldSchemas` is shared with sync.
+- `apps/web/src/server/workspaces/service.ts`: `createWorkspaceInTx`, `updateWorkspaceInTx`, `deleteWorkspaceInTx`, with the REST wrappers unchanged in behavior.
+- `apps/web/src/server/sync/push.ts`:
+  - `applySession` (passes `workspaceId` through) and `applyWorkspace`
+  - one `acceptedOrRepeat` wrapper for the services' idempotent repeats
+- `apps/web/src/server/sync/pull.ts`: the first bootstrap page carries the complete set of live workspaces ahead of the sessions; `nextAfter` still pages sessions only, so current extensions keep working.
+  - After PR #15's review (Codex P2), tombstones aren't sent: they only grow, and would bypass the 4 MB page budget for an account that keeps creating and deleting workspaces (about 35,000 to pass it). A client drops account workspaces missing from the set after a bootstrap.
+- Tests:
+  - `packages/contracts/src/api-sync.test.ts` (3, new)
+  - `push.db.test.ts` (+4): workspace create, edit and delete with receipts; absent fields keep the web's; repeat and conflict; assign, keep and unassign in one push; not-empty and other-account refusals
+  - `pull.db.test.ts` (+2): bootstrap order, live set only, and first page only
+  - `e2e/sync-push.spec.ts` (+1): the full round trip between device and web over HTTP
+- Docs: SYNC_PROTOCOL 13f and 13g, SYSTEM_DESIGN 14, ROADMAP M5 note.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54339/58035):**
+- Contracts tests 3/3; sync and workspace DB tests 24/24; the new round-trip E2E passes.
+- Typecheck with `--force`: Turbo had served the dependents' typecheck from cache after the contracts change, and only the forced run found the `push.ts` error.
+- `pnpm check --force` 17/17; `pnpm --filter @sessionhub/web test:db` **66/66** (+6); `pnpm build`.
+- Full web E2E **47/47** (+1). That includes pairing and two-profile sync with the real, unchanged extension against the new server: current extensions still work, and they skip workspace items.
+- Not run: the extension E2E suite (no extension change).
+
+**Known gaps (for the extension PR):**
+- Workspace edit conflicts need a policy.
+- The extension must drop account workspaces missing from a bootstrap's live set, unless they have pending local changes.
 
 ### 2026-10-17 (remaining M6 repository work from issue #5) / Codex / `feature/m6-release-hardening`
 
@@ -1036,10 +1079,18 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Review the committed `feature/m6-release-hardening` branch and open a PR when requested. #14 is already merged; do not repeat it.
+1. Merge PR #15 (workspace sync, server side) once its CI is green, then build the extension half on a new branch off `main`:
+   - a `workspaces` table (Dexie v6) and `workspaceId` on local sessions
+   - pull and bootstrap applying workspace changes, dropping account workspaces missing from a bootstrap's live set (unless they have pending local changes); uploads of workspace operations and assignments (workspace first, unassign before delete)
+   - a workspace switcher (a per-browser view; new saves go into the active workspace)
+   - assigning sessions, and moving a session's workspace along when local sessions move into the account
+   - deleting a workspace by unassigning its sessions first, after confirmation
+   - a policy for workspace edit conflicts
+
+   From now on: one small PR per slice, off `main`.
 2. Before public launch choose the production domain, finalize `/privacy` operator/private contact/provider/retention details, set `EXTENSION_API_BASE_URL` and follow DEPLOYMENT, BACKUPS and RELEASE on the actual host. Record live evidence before checking the remaining two M6 boxes.
 3. Re-review the three dependency advisories before release/by 2026-11-17; current reachability evidence is in SECURITY_REVIEW_M6.
-4. Complete Windows/macOS stable Chrome smoke and final account-flow screenshots/reviewer materials. M5 remains separate. Old fix worktrees belong to other sessions; leave them alone unless asked.
+4. Complete Windows/macOS stable Chrome smoke and final account-flow screenshots/reviewer materials. Old fix worktrees belong to other sessions; leave them alone unless asked.
 
 ## Open questions / architecture validations
 

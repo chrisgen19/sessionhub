@@ -130,3 +130,70 @@ describe("sync push", () => {
     expect(await prisma.sessionVersion.count({ where: { sessionId: create.entityId } })).toBe(1);
   });
 });
+
+const workspace = (entityId: string, expectedVersion: number, fields: Record<string, unknown> = { name: "Project Alpha" }) => ({
+  clientOperationId: randomUUID(),
+  entityType: "workspace",
+  entityId,
+  action: "upsert",
+  expectedVersion,
+  payload: fields,
+});
+const removeWorkspace = (entityId: string, expectedVersion: number) => ({ clientOperationId: randomUUID(), entityType: "workspace", entityId, action: "delete", expectedVersion, payload: null });
+const inWorkspace = (entityId: string, expectedVersion: number, workspaceId: string | null) => ({ ...upsert(entityId, expectedVersion), payload: { ...payload("Research"), workspaceId } });
+
+describe("sync push: workspaces and assignments", () => {
+  it("creates, edits and deletes a workspace through the workspace service, with receipts and change-log rows", async () => {
+    const pusher = await newPusher();
+    const id = randomUUID();
+    expect(await one(pusher, workspace(id, 0, { name: "Alpha", color: "blue" }))).toMatchObject({ status: "accepted", entityId: id, serverVersion: 1, replayed: false });
+    expect(await one(pusher, workspace(id, 1, { name: "Alpha 2" }))).toMatchObject({ status: "accepted", serverVersion: 2 });
+    expect(await prisma.workspace.findUniqueOrThrow({ where: { id } })).toMatchObject({ userId: pusher.userId, name: "Alpha 2", color: "blue", position: 0, version: 2 });
+    expect(await one(pusher, removeWorkspace(id, 2))).toMatchObject({ status: "accepted", serverVersion: 3 });
+    expect((await prisma.workspace.findUniqueOrThrow({ where: { id } })).deletedAt).not.toBeNull();
+    const changes = await prisma.syncChange.findMany({ where: { userId: pusher.userId }, orderBy: { sequence: "asc" } });
+    expect(changes.map((change) => [change.entityType, change.changeKind])).toEqual([["workspace", "upsert"], ["workspace", "upsert"], ["workspace", "delete"]]);
+    // A repeated delete of the tombstone is accepted and writes nothing.
+    expect(await one(pusher, removeWorkspace(id, 2))).toMatchObject({ status: "accepted", serverVersion: 3, serverSequence: null });
+  });
+
+  it("keeps the web's values for fields an upload leaves out, and answers repeats and stale edits", async () => {
+    const pusher = await newPusher();
+    const id = randomUUID();
+    const create = workspace(id, 0, { name: "Alpha" });
+    await one(pusher, create);
+    await prisma.workspace.update({ where: { id }, data: { description: "Set on the web", icon: "folder", version: 2 } });
+    expect(await one(pusher, workspace(id, 2, { name: "Renamed in the extension" }))).toMatchObject({ status: "accepted", serverVersion: 3 });
+    expect(await prisma.workspace.findUniqueOrThrow({ where: { id } })).toMatchObject({ name: "Renamed in the extension", description: "Set on the web", icon: "folder" });
+    expect(await one(pusher, create)).toMatchObject({ status: "accepted", serverVersion: 1, replayed: true });
+    expect(await one(pusher, workspace(id, 1, { name: "Stale" }))).toMatchObject({ status: "conflict", code: "VERSION_CONFLICT", expectedVersion: 1, serverVersion: 3 });
+  });
+
+  it("assigns, keeps and removes a session's workspace; an upload without workspaceId leaves it as it is", async () => {
+    const pusher = await newPusher();
+    const [space, session] = [randomUUID(), randomUUID()];
+    // One push: the workspace first, then a new session in it (operations apply in order).
+    const results = await push(pusher, workspace(space, 0), inWorkspace(session, 0, space));
+    expect(results.map((result) => result.status)).toEqual(["accepted", "accepted"]);
+    expect((await prisma.savedSession.findUniqueOrThrow({ where: { id: session } })).workspaceId).toBe(space);
+    expect(await one(pusher, upsert(session, 1, "Renamed, workspace untouched"))).toMatchObject({ status: "accepted", serverVersion: 2 });
+    expect((await prisma.savedSession.findUniqueOrThrow({ where: { id: session } })).workspaceId).toBe(space);
+    // Emptying the workspace and deleting it in one push.
+    const emptied = await push(pusher, inWorkspace(session, 2, null), removeWorkspace(space, 1));
+    expect(emptied.map((result) => result.status)).toEqual(["accepted", "accepted"]);
+    expect((await prisma.savedSession.findUniqueOrThrow({ where: { id: session } })).workspaceId).toBeNull();
+  });
+
+  it("refuses to delete a workspace that still holds sessions, and to assign one that isn't the account's", async () => {
+    const pusher = await newPusher();
+    const other = await newPusher();
+    const [space, theirs, session] = [randomUUID(), randomUUID(), randomUUID()];
+    await push(pusher, workspace(space, 0), inWorkspace(session, 0, space));
+    expect(await one(pusher, removeWorkspace(space, 1))).toMatchObject({ status: "rejected", code: "WORKSPACE_NOT_EMPTY" });
+    expect((await prisma.workspace.findUniqueOrThrow({ where: { id: space } })).deletedAt).toBeNull();
+    await one(other, workspace(theirs, 0));
+    expect(await one(pusher, inWorkspace(randomUUID(), 0, theirs))).toMatchObject({ status: "rejected", code: "INVALID_WORKSPACE" });
+    expect(await one(pusher, inWorkspace(session, 1, randomUUID()))).toMatchObject({ status: "rejected", code: "INVALID_WORKSPACE" });
+    expect(await one(pusher, workspace(theirs, 1, { name: "Not mine" }))).toMatchObject({ status: "rejected", code: "NOT_FOUND" });
+  });
+});
