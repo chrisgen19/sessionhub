@@ -24,6 +24,33 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (first deployment verified: sessionhub.cgdev.site) / Claude Code (Opus 5.5) / `feature/first-deploy-results` (macOS laptop)
+
+**Deployed:** PR #22 merged as `83cdd15` (its CI green: `check`, `docker`, `extension-zip`; `deploy` skipped on the PR by design). The first deployment was built from the PR branch to test Coolify before merging: the GitHub App cloned the private repository, `migrate` ran and exited, `web` became healthy, and no secret appeared in the deployment log (hidden lines included) or as a build argument. The app was then switched back to `main` and redeployed from `83cdd15` (`running:healthy`).
+
+**DEPLOYMENT.md checks against `https://sessionhub.cgdev.site` (from the macOS laptop, after the `main` redeploy):**
+
+| Check | Result |
+|---|---|
+| 3. http redirects to https | **307** Temporary Redirect to `https://sessionhub.cgdev.site/` (expected 301/308; Coolify's redirect isn't permanent). HSTS covers later visits |
+| 3. HSTS on `/api/health` | `strict-transport-security: max-age=31536000` |
+| 3. Framing on `/login` | `content-security-policy: frame-ancestors 'none'`, `x-frame-options: DENY` |
+| 3. Health | `{"status":"ok"}` (configuration valid, database probe ok over the private network) |
+| 3. API without a session | `HTTP/2 401` with an `x-request-id` |
+| 3. Certificate | Let's Encrypt (`YR2`), valid until 2027-01-15 |
+| 2. Six pairing starts with different fake `X-Forwarded-For` | 201, 201, 201, 201, 201, **429**: the fake values were ignored (`TRUSTED_PROXY_COUNT=1` behind Traefik) |
+| 5. Request logs | one JSON `http_request` line per request (method, id-free path, status, duration); no emails, client addresses or URLs (only Next.js's startup banner mentions `http://localhost:3000`) |
+
+The pairing check left five pending pairings, which expire after 10 minutes.
+
+**Extension for production:** built with `WXT_API_BASE_URL=https://sessionhub.cgdev.site` into `apps/extension/.output/prod/chrome-mv3` (host permission only that origin, no `localhost:3000` in the bundle); in a throwaway Chromium profile it saved a window and reached the live `/api/health`. The repository variable `EXTENSION_API_BASE_URL` is set, so CI's `extension-zip` now builds and uploads the release ZIP for this origin.
+
+**Open:**
+- `COOLIFY_TOKEN` repository secret (a Coolify API token with deploy permission, to be created by the user); until it exists the CI `deploy` job skips and deploys are manual (`coolify deploy uuid v5tdb1gh3vky09itrppd4t33`). `COOLIFY_DEPLOY_WEBHOOK` is set.
+- The http redirect status (307): a Traefik label for a permanent redirect, if wanted.
+- By hand: sign in and check the `__Secure-` session cookie flags; the first real Resend email (account confirmation).
+- `BACKUPS.md` off-host restore drill; `/privacy` operator/contact/retention details before sharing the URL (registration is open).
+
 ### 2026-10-17 (first deployment: Coolify at sessionhub.cgdev.site) / Claude Code (Opus 5.5) / `feature/coolify-deploy` (macOS laptop)
 
 **User's choices:** domain `sessionhub.cgdev.site`; the shared PostgreSQL with its own role (JobTrack's pattern); Resend on JobTrack's verified domain; CI-triggered deploys with Coolify auto-deploy off (Debt Tracker's pattern).
