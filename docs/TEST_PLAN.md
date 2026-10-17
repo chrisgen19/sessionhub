@@ -1,6 +1,6 @@
 # SessionHub — Verification & Test Strategy
 
-**Status:** Proposed tests; no results are claimed for this documentation pack.
+**Status:** Test strategy plus measured implementation evidence. Latest actual commands/results: `PROGRESS.md`; M6 security review: `SECURITY_REVIEW_M6.md`. Proposed coverage below is not automatically claimed complete.
 
 ## 1. Test layers
 
@@ -139,8 +139,22 @@ Test: `apps/extension/e2e/perf.spec.ts`, run with `pnpm test:perf` (builds first
 - [ ] Offline save, worker termination and two-device sync tests pass.
 - [ ] Multi-user security tests pass.
 - [ ] Privacy disclosures/permission rationale reviewed.
-- [ ] Chrome extension ZIP is reproducible and source code complies with Web Store MV3 rules. (Reproducibility and the manifest and bundle rules have been checked in CI since 2026-10-17, `DEPLOYMENT.md` section 6; a full Web Store policy review is still pending, and icons are missing.)
+- [ ] Chrome extension ZIP is reproducible and source code complies with Web Store MV3 rules. (Reproducibility and the manifest and bundle rules have been checked in CI since 2026-10-17, `DEPLOYMENT.md` section 6; a full Web Store policy review is still pending, icons, CSP and PNG dimensions are now enforced. Public store/operator checks remain pending.)
 - [ ] Docker image builds and starts; migrations completed safely.
 - [ ] PostgreSQL backup restored successfully on test environment.
 - [ ] All final feature claims backed by tests/manual verification.
 - [ ] Actual commands/test outputs and remaining blockers recorded in `PROGRESS.md`.
+
+## 9. M6 local hardening pass (2026-10-17)
+
+- `pnpm check --force`: lint, strict typecheck and unit suites, including readiness failure/recovery, packaged-icon/CSP regressions and restore pin/group/window/tab failure paths.
+- `pnpm --filter @sessionhub/web test:db`: 60 tests on isolated PostgreSQL 18, non-destructive migrate deploy. Includes auth/ownership, concurrent refresh reuse, shared limiter concurrency and 20 simultaneous copies of a sync operation.
+- Web E2E: 47 tests against the standalone build, including public privacy navigation, real device revocation, two-profile sync/conflict, clickjacking and proxy spoof checks. Extension E2E: 9 tests, including offline persistence, worker death and real restore failures.
+- `bash infra/scripts/test-backup.sh <test-container> sessionhub_test`: authenticated encrypted dump -> new isolated target -> exact all-table counts/content hashes, plus overwrite/corruption/dump-failure paths. CI runs after database tests. A full staging app restore and real off-host/key-recovery drill remain pending.
+- Production container test now includes database pause -> health 503 -> database resume -> health 200, with cleanup in `finally`. Actual local outcome is recorded in PROGRESS.
+- Release ZIP built twice and checked for equality, permissions, host, packaged code, CSP and real PNG dimensions. Placeholder `.invalid` ZIP is intentionally not a deployable artifact.
+- `pnpm audit --prod`: 2 high + 1 moderate in unused MySQL/Prisma-config paths, reviewed exceptions with evidence and re-review date in SECURITY_REVIEW_M6.md; the audit is not claimed clean.
+
+### 9.1 Restore remeasurement
+
+2026-10-17, macOS Apple Silicon, Chromium 156.0.8078.4, one run with 4 windows/120 tabs (same local HTTP fixture): capture median 4 ms, checkpoint insert 5 ms, unchanged checkpoint median 4 ms, inspector 41 ms, popup 51 ms, restore **3,638 ms / 30.3 ms per tab**, storage 4,330 KB. All existing guards passed. This includes per-tab outcome persistence. Hardware differs from the WSL baseline in section 5.1; no cross-machine speedup claim. An initial simultaneous E2E/perf run collided in Playwright's output directory; the recorded pass ran after the extension suite finished.

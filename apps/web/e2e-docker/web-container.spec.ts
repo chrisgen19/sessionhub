@@ -107,3 +107,18 @@ test("BETTER_AUTH_URL follows WEB_PORT unless it is set, so the API's origin che
   expect(authUrl({ WEB_PORT: "8080", BETTER_AUTH_URL: "" })).toBe("http://localhost:8080");
   expect(authUrl({ WEB_PORT: "8080", BETTER_AUTH_URL: "https://sessions.example.com" })).toBe("https://sessions.example.com");
 });
+
+test("database loss fails readiness and recovery makes it healthy again", async ({ request }) => {
+  test.setTimeout(60_000);
+  compose(["pause", "postgres"]);
+  try {
+    await expect.poll(async () => {
+      const response = await request.get(`${BASE_URL}/api/health`, { timeout: 15_000 });
+      expect(response.headers()["cache-control"]).toBe("no-store");
+      return { status: response.status(), body: await response.json() };
+    }, { timeout: 25_000 }).toEqual({ status: 503, body: { status: "unavailable" } });
+  } finally {
+    compose(["unpause", "postgres"]);
+  }
+  await expect.poll(async () => (await request.get(`${BASE_URL}/api/health`)).status(), { timeout: 20_000 }).toBe(200);
+});

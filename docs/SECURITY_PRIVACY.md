@@ -19,7 +19,7 @@ A session can include private document URLs, unguessable share links, access tok
 
 ### Suggested onboarding disclosure copy
 
-> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, titles, URLs, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync and exclude sites in Settings.
+> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, titles, URLs, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync. Site exclusions and query stripping are not available in this preview; inspect selected sessions for sensitive URLs before uploading.
 
 Do not make the privacy disclosure conditional on reading a lengthy policy. Users must understand the substance in the UI.
 
@@ -116,7 +116,7 @@ Permissions must be justified by features that are **actually shipped**. Propose
 | `host_permissions` limited to API origin | Send HTTPS requests to your own backend |
 | `identity` (conditional) | Only if selected auth implementation needs Chrome identity flows |
 
-**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints), plus **one host permission** for the configured SessionHub server (`WXT_API_BASE_URL`, https required except localhost; used for pairing and, later, sync). No other host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them. Since 2026-10-17, CI fails the release ZIP if its permissions differ from this list, if `host_permissions` is anything but the configured https origin, or if content scripts, `externally_connectable`, `web_accessible_resources` or optional permissions appear (`apps/extension/scripts/check-release-zip.ts`, `DEPLOYMENT.md` section 6).
+**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints), plus **one host permission** for the configured SessionHub server (`WXT_API_BASE_URL`, https required except localhost; used for pairing and opt-in sync). No other host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them. Since 2026-10-17, CI fails the release ZIP if its permissions differ from this list, if `host_permissions` is anything but the configured https origin, or if content scripts, `externally_connectable`, `web_accessible_resources` or optional permissions appear (`apps/extension/scripts/check-release-zip.ts`, `DEPLOYMENT.md` section 6).
 
 Recovery checkpoints contain only tab URLs, titles, pinned state and groups of normal windows; they stay in local IndexedDB and are never uploaded. Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
 
@@ -210,10 +210,10 @@ Operator steps and checks are in `DEPLOYMENT.md`.
 
 - [x] Cloud sync cannot start until explicit consent is recorded locally. (2026-10-16: uploads and downloads are gated on `syncState.enabledAt`, which only the Account view's opt-in (disclosure + upload preview + click) sets; unit and E2E tested)
 - [x] Sync off produces zero URL/title uploads. (2026-10-16: with `enabledAt` unset or cleared the uploader and downloader return before any request; unit tested. While off, new saves stay local. 2026-10-17: also checked before every request of a run, so turning sync off or connecting another account mid-run stops it at the next round or page; one request already sent completes; unit tested)
-- [ ] Excluded URLs are filtered before network serialization.
-- [ ] Another user cannot list/read/modify any of the first user's resources.
-- [ ] Revoked devices cannot push/pull; local data remains unaffected.
-- [ ] Browser-to-extension external messages cannot cause destructive actions without confirmation.
+- [ ] Per-site exclusions/query stripping (not implemented; public policy and store copy explicitly disclose whole-session, complete-URL uploads).
+- [x] Another user cannot list/read/modify another user's resources (DB + HTTP tests, rerun 2026-10-17).
+- [x] Revoked devices cannot push/pull; local data remains unaffected (pairing/credential DB and real-extension E2E, rerun 2026-10-17).
+- [x] No external messaging bridge is shipped; own-page sender validation, Zod commands and restore preview are verified.
 - [ ] No sensitive values appear in URLs, exceptions, client logs, server logs, or telemetry. (server logs verified 2026-10-17, see 8a; emailed links necessarily carry tokens in their URLs; client logs and telemetry not reviewed yet)
 - [ ] Chrome Web Store permission disclosure, privacy policy and Limited Use statements are accurate.
 - [ ] Vulnerability review, dependency scan, TLS verification and backup restore drill completed. (TLS: app-side requirements in 8b; verification on the deployed host per `DEPLOYMENT.md` 3 still pending)
@@ -224,3 +224,9 @@ Operator steps and checks are in `DEPLOYMENT.md`.
 - [Chrome permissions list](https://developer.chrome.com/docs/extensions/reference/permissions-list)
 - [Chrome extension messaging security](https://developer.chrome.com/docs/extensions/develop/concepts/messaging)
 - [Better Auth extension guide](https://better-auth.com/docs/guides/browser-extension-guide)
+
+## 12. M6 release preparation evidence (2026-10-17)
+
+Public user-facing disclosure: `/privacy`; submission copy/categories: STORE_LISTING.md; source review/advisory triage: SECURITY_REVIEW_M6.md. Proposed URL policy in section 3 is not yet an upload filter: current payloads include all non-empty saved URLs, including internal/file/unsupported ones, when the user chooses the whole session. Do not claim exclusions or automatic token stripping. This is disclosed before public launch; configurable exclusions remain pending.
+
+Encrypted age backups and isolated authenticated restore tests are implemented (`BACKUPS.md`). No off-host provider/schedule/retention or actual recovery drill is claimed. Release/rollback and sync-clock rollback hazards are documented in RELEASE.md. CI now requires packaged icons with correct PNG dimensions and a self-only extension CSP. Privacy publication is incomplete until operator/private contact, providers, actual retention and deployed URL are finalized.

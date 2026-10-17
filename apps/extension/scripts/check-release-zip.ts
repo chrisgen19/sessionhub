@@ -24,6 +24,7 @@ export interface ReleaseZip {
   /** Paths inside the ZIP. */
   files: string[];
   read: (file: string) => string;
+  readBytes: (file: string) => Uint8Array;
 }
 
 export interface ReleaseReport {
@@ -34,6 +35,8 @@ export interface ReleaseReport {
 const manifestProblems = (manifest: Record<string, unknown>, origin: URL, version: string): string[] => {
   const errors: string[] = [];
   if (manifest.manifest_version !== 3) errors.push(`manifest_version is ${String(manifest.manifest_version)}, expected 3`);
+  const csp = manifest.content_security_policy as { extension_pages?: unknown } | undefined;
+  if (csp?.extension_pages !== "script-src 'self'; object-src 'self'") errors.push("extension CSP must allow only packaged scripts and objects");
   if (manifest.version !== version) errors.push(`manifest version ${String(manifest.version)} doesn't match package.json ${version}`);
   const permissions = Array.isArray(manifest.permissions) ? manifest.permissions.map(String).sort() : [];
   if (permissions.join() !== EXPECTED_PERMISSIONS.join()) {
@@ -66,11 +69,25 @@ const bundleProblems = (zip: ReleaseZip, origin: URL): string[] => {
 export const checkRelease = (zip: ReleaseZip, { apiOrigin, version }: { apiOrigin: string; version: string }): ReleaseReport => {
   const origin = new URL(apiOrigin);
   const warnings: string[] = [];
-  if (!zip.manifest.icons) warnings.push("no icons: the Chrome Web Store needs at least a 128x128 icon");
+  const iconErrors: string[] = [];
+  const icons = zip.manifest.icons as Record<string, unknown> | undefined;
+  for (const size of [16, 32, 48, 128]) {
+    const file = icons?.[String(size)];
+    if (typeof file !== "string" || !zip.files.includes(file)) {
+      iconErrors.push(`missing packaged ${size}x${size} icon`);
+      continue;
+    }
+    const bytes = zip.readBytes(file);
+    const png = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82];
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (bytes.length < 24 || !png.every((byte, index) => bytes[index] === byte) || view.getUint32(16) !== size || view.getUint32(20) !== size) {
+      iconErrors.push(`${file} must be a ${size}x${size} PNG`);
+    }
+  }
   if (origin.origin === PLACEHOLDER_ORIGIN) {
     warnings.push(`built for the placeholder ${PLACEHOLDER_ORIGIN}; set the repository variable EXTENSION_API_BASE_URL for a real release`);
   }
-  return { errors: [...manifestProblems(zip.manifest, origin, version), ...bundleProblems(zip, origin)], warnings };
+  return { errors: [...iconErrors, ...manifestProblems(zip.manifest, origin, version), ...bundleProblems(zip, origin)], warnings };
 };
 
 const findZip = (dir: string): string => {
@@ -85,7 +102,8 @@ const sha256 = (file: string): string => createHash("sha256").update(readFileSyn
 const openZip = (file: string): ReleaseZip => {
   const read = (name: string) => execFileSync("unzip", ["-p", file, name], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   const files = execFileSync("unzip", ["-Z1", file], { encoding: "utf8" }).split("\n").filter(Boolean);
-  return { manifest: JSON.parse(read("manifest.json")) as Record<string, unknown>, files, read };
+  const readBytes = (name: string) => execFileSync("unzip", ["-p", file, name], { maxBuffer: 64 * 1024 * 1024 });
+  return { manifest: JSON.parse(read("manifest.json")) as Record<string, unknown>, files, read, readBytes };
 };
 
 const main = (): void => {
