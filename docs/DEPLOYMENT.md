@@ -1,6 +1,6 @@
 # Deployment checklist (Coolify)
 
-> **Status (2026-10-17):** the app side of the proxy and TLS requirements is implemented and tested locally. SessionHub hasn't been deployed yet. Work through this list on the first deployment, run every **Check**, and record the results in `docs/PROGRESS.md`.
+> **Status (2026-10-17):** the app side of the proxy and TLS requirements is implemented and tested locally. The first deployment is on Coolify at `https://sessionhub.cgdev.site` (section 8). Work through this list on the first deployment, run every **Check**, and record the results in `docs/PROGRESS.md`.
 > Backup policy, commands and an isolated encrypted restore drill are in `BACKUPS.md`; release/rollback in `RELEASE.md`. Actual off-host recovery and log shipping still need a deployment.
 
 ## 1. Topology
@@ -126,3 +126,27 @@ The `extension-zip` CI job builds the Chrome Web Store ZIP on every PR and every
 - [ ] Download an off-host object on an independent machine, verify its checksum, run the disposable drill and a full isolated staging app restore. Record measured RPO/RTO, migration status and app checks in PROGRESS.
 - [ ] Record immutable images, app commit, extension version/hash and migration compatibility before promotion (`RELEASE.md`). Never restore a database over the live volume or resume sync after a database rollback without reconciling client cursors/outboxes.
 - [ ] Finalize private privacy/deletion contact, hosting providers, actual retention, public privacy URL and real Resend delivery before opening registration. Review dependency exceptions in `SECURITY_REVIEW_M6.md` against a fresh scan.
+
+## 8. This deployment: Coolify at sessionhub.cgdev.site (2026-10-17)
+
+Set up with the `coolify` CLI (and the Coolify API for the three settings CLI 1.8.0 can't set), following the JobTrack procedure (`chrisgen19/jobtrack` `docs/DEPLOYMENT_COOLIFY.md`) and Debt Tracker's deploy trigger. User's choices: this domain, the shared PostgreSQL, Resend on JobTrack's verified domain, CI-triggered deploys.
+
+| Item | Value |
+|---|---|
+| Coolify instance | `https://coolify.cgdiomampo.dev` (CLI context `prod`), server `localhost` (`hsskococ4osg0oskw0kkkc8s`) |
+| Project / environment | `SessionHub` (`toqk7ximnojdgenpv7zcqu0u`) / `production` |
+| Application | `sessionhub` (`v5tdb1gh3vky09itrppd4t33`): GitHub App `vast-vicuna-sso40848s4wcgokgg` (the one JobTrack uses), `chrisgen19/sessionhub` `main`, Docker Compose build pack, `/compose.coolify.yaml` |
+| Domain | `https://sessionhub.cgdev.site` on the `web` service (`*.cgdev.site` already points at the server); force HTTPS on |
+| Network | **Connect to Predefined Network** on, so `web` and `migrate` reach the database's internal hostname |
+| Auto-deploy | **Off.** The CI `deploy` job deploys `main` after `check`, `extension-zip` and `docker` pass |
+| Database | Shared PostgreSQL 17 (`o0cc0cgwcc0wccc04k880gg4`, project "Postgres Database"): role `sessionhub` (login, not superuser, no CREATEDB) owning database `sessionhub`; `CONNECT` revoked from `PUBLIC`. The app connects over the private network: `postgresql://sessionhub:<password>@o0cc0cgwcc0wccc04k880gg4:5432/sessionhub` |
+| Backups | `sessionhub` added to that instance's daily schedule (`z4fynbkees3nazddvjvacbv0`: 18:00 UTC, S3 on, 7 local / 30 days on S3). The encrypted off-host procedure in `BACKUPS.md` is still to do |
+| Environment | Runtime only, literal: `DATABASE_URL`, `BETTER_AUTH_SECRET` (random, 64 hex), `BETTER_AUTH_URL=https://sessionhub.cgdev.site`, `TRUSTED_PROXY_COUNT=1`, `MAIL_TRANSPORT=resend`, `MAIL_FROM=SessionHub <noreply@support.cgdiomampo.dev>`, `RESEND_API_KEY` (JobTrack's key) |
+
+**Deploys.** Merging to `main` deploys: the `deploy` job POSTs to the repository secret `COOLIFY_DEPLOY_WEBHOOK` (`https://coolify.cgdiomampo.dev/api/v1/deploy?uuid=v5tdb1gh3vky09itrppd4t33&force=false`) with `COOLIFY_TOKEN` (a Coolify API token with deploy permission). Without them the job skips with a notice. A manual deploy: `coolify deploy uuid v5tdb1gh3vky09itrppd4t33`.
+
+**Notes for this host:**
+- The PostgreSQL 17 instance is shared with other apps; SessionHub's migrations use nothing newer than 17 (CI tests on 18).
+- The shared instance also has a public port (used by Debt Tracker). SessionHub never uses it; the role and database were created through it once, as the superuser, from the operator's machine.
+- Point the extension at this server: `WXT_API_BASE_URL=https://sessionhub.cgdev.site` (repository variable `EXTENSION_API_BASE_URL`, section 6).
+- Run every **Check** in sections 2 and 3 after the first deploy and record the results in `PROGRESS.md`.

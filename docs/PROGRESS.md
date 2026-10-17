@@ -24,6 +24,16 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (first deployment: Coolify at sessionhub.cgdev.site) / Claude Code (Opus 5.5) / `feature/coolify-deploy` (macOS laptop)
+
+**User's choices:** domain `sessionhub.cgdev.site`; the shared PostgreSQL with its own role (JobTrack's pattern); Resend on JobTrack's verified domain; CI-triggered deploys with Coolify auto-deploy off (Debt Tracker's pattern).
+
+**Coolify (done before the PR, nothing deployed yet):** project `SessionHub`, application `sessionhub` (`v5tdb1gh3vky09itrppd4t33`, Docker Compose, `/compose.coolify.yaml`, `web` on the domain, predefined network on, auto-deploy off), role and database `sessionhub` on the shared PostgreSQL 17.8 (not superuser, `CONNECT` revoked from `PUBLIC`, login checked), 7 runtime environment variables (secrets never printed; temp files deleted), `sessionhub` added to the shared daily backup (only that field changed: the CLI's update sent other values and was refused with 422, so the API was used with just the list). Details: `DEPLOYMENT.md` section 8.
+
+**Repository:** `compose.coolify.yaml` (repository root, because Coolify uses it as the compose project directory: `migrate` then `web`, no PostgreSQL), CI `deploy` job (after `check`, `extension-zip`, `docker` on `main`; skips until `COOLIFY_DEPLOY_WEBHOOK` and `COOLIFY_TOKEN` exist), `DEPLOYMENT.md` section 8.
+
+**Not verifiable in advance:** the Coolify GitHub endpoints answer HTTP 500 even for JobTrack, so access of the GitHub App to `chrisgen19/sessionhub` shows only on the first build.
+
 ### 2026-10-17 (local dev setup; README database section) / Claude Code (Opus 5.5) / `bugfix/readme-db-setup` (macOS laptop)
 
 **Dev environment (no code change):** this laptop has no Docker Compose plugin (Colima), so `pnpm db:up` fails. Started `sessionhub-dev-postgres` (127.0.0.1:54329, volume `sessionhub-dev_sessionhub-postgres`) and `sessionhub-dev-mailpit` (127.0.0.1:58025) with `docker run` and the `compose.dev.yaml` settings, applied the 3 migrations with `pnpm --filter @sessionhub/database db:deploy`; the user's running `next dev` then answered `/api/health` 200. Extension built for `http://localhost:3000`.
