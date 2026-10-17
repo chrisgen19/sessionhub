@@ -34,8 +34,14 @@ import {
 export interface HandlerDeps {
   db: SessionHubDb;
   readWindows: (scope: Extract<Command, { type: "session.capture" }>["scope"]) => Promise<CaptureWindowInput[]>;
-  /** Opens one planned window; reports per-tab outcomes and never touches existing windows. */
-  restoreWindow: (window: RestorePlan["windows"][number]) => Promise<RestoreTabOutcome[]>;
+  /**
+   * Opens one planned window and never touches existing windows. Passes each tab's outcome
+   * to `record` as soon as it is known (before opening the next tab) and returns them all.
+   */
+  restoreWindow: (
+    window: RestorePlan["windows"][number],
+    record: (outcome: RestoreTabOutcome) => Promise<void>,
+  ) => Promise<RestoreTabOutcome[]>;
   now: () => Date;
   createId: () => string;
 }
@@ -97,20 +103,32 @@ const importSession = async (command: Extract<Command, { type: "session.import" 
 };
 
 /**
+ * Writes each outcome as soon as `restoreWindow` reports it, so a worker killed mid-window
+ * loses at most the tab it was opening (a retry reopens any opened tab it lost). Outcomes
+ * it returned without reporting are written when the window is done.
+ */
+const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["windows"][number], deps: HandlerDeps) => {
+  const recorded = new Set<string>();
+  const outcomes = await deps.restoreWindow(window, async (outcome) => {
+    await appendRestoreOutcomes(deps.db, jobId, [outcome], deps.now());
+    recorded.add(outcome.sourceTabId);
+  });
+  const unrecorded = outcomes.filter((outcome) => !recorded.has(outcome.sourceTabId));
+  if (unrecorded.length > 0) await appendRestoreOutcomes(deps.db, jobId, unrecorded, deps.now());
+};
+
+/**
  * Opens each planned window and records outcomes. The job status is always settled
  * from recorded outcomes, even if a step throws, so a job never stays "running" and
- * blocks retry. (A worker killed mid-run can't settle it; see PROGRESS known gaps.)
+ * blocks retry. (A worker killed mid-run can't settle it; the next worker start does.)
  */
 const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps) => {
   let failure: unknown = null;
   try {
-    for (const window of plan.windows) {
-      const outcomes = await deps.restoreWindow(window);
-      await appendRestoreOutcomes(deps.db, jobId, outcomes, deps.now());
-    }
+    for (const window of plan.windows) await restoreAndRecordWindow(jobId, window, deps);
   } catch (error) {
-    // Once a window has been opened, a full disk means its outcome couldn't be recorded:
-    // stop opening more windows and say so, rather than claiming nothing happened.
+    // Once a tab has been opened, a full disk means its outcome couldn't be recorded:
+    // stop opening more tabs and say so, rather than claiming nothing happened.
     failure = isQuotaError(error) ? new RestoreRecordingError() : error;
   }
   if (failure) {

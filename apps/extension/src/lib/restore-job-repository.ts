@@ -55,7 +55,7 @@ export const summarizeRestoreJob = (job: RestoreJobRecord): RestoreJobSummary =>
   };
 };
 
-/** Appends outcomes as the restore progresses (one write per window). */
+/** Appends outcomes as the restore progresses (one write per tab as it opens). */
 export const appendRestoreOutcomes = async (
   db: SessionHubDb,
   jobId: string,

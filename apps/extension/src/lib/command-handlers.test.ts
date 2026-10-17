@@ -4,6 +4,7 @@ import { createSessionExport } from "@sessionhub/core/session-export";
 import { handleCommand, BrowserError, type HandlerDeps } from "./command-handlers";
 import type { RestoreJobRecord } from "./db";
 import type { RestoreTabOutcome } from "./db";
+import { settleInterruptedJobs } from "./restore-job-repository";
 import { getSession, listSessions } from "./session-repository";
 import { freshDb, idFactory, sampleWindows } from "./test-fixtures";
 
@@ -240,9 +241,9 @@ describe("handleCommand", () => {
 
     it("lets only one of two concurrent retries run", async () => {
       const { deps, job } = await partialRestore();
-      deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window) => {
+      deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window, record) => {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        return openAll(window);
+        return openAll(window, record);
       });
       const results = await Promise.all([
         handleCommand({ type: "restore.retry", jobId: job.id }, deps),
@@ -264,6 +265,31 @@ describe("handleCommand", () => {
         await handleCommand({ type: "restore.retry", jobId: "00000000-0000-4000-8000-0000000000aa" }, deps),
       ).toMatchObject({ ok: false, error: { code: "not-found" } });
       expect(await handleCommand({ type: "restore.retry", jobId: "x" }, deps)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    });
+
+    it("never reopens tabs that opened before the worker was cut off mid-window", async () => {
+      const deps = makeDeps();
+      const { sessionId } = await capture(deps);
+      // The worker dies after the first two tabs of the first window open: restoreWindow never returns.
+      const cutOff = new Promise<void>((resolve) => {
+        deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window, record) => {
+          for (const tab of window.tabs.slice(0, 2)) await record?.({ sourceTabId: tab.sourceTabId, status: "opened" });
+          resolve();
+          return new Promise<never>(() => undefined);
+        });
+      });
+      void handleCommand({ type: "restore.start", sessionId }, deps);
+      await cutOff;
+      const [running] = await deps.db.restoreJobs.toArray();
+      const plannedIds = running!.plan.windows.flatMap((window) => window.tabs.map((tab) => tab.sourceTabId));
+
+      // The next worker settles the job from what was recorded, then the user retries.
+      const nextWorker = new Date("2026-10-16T09:00:00.000Z");
+      await settleInterruptedJobs(deps.db, nextWorker, nextWorker);
+      expect(await deps.db.restoreJobs.get(running!.id)).toMatchObject({ status: "partial", interruptedAt: nextWorker.toISOString() });
+      deps.restoreWindow = vi.fn(openAll);
+      await handleCommand({ type: "restore.retry", jobId: running!.id }, deps);
+      expect(tabsPassedTo(deps.restoreWindow)).toEqual(plannedIds.slice(2));
     });
 
     it("retries every tab of a run that failed outright, even after the session is deleted", async () => {

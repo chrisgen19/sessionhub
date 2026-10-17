@@ -30,9 +30,11 @@ const applyGroups = async (window: PlannedWindow, windowId: number, createdIds: 
 
 /**
  * Opens one planned window as a NEW browser window. Existing windows and tabs are
- * never closed, moved or navigated. Each tab is attempted independently.
+ * never closed, moved or navigated. Each tab is attempted independently, and its
+ * outcome is recorded before the next tab opens, so a worker stopped mid-window
+ * leaves at most the tab it was opening unrecorded. A recording error stops the window.
  */
-export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window) => {
+export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window, record) => {
   const [first, ...rest] = window.tabs;
   if (!first) return [];
 
@@ -49,15 +51,22 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window)
     return window.tabs.map((tab) => ({ sourceTabId: tab.sourceTabId, status: "failed", error: message(error) }));
   }
 
-  const outcomes: RestoreTabOutcome[] = [{ sourceTabId: first.sourceTabId, status: "opened" }];
+  const outcomes: RestoreTabOutcome[] = [];
+  const settle = async (outcome: RestoreTabOutcome) => {
+    outcomes.push(outcome);
+    await record(outcome);
+  };
+  await settle({ sourceTabId: first.sourceTabId, status: "opened" });
   for (const tab of rest) {
+    let outcome: RestoreTabOutcome;
     try {
       const created = await browser.tabs.create({ windowId, url: tab.url, pinned: tab.pinned, active: false });
       if (created.id !== undefined) createdIds.set(tab.sourceTabId, created.id);
-      outcomes.push({ sourceTabId: tab.sourceTabId, status: "opened" });
+      outcome = { sourceTabId: tab.sourceTabId, status: "opened" };
     } catch (error) {
-      outcomes.push({ sourceTabId: tab.sourceTabId, status: "failed", error: message(error) });
+      outcome = { sourceTabId: tab.sourceTabId, status: "failed", error: message(error) };
     }
+    await settle(outcome);
   }
   await applyGroups(window, windowId, createdIds);
   return outcomes;
