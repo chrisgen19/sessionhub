@@ -3,6 +3,7 @@ import { defineBackground } from "wxt/utils/define-background";
 import { readBrowserWindows } from "../lib/browser-capture";
 import { restoreBrowserWindow } from "../lib/browser-restore";
 import { handleCommand, type HandlerDeps } from "../lib/command-handlers";
+import { API_ORIGIN } from "../lib/api-config";
 import { getDb } from "../lib/db";
 import { runCheckpoint } from "../lib/recovery-checkpoint";
 import { runRestoreHousekeeping } from "../lib/restore-job-repository";
@@ -20,6 +21,14 @@ const deps = (): HandlerDeps => ({
   restoreWindow: restoreBrowserWindow,
   now: () => new Date(),
   createId: () => crypto.randomUUID(),
+  account: {
+    fetch: (input, init) => fetch(input, init),
+    apiOrigin: API_ORIGIN,
+    openTab: async (url) => {
+      await browser.tabs.create({ url, active: true });
+    },
+    platformOs: async () => (await browser.runtime.getPlatformInfo()).os,
+  },
 });
 
 const changed = () => void onBrowserChange(getDb(), new Date()).catch(() => undefined);

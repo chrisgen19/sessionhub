@@ -28,15 +28,17 @@ model User {
   accounts      Account[]
 
   // SessionHub relations (no columns on this table).
-  devices         Device[]
-  workspaces      Workspace[]
-  savedSessions   SavedSession[]
-  sessionVersions SessionVersion[]
-  syncClock       UserSyncClock?
-  syncChanges     SyncChange[]
-  receipts        SyncOperationReceipt[]
-  settings        UserSettings?
-  auditEvents     AuditEvent[]
+  devices           Device[]
+  devicePairings    DevicePairing[]
+  deviceCredentials DeviceCredential[]
+  workspaces        Workspace[]
+  savedSessions     SavedSession[]
+  sessionVersions   SessionVersion[]
+  syncClock         UserSyncClock?
+  syncChanges       SyncChange[]
+  receipts          SyncOperationReceipt[]
+  settings          UserSettings?
+  auditEvents       AuditEvent[]
 
   @@unique([email])
   @@map("user")
@@ -113,11 +115,67 @@ model Device {
   sourcedSessions  SavedSession[]
   authoredVersions SessionVersion[]
   receipts         SyncOperationReceipt[]
+  credentials      DeviceCredential[]
 
   @@unique([userId, installationId])
   @@unique([id, userId])
   @@index([userId])
   @@map("devices")
+}
+
+/// One extension pairing request (RFC 8628-style device flow, docs/SECURITY_PRIVACY.md 5a).
+/// Short-lived: pending for 10 minutes, redeemable once after approval.
+model DevicePairing {
+  id             String              @id @default(uuid()) @db.Uuid
+  /// SHA-256 of the secret device code held only by the extension.
+  deviceCodeHash String              @unique @map("device_code_hash") @db.Char(64)
+  /// Short code the user compares on the approve page (no ambiguous characters).
+  userCode       String              @unique @map("user_code") @db.VarChar(16)
+  installationId String              @map("installation_id") @db.Uuid
+  deviceName     String              @map("device_name") @db.VarChar(120)
+  browser        String?             @db.VarChar(40)
+  platform       String?             @db.VarChar(40)
+  status         DevicePairingStatus @default(pending)
+  /// Set on approval or denial: the account that decided.
+  userId         String?             @map("user_id")
+  /// Set on approval: the device row the credentials will belong to.
+  deviceId       String?             @map("device_id") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime            @map("expires_at") @db.Timestamptz(3)
+  decidedAt      DateTime?           @map("decided_at") @db.Timestamptz(3)
+  lastPolledAt   DateTime?           @map("last_polled_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("device_pairings")
+}
+
+/// One issued access/refresh token pair. Rotation creates a new row and marks the old one
+/// rotated; presenting a rotated refresh token (other than a lost-response retry) revokes the device.
+model DeviceCredential {
+  id                String    @id @default(uuid()) @db.Uuid
+  deviceId          String    @map("device_id") @db.Uuid
+  userId            String    @map("user_id")
+  /// SHA-256 hashes only; the tokens themselves are never stored.
+  accessTokenHash   String    @unique @map("access_token_hash") @db.Char(64)
+  refreshTokenHash  String    @unique @map("refresh_token_hash") @db.Char(64)
+  /// Device.authCredentialVersion at issue time; any later revoke or re-pair invalidates it.
+  credentialVersion Int       @map("credential_version")
+  accessExpiresAt   DateTime  @map("access_expires_at") @db.Timestamptz(3)
+  refreshExpiresAt  DateTime  @map("refresh_expires_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// First successful use of either token (a rotated row whose successor was never used can be retried).
+  usedAt            DateTime? @map("used_at") @db.Timestamptz(3)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  replacedById      String?   @map("replaced_by_id") @db.Uuid
+
+  device Device @relation(fields: [deviceId, userId], references: [id, userId], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([refreshExpiresAt])
+  @@map("device_credentials")
 }
 
 model Workspace {
@@ -346,6 +404,15 @@ enum RestoreEligibility {
   invalid
 
   @@map("restore_eligibility")
+}
+
+enum DevicePairingStatus {
+  pending
+  approved
+  denied
+  redeemed
+
+  @@map("device_pairing_status")
 }
 
 enum SyncEntityType {

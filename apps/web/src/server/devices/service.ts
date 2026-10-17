@@ -1,4 +1,5 @@
 import { DEVICE_LIMITS, type ApiDevice, type ListDevicesResponse } from "@sessionhub/contracts/api-devices";
+import type { DeviceMeResponse } from "@sessionhub/contracts/api-pairing";
 import type { Prisma, PrismaClient } from "@sessionhub/database/client";
 import { ServiceError } from "../service-errors";
 
@@ -14,7 +15,7 @@ const deviceFields = {
 
 type DeviceRow = Prisma.DeviceGetPayload<{ select: typeof deviceFields }>;
 
-const toDevice = (row: DeviceRow): ApiDevice => ({
+export const toDevice = (row: DeviceRow): ApiDevice => ({
   id: row.id,
   displayName: row.displayName,
   browser: row.browser,
@@ -44,17 +45,28 @@ export const renameDevice = async (prisma: PrismaClient, userId: string, id: str
   return toDevice(await prisma.device.findUniqueOrThrow({ where: { id }, select: deviceFields }));
 };
 
+export type RevokeReason = "web" | "extension" | "refresh-reuse";
+
 /**
- * Revokes a device: sets revoked_at once and bumps auth_credential_version so any credential
- * issued to it (M4 pairing) stops working. Repeating it changes nothing and returns the device.
+ * Revokes a device: sets revoked_at once and bumps auth_credential_version so every credential
+ * issued to it stops working, and records an audit event. Repeating it changes nothing.
  */
-export const revokeDevice = async (prisma: PrismaClient, userId: string, id: string): Promise<ApiDevice> =>
+export const revokeDevice = async (prisma: PrismaClient, userId: string, id: string, reason: RevokeReason = "web"): Promise<ApiDevice> =>
   prisma.$transaction(async (tx) => {
-    await tx.device.updateMany({
+    const { count } = await tx.device.updateMany({
       where: { id, userId, revokedAt: null },
       data: { revokedAt: new Date(), authCredentialVersion: { increment: 1 } },
     });
+    if (count === 1) await tx.auditEvent.create({ data: { userId, kind: "device_revoked", deviceId: id, metadata: { reason } } });
     const row = await tx.device.findFirst({ where: { id, userId }, select: deviceFields });
     if (!row) throw notFound();
     return toDevice(row);
   });
+
+/** The calling device and its account, for the extension's "Connected as" view. */
+export const getDeviceWithAccount = async (prisma: PrismaClient, userId: string, deviceId: string): Promise<DeviceMeResponse> => {
+  const row = await prisma.device.findFirst({ where: { id: deviceId, userId }, select: { ...deviceFields, user: { select: { name: true, email: true } } } });
+  if (!row) throw notFound();
+  const { user, ...device } = row;
+  return { device: toDevice(device), account: user };
+};

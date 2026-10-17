@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SESSION_LIMITS } from "@sessionhub/contracts/session";
 import type { CaptureReport } from "@sessionhub/core/capture";
 import { IMPORT_MAX_BYTES, type ImportReport } from "@sessionhub/core/session-import";
+import type { AccountStatus, PairingOutcome } from "./account-service";
 import type { RestoreJobRecord } from "./db";
 
 /**
@@ -37,6 +38,13 @@ export const commandSchema = z.discriminatedUnion("type", [
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
   }),
   z.object({ type: z.literal("recovery.checkpointNow") }),
+  // Account connection (pairing). None of these send saved sessions anywhere.
+  z.object({ type: z.literal("account.status") }),
+  z.object({ type: z.literal("account.connect") }),
+  z.object({ type: z.literal("account.poll") }),
+  z.object({ type: z.literal("account.cancel") }),
+  z.object({ type: z.literal("account.check") }),
+  z.object({ type: z.literal("account.disconnect") }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -54,6 +62,12 @@ export interface CommandResults {
     /** Older checkpoints removed because storage was full. */
     freedForSpace: number;
   };
+  "account.status": AccountStatus;
+  "account.connect": AccountStatus;
+  "account.poll": { outcome: PairingOutcome; status: AccountStatus };
+  "account.cancel": AccountStatus;
+  "account.check": AccountStatus;
+  "account.disconnect": AccountStatus;
 }
 
 export type ErrorCode =
@@ -64,7 +78,9 @@ export type ErrorCode =
   | "browser-error"
   | "storage-error"
   /** IndexedDB quota exhausted; the message says what did and didn't happen. */
-  | "storage-full";
+  | "storage-full"
+  /** The SessionHub server refused or couldn't be reached; local data is unaffected. */
+  | "account-error";
 
 export type CommandResponse<T extends Command["type"] = Command["type"]> =
   | { ok: true; data: CommandResults[T] }

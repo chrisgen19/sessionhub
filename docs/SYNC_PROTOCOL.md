@@ -291,6 +291,21 @@ Contracts: `packages/contracts/src/api-devices.ts`. Service: `apps/web/src/serve
 
 **Deferred to M4:** `POST /api/v1/devices` (registration) is part of extension pairing, which issues the device credential that revocation invalidates. Until then devices exist only as seeded test rows.
 
+## 13d. Implemented: pairing and device credentials (2026-10-16)
+
+Contracts: `packages/contracts/src/api-pairing.ts`. Server: `apps/web/src/server/devices/` (`pairing.ts`, `credentials.ts`, `tokens.ts`). Extension: `apps/extension/src/lib/account-service.ts`. Security model: `SECURITY_PRIVACY.md` 5a.
+
+| Method and path | Auth | Success | Errors |
+|---|---|---|---|
+| `POST /api/v1/pairing` `{ installationId, deviceName, browser?, platform? }` | none (per-IP limit) | 201 `{ deviceCode, userCode, verificationUri, verificationUriComplete, expiresIn: 600, interval: 5 }` | 400, 429 |
+| `POST /api/v1/pairing/decision` `{ userCode, decision: "approve" \| "deny" }` | web cookie + same origin | 200 `{ status: "approved", device }` or `{ status: "denied" }` | 403 `EMAIL_NOT_CONFIRMED`, 404 (unknown, expired or already decided) |
+| `POST /api/v1/pairing/token` `{ deviceCode }` | none (per-IP limit) | **202** `{ status: "pending", interval }`; **200** `{ status: "approved", credentials, device, account }` once | 403 `PAIRING_DENIED`, 410 `PAIRING_EXPIRED` (expired, redeemed or unknown), 429 (polled faster than the interval) |
+| `POST /api/v1/devices/token` `{ refreshToken }` | none (per-IP limit) | 200 new `{ accessToken, refreshToken, accessExpiresAt, refreshExpiresAt }` | 401 `INVALID_TOKEN`, 401 `DEVICE_REVOKED` (revoked, or reuse detected: the device is revoked by this call) |
+| `GET /api/v1/devices/me` | Bearer | 200 `{ device, account: { name, email } }` | 401 |
+| `POST /api/v1/devices/me/disconnect` | Bearer | 200 `ApiDevice` (revoked) | 401, 429 |
+
+Bearer = `Authorization: Bearer shd_at_...`, validated against the database on every request (see 5a). The sync endpoints (next M4 slices) will use the same `authenticateDevice` gate and require a confirmed email.
+
 ## 14. References
 
 - [Chrome MV3 service-worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)

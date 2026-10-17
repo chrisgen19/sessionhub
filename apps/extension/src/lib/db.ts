@@ -1,4 +1,4 @@
-import { Dexie, type EntityTable } from "dexie";
+import { Dexie, type EntityTable, type Table } from "dexie";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import type { RestorePlan } from "@sessionhub/core/restore-plan";
 
@@ -63,12 +63,52 @@ export interface RecoveryStateRecord {
   lastError: string | null;
 }
 
+/** A pairing started in this browser and not yet approved (expires after 10 minutes). */
+export interface PendingPairingRecord {
+  key: "pairing";
+  apiOrigin: string;
+  /** Secret; sent only to the SessionHub server to redeem the pairing. */
+  deviceCode: string;
+  userCode: string;
+  verificationUriComplete: string;
+  interval: number;
+  startedAt: string;
+  expiresAt: string;
+}
+
+/**
+ * This browser's connection to a SessionHub account. Tokens live only here (extension-origin
+ * IndexedDB, unreachable from web pages: there are no content scripts) and are never exported.
+ */
+export interface ConnectionRecord {
+  key: "connection";
+  apiOrigin: string;
+  deviceId: string;
+  deviceName: string;
+  account: { name: string; email: string };
+  connectedAt: string;
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: string;
+  refreshExpiresAt: string;
+}
+
+/** Why the last connection ended without the user asking (shown once in the Account view). */
+export interface ConnectionNoticeRecord {
+  key: "notice";
+  reason: "revoked" | "expired";
+  at: string;
+}
+
+export type AccountRecord = PendingPairingRecord | ConnectionRecord | ConnectionNoticeRecord;
+
 export type SessionHubDb = Dexie & {
   sessions: EntityTable<LocalSessionRecord, "id">;
   device: EntityTable<DeviceRecord, "key">;
   restoreJobs: EntityTable<RestoreJobRecord, "id">;
   recoverySnapshots: EntityTable<RecoverySnapshotRecord, "id">;
   recoveryState: EntityTable<RecoveryStateRecord, "key">;
+  account: Table<AccountRecord, AccountRecord["key"]>;
 };
 
 export const DB_NAME = "sessionhub";
@@ -86,6 +126,8 @@ export const createDb = (name: string = DB_NAME): SessionHubDb => {
     recoverySnapshots: "id, capturedAt, [capturedAt+tabCount]",
     recoveryState: "key",
   });
+  // v3: account connection (pairing, device credentials). Additive only.
+  db.version(3).stores({ account: "key" });
   return db;
 };
 

@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M3 (backend, web account) **complete**: database package, email/password auth with password reset and email confirmation, dashboard shell, session/workspace/device APIs (rate-limited writes), session detail page and production Docker image + compose stack. Next: M4 (cross-device sync). M2 complete.
+> **Current milestone:** M4 (cross-device sync) in progress: **extension pairing and device credentials done**; outbox, push and pull next. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -12,11 +12,12 @@
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces and devices |
+| Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
+| Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). `check` job **passed** on PR #1 (after `3ec6bfc`). The `docker` job (PR #2) and the Mailpit service in `check` (PR #3) are verified locally; their GitHub runs are listed in the latest session entry |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked branches: `feature/m1-monorepo-local-slice` (PR #1 into `main`, ends at `3ec6bfc`), `feature/m3-web-docker` (PR #2, `4dc907e`), `feature/m3-email-auth` (email `4083b69` + workspace/device API) |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails only on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order: #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + this status update). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -59,6 +60,23 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - This laptop runs Colima without the `docker compose` plugin, so `pnpm db:up` fails ("unknown shorthand flag: 'f'"). E2E ran against `postgres:18-alpine` and `axllent/mailpit:v1.31.3` started with `docker run --rm` on the same ports, env and init script as `compose.dev.yaml`.
 
 **Next step:** after PR #3 takes this fix, carry it up the stack (PRs #4, #6 to #11): the page and both tests are unchanged up to `feature/m6-hardening`.
+### 2026-10-17 (PR #4 review fixes: refresh rotation) / Claude Code (Opus 5.5) / `feature/m4-device-pairing` (macOS laptop)
+
+**Goal:** address the two Codex findings on PR #4 (review 5547217268) in `apps/web/src/server/devices/credentials.ts`.
+
+**Implemented:**
+
+- P1: a lost-response retry checked "successor never used" with a read and then rotated it unconditionally, and the access token's first use was recorded unconditionally, so overlapping requests could both succeed. The retry now claims the unused successor with one conditional update (`usedAt` and `rotatedAt` still null), and the first use is recorded only if the pair wasn't rotated meanwhile. A retry racing the successor's first use is reuse (device revoked); a first use racing a retry gets `INVALID_TOKEN`.
+- P2: each retry re-pointed `replacedById` at the new pair, so the old token could be retried again and again. It now keeps pointing at the dead successor, so a second retry is reuse, matching `SECURITY_PRIVACY.md` item 5 ("retried once"). The claim happens before issuing, so a refused retry leaves no orphan credential.
+- `pairing.db.test.ts`: 3 tests (single retry; retry while the successor's first use is uncommitted; first use while a retry's rotation is uncommitted). `SECURITY_PRIVACY.md` item 5 notes the atomic single retry.
+
+**Validated commands and results:**
+
+- New tests against the unfixed code: **3 fail** (two returned success instead of `DEVICE_REVOKED`, one instead of `INVALID_TOKEN`).
+- After the fix, against a throwaway `postgres:18-alpine` on `127.0.0.1:54349`: `pairing.db.test.ts` **11/11**, the 3 new tests **5 runs in a row**, web `test:db` **38/38**; `pnpm check`: **pass** (14 tasks). E2E: Not run.
+
+**Known gaps (decision needed):** if an attacker wins the single retry, the real extension gets `INVALID_TOKEN`, disconnects as "expired" (`withAccessToken`) and never presents its refresh token, so the server doesn't revoke; the attacker's pair lives until the user pairs again. Revoking when a rotated, never-used pair is presented would close this but changes the documented `INVALID_TOKEN` response.
+
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
@@ -79,6 +97,29 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M4 pairing slice) / Claude Code (Opus 5.5) / `feature/m4-device-pairing`
+
+**Goal:** pairing + device credentials + revocation, extension "Connect account" UI, tests and docs; then stop for review (user's scope choice). Design chosen by the user: own RFC 8628-style device flow (recorded in SYSTEM_DESIGN.md 7 and 14, SECURITY_PRIVACY.md 5a).
+
+**Implemented:**
+
+- Database: migration `20261016101018_device_pairing_and_credentials` (additive: `device_pairings`, `device_credentials`, enum `device_pairing_status`), applied to dev with `prisma migrate deploy`.
+- Contracts: `api-pairing.ts` (requests, responses, token formats, user-code normalization, lifetimes); error codes `PAIRING_EXPIRED`, `PAIRING_DENIED`, `EMAIL_NOT_CONFIRMED`, `INVALID_TOKEN`, `ACCESS_TOKEN_EXPIRED`, `DEVICE_REVOKED`.
+- Web server: `src/server/devices/tokens.ts`, `pairing.ts`, `credentials.ts` (issue, authenticate, rotate with reuse detection and lost-response retry), `revokeDevice(reason)` with `audit_events`; `http.ts` gained `authenticateDevice` (Bearer only), `authorizeDeviceWrite`, per-IP limits (`limitByIp`), status mapping and `WWW-Authenticate`. Routes: `POST /api/v1/pairing`, `/pairing/token`, `/pairing/decision`, `POST /api/v1/devices/token`, `GET /api/v1/devices/me`, `POST /api/v1/devices/me/disconnect`.
+- Web UI: `/app/pair` (code entry, request card with device name and code, email-confirmation gate), Devices page "Disconnect" with confirmation.
+- Extension: `WXT_API_BASE_URL` (build time, https unless localhost) -> one host permission; Dexie v3 `account` table; `account-api.ts` (validated responses), `account-service.ts` (start, poll, cancel, check, disconnect, single-flight refresh, revocation notice); six `account.*` worker commands; manager **Account** view. `SESSIONHUB_EXT_OUT_DIR` lets E2E build a copy into `.output/e2e`.
+- E2E harness: the web E2E global setup builds the extension against the test server; `turbo.json` runs the web E2E after the extension E2E (no concurrent `wxt build`, one Chromium at a time) and declares `WXT_API_BASE_URL` for the extension build hash.
+
+**Validated commands and results:**
+
+- `pnpm --filter @sessionhub/web test:db`: **35/35** (+8: start/approve/redeem once, slow-down, expired/declined/decided requests, hashing at rest, 15-minute expiry, last seen, revoke then re-pair, rotation, lost-response retry, reuse revokes with audit events, two accounts on one installation).
+- Extension unit tests **97/97** (+12 account service, +1 v2 -> v3 Dexie upgrade; the v1 upgrade test now expects version 3).
+- `e2e/pairing.spec.ts` (real extension in Chromium + web server + Mailpit): **9/9** over `--repeat-each 3`: full pair -> device listed with last seen -> revoke on web -> extension shows the revoked notice -> pair again (same device, version 3) -> disconnect from the extension revokes on the server; decline; unconfirmed email blocked on the page and the API; unknown code; 375 px; Bearer-only endpoints reject cookies and forged tokens.
+- `pnpm check` **pass** (14 tasks); `pnpm test:e2e` **pass** (4 tasks, 1m53s); `pnpm test:docker` **5/5** (now counts migration folders instead of expecting one).
+- Extension builds: default manifest host permission `http://localhost:3000/*`, E2E build `http://127.0.0.1:3917/*`; `WXT_API_BASE_URL=http://evil.example` fails the build. Account view checked at 1280 and 390 px.
+
+**Known gaps:** no sync yet (the Account view says so); one account per browser profile (switching needs the account-scope work); the extension rechecks the connection only when the Account view opens; per-process rate limits.
 
 ### 2026-10-16 (M3 workspace and device API slice) / Claude Code (Opus 5.5) / `feature/m3-email-auth`
 
@@ -483,16 +524,16 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Review and merge the stacked PRs: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices); confirm CI (`check` with Mailpit, `docker`) passes on each.
+1. Review and merge the stacked PRs in order: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices) -> #4 (pairing). CI passes on all four. The full done/left list for the user is GitHub issue "Project status and roadmap" (see the newest session entry).
 2. Production email: create a Resend API key and verify the sending domain, then set `MAIL_TRANSPORT=resend`, `MAIL_FROM`, `RESEND_API_KEY` and send one real reset email (not yet tested against the live service).
-3. M4, starting with the pairing design (needs a recorded decision before code, per CLAUDE.md): device registration + credential issuance, revocation checks via `auth_credential_version`, confirmed email required (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
+3. M4 continues (next slice: local account scope + durable outbox, its own PR because it changes how local data is stored): local account scope + durable outbox in the extension, `POST /api/v1/sync/push` with `sync_operation_receipts` reusing the session mutation service (Bearer auth, confirmed email), `GET /api/v1/sync/pull` with cursors, worker backoff, conflict copies, sync status UX and the two-profile test. Sync stays opt-in with an upload preview (AGENTS.md).
 
 ## Open questions / architecture validations
 
-- Confirm extension auth implementation that satisfies current Better Auth and Chrome policies.
 - Recovery retention is 50 checkpoints / 7 days for now; revisit after quota benchmarks.
 - Decide use of browser-to-extension external messaging only after threat review.
 - Should a manual save/import be allowed to delete old recovery checkpoints when storage is full (currently: no, it only reports)?
+- Resolved: extension auth = own device flow with SessionHub device credentials (user's choice, 2026-10-16; SECURITY_PRIVACY.md 5a).
 - Resolved this session: URL classification policy is now in code and tests (`packages/core/src/url-classification.ts`); WXT entrypoint names are `background`, `popup`, `manager` (builds `manager.html`).
 
 ## Session handoff template — update after every coding session

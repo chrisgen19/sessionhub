@@ -1,7 +1,14 @@
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
+import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { BASE_URL, compose, COMPOSE_FILE, PROJECT } from "./stack";
+
+/** Every migration folder in the repo; the migrate job must have applied all of them. */
+const MIGRATIONS = String(
+  readdirSync(path.resolve(import.meta.dirname, "../../../packages/database/prisma/migrations"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).length,
+);
 
 const psql = (sql: string) => compose(["exec", "-T", "postgres", "psql", "-U", "sessionhub", "-d", "sessionhub", "-tAc", sql]).trim();
 const inWeb = (...command: string[]) => compose(["exec", "-T", "web", ...command]).trim();
@@ -25,7 +32,7 @@ test("the stack is healthy and migrations ran as their own completed step", asyn
   expect(byService.postgres).toMatchObject({ State: "running", Health: "healthy" });
   expect(byService.web).toMatchObject({ State: "running", Health: "healthy" });
   expect(byService.migrate).toMatchObject({ State: "exited", ExitCode: 0 });
-  expect(psql("select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")).toBe("1");
+  expect(psql("select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")).toBe(MIGRATIONS);
   expect(compose(["logs", "migrate"])).toMatch(/applied|All migrations have been successfully applied/i);
 });
 
@@ -58,7 +65,7 @@ test("health endpoint and a full sign-up -> API -> dashboard round trip work in 
 test("re-running the migration job is a safe no-op", () => {
   const output = compose(["run", "--rm", "--no-deps", "migrate"]);
   expect(output).toMatch(/No pending migrations to apply/i);
-  expect(psql("select count(*) from _prisma_migrations")).toBe("1");
+  expect(psql("select count(*) from _prisma_migrations")).toBe(MIGRATIONS);
 });
 
 test("the web container is locked down", () => {

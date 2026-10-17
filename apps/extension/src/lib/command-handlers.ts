@@ -4,6 +4,16 @@ import { planRestore, planRetry, type RestorePlan } from "@sessionhub/core/resto
 import { InvalidSessionNameError, renameSession } from "@sessionhub/core/session-edit";
 import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { SavedSession } from "@sessionhub/contracts/session";
+import { AccountApiError } from "./account-api";
+import {
+  cancelPairing,
+  checkConnection,
+  disconnect,
+  getAccountStatus,
+  pollPairing,
+  startPairing,
+  type AccountDeps,
+} from "./account-service";
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
@@ -44,6 +54,8 @@ export interface HandlerDeps {
   ) => Promise<RestoreTabOutcome[]>;
   now: () => Date;
   createId: () => string;
+  /** Network and tab access for account commands; absent in tests that don't need them. */
+  account?: Omit<AccountDeps, "db" | "now" | "createId">;
 }
 
 export class BrowserError extends Error {
@@ -62,6 +74,12 @@ const NOT_DONE: Record<Command["type"], string> = {
   "restore.retry": "the retry couldn't start and nothing was opened",
   "recovery.restore": "the restore couldn't start and nothing was opened",
   "recovery.checkpointNow": "the checkpoint wasn't saved",
+  "account.status": "the account status couldn't be read",
+  "account.connect": "the connection wasn't started",
+  "account.poll": "the connection wasn't saved",
+  "account.cancel": "the request wasn't cancelled",
+  "account.check": "the connection couldn't be checked",
+  "account.disconnect": "this browser wasn't disconnected",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
@@ -74,6 +92,7 @@ const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse
     return fail("invalid-input", error.message);
   }
   if (error instanceof BrowserError) return fail("browser-error", error.message);
+  if (error instanceof AccountApiError) return fail("account-error", error.message);
   return fail("storage-error", error instanceof Error ? error.message : "Unexpected error");
 };
 
@@ -164,6 +183,31 @@ const retry = async (command: Extract<Command, { type: "restore.retry" }>, deps:
   return { job: await runRestoreJob(job.id, planRetry(job.plan, openedTabIds(job)), deps) };
 };
 
+const accountDeps = (deps: HandlerDeps): AccountDeps => {
+  if (!deps.account) throw new BrowserError("Account features aren't available here");
+  return { ...deps.account, db: deps.db, now: deps.now, createId: deps.createId };
+};
+
+type AccountCommand = Extract<Command, { type: `account.${string}` }>;
+
+const runAccountCommand = async (command: AccountCommand, deps: HandlerDeps): Promise<CommandResponse> => {
+  const account = accountDeps(deps);
+  switch (command.type) {
+    case "account.status":
+      return { ok: true, data: await getAccountStatus(account) };
+    case "account.connect":
+      return { ok: true, data: await startPairing(account) };
+    case "account.poll":
+      return { ok: true, data: await pollPairing(account) };
+    case "account.cancel":
+      return { ok: true, data: await cancelPairing(account) };
+    case "account.check":
+      return { ok: true, data: await checkConnection(account) };
+    case "account.disconnect":
+      return { ok: true, data: await disconnect(account) };
+  }
+};
+
 /** Validates an untrusted message and runs the matching command. Never throws. */
 export const handleCommand = async (message: unknown, deps: HandlerDeps): Promise<CommandResponse> => {
   const parsed = commandSchema.safeParse(message);
@@ -198,6 +242,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         if (result.status === "clean") return { ok: true, data: { status: "clean", snapshotId: null, freedForSpace: 0 } };
         return { ok: true, data: { status: result.status, snapshotId: result.snapshotId, freedForSpace: result.freedForSpace } };
       }
+      default:
+        return await runAccountCommand(command, deps);
     }
   } catch (error) {
     return toErrorResponse(error, command.type);
