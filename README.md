@@ -16,9 +16,24 @@ pnpm install                 # also runs `wxt prepare` for the extension
 pnpm check                   # lint + typecheck + unit tests (all packages, via Turborepo)
 pnpm build                   # extension -> apps/extension/.output/chrome-mv3, web -> apps/web/.next
 pnpm test:e2e                # builds, then runs the extension in real Chromium (Playwright)
+pnpm test:perf               # builds, then the 120-tab timing baseline (heavier: about 2-3 GB RAM)
 pnpm --filter @sessionhub/extension dev   # WXT dev mode with reload
 pnpm --filter @sessionhub/web dev         # Next.js on http://localhost:3000
 ```
+
+Database (M3, needs Docker):
+
+```bash
+cp packages/database/.env.example packages/database/.env
+pnpm db:up                   # PostgreSQL 18 on 127.0.0.1:54329 (dev db + sessionhub_test), waits for the healthcheck
+pnpm db:migrate              # prisma migrate dev against the dev database
+pnpm test:db                 # resets sessionhub_test, applies all migrations, runs integration tests
+pnpm db:down                 # stop (add -v to delete the data volume)
+```
+
+Web app auth (M3): `cp apps/web/.env.example apps/web/.env.local` and set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). API: `/api/v1/sessions` (list/detail/create/update/delete, contract in `docs/SYNC_PROTOCOL.md` 13a). Pages: `/signup`, `/login`, and the signed-in dashboard `/app` (Overview), `/app/sessions`, `/app/devices`, `/app/settings`. `pnpm test:e2e` now also runs the web auth E2E against `sessionhub_test`, so it needs `pnpm db:up` first.
+
+AI agents: Prisma 7 blocks `prisma migrate reset` (used by `pnpm test:db`) when an agent runs it. Ask the user for explicit consent **for each run** and pass their exact words in `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION`; never reuse earlier consent, invent it, or bypass the check.
 
 First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec playwright install chromium`.
 
@@ -27,7 +42,8 @@ First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec
 | Workspace | Purpose |
 |---|---|
 | `apps/extension` | WXT MV3 extension: background worker, popup, manager page, IndexedDB (Dexie) |
-| `apps/web` | Next.js App Router shell and `/api/health` (no auth/DB yet) |
+| `apps/web` | Next.js App Router: landing page, Better Auth email/password (`/signup`, `/login`, `/app`), `/api/auth/*`, `/api/health` |
+| `packages/database` | Server-only Prisma 7 schema, migrations and client (PostgreSQL); never imported by the extension (lint-enforced) |
 | `packages/contracts` | Zod schemas: saved session, export file format |
 | `packages/core` | Pure logic: URL classification, capture normalization, restore planning, search |
 | `packages/ui` | Shared design tokens (Tailwind v4 `@theme`) |

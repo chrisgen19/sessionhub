@@ -74,5 +74,6 @@ describe("defaultSessionName", () => {
     const date = new Date("2026-10-16T01:42:00.000Z");
     expect(defaultSessionName("window", date, { timeZone: "UTC" })).toBe("Window, Oct 16, 1:42 AM");
     expect(defaultSessionName("all-windows", date, { timeZone: "UTC" })).toBe("All windows, Oct 16, 1:42 AM");
+    expect(defaultSessionName("checkpoint", date, { timeZone: "UTC" })).toBe("Checkpoint, Oct 16, 1:42 AM");
   });
 });

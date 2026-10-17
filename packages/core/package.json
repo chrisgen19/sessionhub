@@ -7,10 +7,13 @@
   "exports": {
     "./capture": "./src/capture.ts",
     "./naming": "./src/naming.ts",
+    "./recovery": "./src/recovery.ts",
     "./restore-plan": "./src/restore-plan.ts",
     "./search": "./src/search.ts",
     "./session-edit": "./src/session-edit.ts",
     "./session-export": "./src/session-export.ts",
+    "./session-import": "./src/session-import.ts",
+    "./session-structure": "./src/session-structure.ts",
     "./session-summary": "./src/session-summary.ts",
     "./url-classification": "./src/url-classification.ts"
   },

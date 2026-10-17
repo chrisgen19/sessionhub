@@ -500,9 +500,40 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 - Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus.
 - Popup has no workspace selector, side-panel button or settings entry yet: those features don't exist, and the UI must not expose actions a surface can't perform.
 - Restore modal offers only "Open in new windows" (stated as text, no radio). "Add to current window" is not implemented.
-- Manager nav shows only Saved sessions. Below 1280 px the inspector replaces the list with a Back link; below 1024 px the sidebar collapses to a top bar.
+- Manager nav shows Saved sessions and Recovery (a horizontal row under the top bar below 1024 px). Below 1280 px the inspector replaces the list with a Back link; below 1024 px the sidebar collapses to a top bar.
 - Sync status is always "Local only" because sync doesn't exist.
 - The window tree is not virtualized yet (fine at hundreds of tabs; M5 item).
+- Restore summary lists tabs that didn't open with a plain-language reason (Chrome's raw "No window with id" errors are mapped), notes tabs never reached, and offers **Retry N tabs**, explaining that only those tabs open, in a new window. After a retry the summary shows "Opened X of Y tabs after N attempts"; the Retry button disappears when nothing is left. A refused retry (for example another manager tab already finished it) keeps the summary and shows the reason.
+- Recovery view (`manager.html#view=recovery`): explanation (automatic, local-only, links and groups only), last checkpoint time, last error if any, "Checkpoint now" with a result message, timeline grouped Today / Yesterday / Previous 7 days / Older with "N opened, M closed" against the previous checkpoint and a Manual badge. The inspector shows the window tree, Restore (same safe preview and retry) and Export JSON, and explains that checkpoints are replaced over time (export + import to keep one). No retention settings UI yet; no delete for individual checkpoints.
+- Session and checkpoint inspectors show a live "Last restore <date>: opened X of Y" line (red when tabs are missing, ", interrupted" when a later worker settled it) with **View summary**, which reopens the same summary and Retry in a dialog. Summaries of settled jobs explain the restore was cut off; a job still running shows "Still restoring" and no Retry.
+- Storage full: popup save shows "Not saved: Storage for SessionHub is full, so this wasn't saved. Delete or export sessions you no longer need, then try again." with Retry; import and rename show the same pattern; restore errors now read "Restore stopped:" (a restore can stop after opening some tabs). "Checkpoint now" reports "Storage was full, so N older checkpoints were removed to make room." If the checkpoint still fails after that removal, the error says so ("...wasn't saved, even after removing N older checkpoints to make room."); "Earlier checkpoints are kept" is shown only when nothing was removed. The Recovery view's persisted error line reads "Last checkpoint failed" and is hidden while the same error is shown as the action's notice.
+- Import lives in the manager header (Import button -> file picker -> preview dialog). The preview shows name, origin, export date, window/tab counts, tabs that will be reference-only and how many file statuses were re-checked, and states that the import is added as a new session. Invalid files get a "Can't import this file" dialog with a specific reason. No drag-and-drop yet, and the popup has no import entry.
+
+## 18b. Web auth pages (2026-10-16)
+
+`/signup` and `/login` use a centered card (brand mark, title, one-line purpose, fields with labels, inline per-field errors linked with `aria-describedby`, a form-level `role="alert"` message, `autocomplete` hints) and a note that an account is optional for the extension. Signed-in visitors are redirected to `/app` (a minimal "Signed in" page with sign-out until the dashboard shell exists). The landing header has Sign in and Create account. Verified at 1280 and 375 px and in dark mode.
+
+## 18c. Web dashboard shell (2026-10-16)
+
+Built under `/app` with a shared signed-in layout: 240 px sidebar (Overview, Saved sessions, Devices, Settings; "Sync off" with "Cloud sync isn't available yet. Nothing has been uploaded."; Sign out), top bar with search (Ctrl+K, or Cmd+K on Apple platforms, focuses it; ignored while typing in another field) and an initials avatar linking to Settings. Below 1024 px the sidebar is replaced by a fixed bottom tab bar and the search moves under the brand row. Deliberate deviations:
+
+- Nav shows only pages that exist (no Workspaces, Recovery or Search page yet).
+- Search submits to `/app/sessions?q=` and matches session names only; the query stays in the box on that page.
+- "Welcome, <first name>" instead of a time-of-day greeting (the server doesn't know the viewer's time zone).
+- Overview: sync notice, three tiles (saved sessions, saved tabs, active devices) and up to five recent sessions; no workspace cards yet.
+- Session rows aren't links yet (no session detail route). Devices show "last seen ..." (or "not seen yet") and "Access revoked", never "Online".
+- Empty states say plainly that sync isn't available yet and where sessions live meanwhile. A skeleton (`loading.tsx`) and a generic error boundary with Try again (`error.tsx`) cover slow and failed loads.
+- Verified at 1440, 900 and 390 px and in dark mode.
+
+## 18d. Web session detail (2026-10-16)
+
+`/app/sessions/[id]` (list rows link to it; the list has Active / Archived views). Layout: breadcrumb, name with Pinned/Archived badges, "From <source> · N windows · N tabs · updated ... · version N", an action row, a restore note, and the window tree (groups as labelled runs in saved order, pinned icon, "Won't open" badge with a screen-reader reason).
+
+- **Rename / Archive / Unarchive / Delete** go through `/api/v1/sessions` with the version the page loaded. A 409 shows "This session was changed somewhere else (now version N). Load the latest version, then make your change again." with **Load latest version**; the rename form stays open with the user's text so the edit isn't lost. Delete uses a confirmation dialog that states scope (account library and, later, other devices; never open tabs or extension copies) and returns to the list.
+- **Export JSON** downloads the same `sessionhub.session-export` file the extension's Import accepts. This is the website's honest restore path: the restore note says to export here and import in the extension, and that the website can't open or change browser windows (no web-to-extension bridge exists).
+- **Open N links** opens only http(s) pages, asks for confirmation when there is more than one, and reports how many the browser's pop-up blocker stopped. Individual tab titles are links with `target="_blank" rel="noopener noreferrer"`.
+- Missing, deleted, malformed or another user's ids show "Session not found".
+- Verified at 1440 and 390 px and in dark mode.
 
 ## 19. Reference materials
 

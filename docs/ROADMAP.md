@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M0 version validation and M1 done; M2 in progress (first local slice verified 2026-10-16). See `PROGRESS.md`.  
+**Status:** M0 version validation, M1 and M2 done; M3 in progress (database package and email/password auth verified 2026-10-16). See `PROGRESS.md`.  
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -30,7 +30,7 @@ flowchart LR
 - [x] Initialize pnpm/Turborepo, TypeScript strict shared configs.
 - [x] Initialize WXT extension with popup/background/manager entrypoints.
 - [x] Initialize Next.js App Router and shared UI tokens.
-- [ ] Create `packages/core`, `contracts`, `database`, `sync`, `ui` with lint/build boundaries. (core, contracts, ui done; `database` deferred to M3 and `sync` to M4 so no empty packages exist)
+- [ ] Create `packages/core`, `contracts`, `database`, `sync`, `ui` with lint/build boundaries. (core, contracts, ui, database done; `sync` deferred to M4 so no empty package exists)
 - [x] Configure Vitest, React Testing Library, Playwright baseline.
 - [x] Set up local dev env docs and CI lint/typecheck/build. (CI workflow written, not yet run on GitHub)
 
@@ -44,23 +44,23 @@ flowchart LR
 - [x] Popup quick-save and recent sessions view.
 - [x] Manager list/search, rename/delete local saved sessions.
 - [x] Restore full session in **new windows by default** with preview.
-- [ ] Show unsupported/failed tabs; partial restore retry. (shown: done; retry of failed tabs: pending)
-- [ ] Automatic snapshots with bounded retention and MV3 alarms.
-- [ ] Versioned JSON export/import validation. (export: done; import with preview: pending)
-- [ ] Tests for restart, quota failure, large tab count, service-worker interruption. (browser restart and worker stop in real Chromium, 500-tab capture as a unit test: done; quota failure and large live-browser restore: pending)
+- [x] Show unsupported/failed tabs; partial restore retry.
+- [x] Automatic snapshots with bounded retention and MV3 alarms.
+- [x] Versioned JSON export/import validation.
+- [x] Tests for restart, quota failure, large tab count, service-worker interruption. (Browser restart and worker stop in real Chromium; quota failure with injected Dexie errors only, a real quota could not be forced; 120 live tabs in real Chromium with baselines in `TEST_PLAN.md` 5.1; 500-tab capture as a unit test.)
 
 **Done when:** Local saving/recovery works without account/internet after restart and tests pass.
 
 ## M3 — Web app, authentication and cloud data APIs
 
-- [ ] Add PostgreSQL, Prisma schema and safe migrations.
-- [ ] Integrate Better Auth with correct current adapter/version.
-- [ ] Implement signup/sign-in/password reset/account security.
-- [ ] Build web dashboard shell from UI/UX specification.
-- [ ] Add session/workspace/device list/detail/read/write API with ownership checks.
-- [ ] Emit server sync changes for all web mutations.
-- [ ] Create Docker local Compose and healthchecks.
-- [ ] Unit/API/auth tests including cross-user access denial.
+- [x] Add PostgreSQL, Prisma schema and safe migrations. (Initial migration; integration tests run it from scratch.)
+- [x] Integrate Better Auth with correct current adapter/version. (1.7.9, Prisma adapter, auth models regenerated from the real config: no changes.)
+- [ ] Implement signup/sign-in/password reset/account security. (Sign-up, sign-in, sign-out, rate limiting, safe redirects: done; password reset and email verification: pending email delivery.)
+- [x] Build web dashboard shell from UI/UX specification. (Overview, Saved sessions, Devices, Settings; see UI_UX_DESIGN.md 18c for deviations.)
+- [ ] Add session/workspace/device list/detail/read/write API with ownership checks. (Sessions: done, `/api/v1/sessions`; workspaces and devices: pending.)
+- [x] Emit server sync changes for all web mutations. (Every session create/update/delete writes `sync_changes` with a gap-free per-user sequence.)
+- [ ] Create Docker local Compose and healthchecks. (Local PostgreSQL compose with healthcheck: done; web app container: pending.)
+- [x] Unit/API/auth tests including cross-user access denial.
 
 **Done when:** Signed-in user can create/manage canonical saved-session records via web without Chrome extension APIs.
 

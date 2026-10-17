@@ -86,6 +86,28 @@ Measure:
 
 Benchmarks need baselines and regression thresholds; don't assert performance without measurements.
 
+### 5.1 Measured baselines (2026-10-16)
+
+Test: `apps/extension/e2e/perf.spec.ts`, run with `pnpm test:perf` (builds first; not part of `pnpm test:e2e` or CI). Sizes: `PERF_WINDOWS` x `PERF_TABS_PER_WINDOW`, default 4 x 30 = **120 live tabs**, 12 tab groups. Results are written to `apps/extension/test-results/perf.json`.
+
+**Environment:** WSL2 (Linux 6.18) on a desktop, 8 vCPU, 9 GB RAM; headless Chromium 156.0.8078.4 via Playwright 1.64.1 with `--renderer-process-limit=4`; pages served by a local Node HTTP server (Playwright route interception inflated restore time about 2.5x, so it is not used); background tabs are discarded after loading to fit in memory. Times are wall-clock round trips from an extension page to the worker and back.
+
+| Metric (120 tabs, 4 windows) | Median of 3 runs | Range | Guard in test | 30 tabs / 2 windows (1 run) |
+|---|---:|---:|---:|---:|
+| Capture all windows (`session.capture`, median of 3 per run) | 39 ms | 34 to 56 ms | < 1,000 ms | 15 ms |
+| Checkpoint, new state written | 28 ms | 20 to 61 ms | < 1,000 ms | 12 ms |
+| Checkpoint, unchanged fingerprint | 15 ms | 13 to 26 ms | none | 10 ms |
+| Manager inspector render (120-tab tree visible) | 186 ms | 168 to 266 ms | < 2,000 ms | 144 ms |
+| Popup open to interactive search | 269 ms | 261 to 449 ms | < 3,000 ms | 233 ms |
+| Restore all 120 tabs into 4 new windows | 15.7 s | 11.1 to 25.9 s | < 60 s | 2.4 s |
+| Restore per tab | 131 ms | 92 to 215 ms | none | 80 ms |
+| IndexedDB usage after the run (3 sessions, 1 checkpoint, 1 job) | 1.2 MB | same | none | 0.45 MB |
+| Peak system memory increase (Chromium, 240 live tabs at the end) | about 2.1 GB | 2.0 to 3.0 GB | none | about 0.8 GB |
+
+**Reading the numbers:** capture, checkpoint and UI render are fast and stable. Restore dominates and varies widely: per-tab cost grows with the number of tabs already loading, and on this machine browser tab creation itself is the bottleneck (setting up the same 120 tabs took 12.7 to 27.4 s). A separate 60-tab experiment showed one `chrome.windows.create({ url: [...] })` call is about 1.8x faster than SessionHub's sequential `tabs.create` per tab, and parallel `tabs.create` is not faster. Switching restore to batched window creation is a possible optimization, but it loses per-tab failure detail; see `PROGRESS.md`.
+
+**Not measured yet:** 500 live tabs / 20 windows (would need about 8 GB on this machine), search over 10,000 saved tab records, worker event coalescing counts, restore throttling.
+
 ## 6. Accessibility / UX E2E tests
 
 - Tab through popup controls and save action.

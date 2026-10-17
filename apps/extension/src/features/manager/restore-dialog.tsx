@@ -4,18 +4,31 @@ import type { SavedSession } from "@sessionhub/contracts/session";
 import { planRestore } from "@sessionhub/core/restore-plan";
 import { DialogActions, Modal, buttonClass } from "../../components/modal";
 import type { RestoreJobRecord } from "../../lib/db";
-import { formatFullDate, plural } from "../../lib/format";
+import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import { sendCommand } from "../../lib/message-client";
-import { RestoreSummary, SkippedList } from "./restore-summary";
+import { RestoreResult } from "./restore-result";
+import { SkippedList } from "./restore-summary";
 
-type Phase = { name: "preview" } | { name: "running" } | { name: "done"; job: RestoreJobRecord } | { name: "error"; message: string };
+type Phase =
+  | { name: "preview" }
+  | { name: "running" }
+  | { name: "done"; job: RestoreJobRecord }
+  | { name: "error"; message: string };
 
 /**
  * Safety-critical restore preview (docs/UI_UX_DESIGN.md section 12): new windows only,
  * per-window selection, skipped tabs listed before anything opens.
  */
-export function RestoreDialog({ session, onClose }: { session: SavedSession; onClose: () => void }) {
+interface RestoreDialogProps {
+  session: SavedSession;
+  /** A recovery checkpoint carries its snapshot in `session` (same id). */
+  kind?: "session" | "snapshot";
+  onClose: () => void;
+}
+
+export function RestoreDialog({ session, kind = "session", onClose }: RestoreDialogProps) {
   const [phase, setPhase] = useState<Phase>({ name: "preview" });
+  const [retrying, setRetrying] = useState(false);
   const [selectedWindows, setSelectedWindows] = useState(() => new Set(session.windows.map((window) => window.id)));
 
   const selectedTabIds = useMemo(
@@ -35,18 +48,21 @@ export function RestoreDialog({ session, onClose }: { session: SavedSession; onC
 
   const start = async () => {
     setPhase({ name: "running" });
-    const response = await sendCommand({
-      type: "restore.start",
-      sessionId: session.id,
-      ...(allSelected ? {} : { tabIds: [...selectedTabIds] }),
-    });
+    const tabIds = allSelected ? {} : { tabIds: [...selectedTabIds] };
+    const response = await sendCommand(
+      kind === "snapshot"
+        ? { type: "recovery.restore", snapshotId: session.id, ...tabIds }
+        : { type: "restore.start", sessionId: session.id, ...tabIds },
+    );
     setPhase(response.ok ? { name: "done", job: response.data.job } : { name: "error", message: response.error.message });
   };
 
+  const busy = phase.name === "running" || retrying;
+
   return (
-    <Modal title={`Restore "${session.name}"`} onClose={onClose} dismissible={phase.name !== "running"}>
+    <Modal title={`Restore "${session.name}"`} onClose={onClose} dismissible={!busy}>
       <p className="text-xs text-fg-muted">
-        From {session.sourceDeviceName} · {plural(session.windows.length, "window")} · saved {formatFullDate(session.updatedAt)}
+        {sessionOrigin(session)} · {plural(session.windows.length, "window")} · saved {formatFullDate(session.updatedAt)}
       </p>
 
       {phase.name === "preview" && (
@@ -93,12 +109,20 @@ export function RestoreDialog({ session, onClose }: { session: SavedSession; onC
         </p>
       )}
 
-      {phase.name === "done" && <RestoreSummary session={session} job={phase.job} onClose={onClose} />}
+      {phase.name === "done" && (
+        <RestoreResult
+          session={session}
+          job={phase.job}
+          onJobUpdated={(job) => setPhase({ name: "done", job })}
+          onBusyChange={setRetrying}
+          onClose={onClose}
+        />
+      )}
 
       {phase.name === "error" && (
         <>
           <p role="alert" className="mt-5 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">
-            Restore didn't start: {phase.message}
+            Restore stopped: {phase.message}
           </p>
           <DialogActions>
             <button type="button" className={buttonClass.secondary} onClick={onClose}>

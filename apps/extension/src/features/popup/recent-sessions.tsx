@@ -2,7 +2,7 @@ import { ChevronRight, Layers } from "lucide-react";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { summarizeSession } from "@sessionhub/core/session-summary";
 import type { SessionsState } from "../../hooks/use-sessions";
-import { formatListDate, plural } from "../../lib/format";
+import { formatListDate, plural, sessionSourceLabel } from "../../lib/format";
 
 interface RecentSessionsProps {
   state: SessionsState;
@@ -58,7 +58,7 @@ export function RecentSessions({ state, sessions, searching, onOpen, onRetry }: 
                   {session.name}
                 </span>
                 <span className="block text-[11px] text-fg-muted">
-                  {formatListDate(session.updatedAt)} · {session.sourceDeviceName}
+                  {formatListDate(session.updatedAt)} · {sessionSourceLabel(session)}
                 </span>
               </span>
               <span className="text-[11px] tabular-nums text-fg-muted">{plural(summary.tabCount, "tab")}</span>

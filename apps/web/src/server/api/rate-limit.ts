@@ -1,0 +1,78 @@
+/**
+ * In-memory token-bucket rate limiter. Per process only: with more than one web instance
+ * each keeps its own buckets (see docs/SECURITY_PRIVACY.md); move to shared storage then.
+ */
+
+export interface RateLimitPolicy {
+  /** Burst size: writes allowed back to back. */
+  capacity: number;
+  /** Sustained rate once the burst is used. */
+  refillPerSecond: number;
+}
+
+/** `/api/v1` writes per user: 30 at once, then 1 per second (60 per minute sustained). */
+export const API_WRITE_LIMIT: RateLimitPolicy = { capacity: 30, refillPerSecond: 1 };
+
+export type RateLimitDecision = { allowed: true; remaining: number } | { allowed: false; retryAfterSeconds: number };
+
+interface Bucket {
+  tokens: number;
+  updatedAt: number;
+}
+
+export class TokenBucketLimiter {
+  private readonly buckets = new Map<string, Bucket>();
+
+  constructor(
+    private readonly policy: RateLimitPolicy,
+    private readonly now: () => number = Date.now,
+    /** Upper bound on tracked keys so memory can't grow without limit. */
+    private readonly maxKeys = 10_000,
+  ) {}
+
+  take(key: string): RateLimitDecision {
+    const now = this.now();
+    const bucket = this.refilled(this.buckets.get(key), now);
+    if (bucket.tokens >= 1) {
+      this.store(key, { tokens: bucket.tokens - 1, updatedAt: now });
+      return { allowed: true, remaining: Math.floor(bucket.tokens - 1) };
+    }
+    this.store(key, bucket);
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - bucket.tokens) / this.policy.refillPerSecond)) };
+  }
+
+  get size(): number {
+    return this.buckets.size;
+  }
+
+  private refilled(bucket: Bucket | undefined, now: number): Bucket {
+    if (!bucket) return { tokens: this.policy.capacity, updatedAt: now };
+    const elapsedSeconds = Math.max(0, now - bucket.updatedAt) / 1000;
+    return { tokens: Math.min(this.policy.capacity, bucket.tokens + elapsedSeconds * this.policy.refillPerSecond), updatedAt: now };
+  }
+
+  private store(key: string, bucket: Bucket): void {
+    this.buckets.delete(key); // re-insert so Map order tracks recency
+    this.buckets.set(key, bucket);
+    if (this.buckets.size > this.maxKeys) this.prune(bucket.updatedAt);
+  }
+
+  /** Drops buckets that have fully refilled (no state worth keeping), then the least recently used. */
+  private prune(now: number): void {
+    for (const [key, bucket] of this.buckets) {
+      if (this.refilled(bucket, now).tokens >= this.policy.capacity) this.buckets.delete(key);
+    }
+    for (const key of this.buckets.keys()) {
+      if (this.buckets.size <= this.maxKeys) break;
+      this.buckets.delete(key);
+    }
+  }
+}
+
+const globalForLimiter = globalThis as unknown as { sessionhubWriteLimiter?: TokenBucketLimiter };
+
+/** Process-wide limiter for API writes (cached across Next.js dev reloads). */
+export const getWriteLimiter = (): TokenBucketLimiter => {
+  globalForLimiter.sessionhubWriteLimiter ??= new TokenBucketLimiter(API_WRITE_LIMIT);
+  return globalForLimiter.sessionhubWriteLimiter;
+};

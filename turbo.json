@@ -3,8 +3,15 @@
   "ui": "stream",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": [".output/**", ".next/**", "!.next/cache/**", "dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        ".output/**",
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**"
+      ]
     },
     "dev": {
       "cache": false,
@@ -16,8 +23,36 @@
       "outputs": []
     },
     "test:e2e": {
-      "dependsOn": ["build"],
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL"
+      ]
+    },
+    "test:perf": {
+      "dependsOn": [
+        "build"
+      ],
       "cache": false
+    },
+    "test:db": {
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION"
+      ]
+    },
+    "@sessionhub/web#test:db": {
+      "dependsOn": [
+        "@sessionhub/database#test:db"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION"
+      ]
     }
   }
 }

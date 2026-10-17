@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  addSession,
   deleteSession,
   getSession,
   listSessions,
   putSession,
+  SessionExistsError,
   SessionNotFoundError,
   updateSession,
   VersionConflictError,
@@ -56,5 +58,13 @@ describe("session repository", () => {
     await deleteSession(db, session.id);
     await deleteSession(db, session.id);
     expect(await getSession(db, session.id)).toBeUndefined();
+  });
+
+  it("addSession inserts but refuses to replace an existing id", async () => {
+    const db = freshDb();
+    const session = sampleSession();
+    await addSession(db, session);
+    await expect(addSession(db, { ...session, name: "Replacement" })).rejects.toBeInstanceOf(SessionExistsError);
+    expect((await getSession(db, session.id))?.name).toBe(session.name);
   });
 });

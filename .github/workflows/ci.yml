@@ -13,6 +13,19 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: sessionhub
+          POSTGRES_PASSWORD: sessionhub_ci
+          POSTGRES_DB: sessionhub_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sessionhub -d sessionhub_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://sessionhub:sessionhub_ci@localhost:5432/sessionhub_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -24,6 +37,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:db
       - run: pnpm build
       - name: Install Chromium for extension E2E
         run: pnpm --filter @sessionhub/extension exec playwright install --with-deps chromium

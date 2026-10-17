@@ -1,0 +1,28 @@
+# Local development database only. Not for production (see docs/SYSTEM_DESIGN.md section 6).
+# Start: pnpm db:up   Stop: pnpm db:down   Wipe data: pnpm db:down -v
+name: sessionhub-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: sessionhub
+      # Dev-only credential for a localhost-bound container; never reuse elsewhere.
+      POSTGRES_PASSWORD: sessionhub_dev
+      POSTGRES_DB: sessionhub
+    ports:
+      # Localhost only, and not 5432, so it can't clash with another local PostgreSQL.
+      - "127.0.0.1:54329:5432"
+    volumes:
+      # PostgreSQL 18 images keep data under /var/lib/postgresql/18/docker.
+      - sessionhub-postgres:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sessionhub -d sessionhub && pg_isready -U sessionhub -d sessionhub_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  sessionhub-postgres:

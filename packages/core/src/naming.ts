@@ -1,11 +1,11 @@
-export type CaptureScope = "window" | "all-windows";
+export type CaptureScope = "window" | "all-windows" | "checkpoint";
 
 export interface NamingOptions {
   locale?: string;
   timeZone?: string;
 }
 
-/** Default quick-save name, e.g. "Window, Oct 16, 9:42 AM" or "All windows, Oct 16, 9:42 AM". */
+/** Default name, e.g. "Window, Oct 16, 9:42 AM", "All windows, ..." or "Checkpoint, ...". */
 export const defaultSessionName = (scope: CaptureScope, date: Date, options: NamingOptions = {}): string => {
   const stamp = new Intl.DateTimeFormat(options.locale ?? "en-US", {
     month: "short",
@@ -14,5 +14,6 @@ export const defaultSessionName = (scope: CaptureScope, date: Date, options: Nam
     minute: "2-digit",
     timeZone: options.timeZone,
   }).format(date);
-  return `${scope === "window" ? "Window" : "All windows"}, ${stamp}`;
+  const label = scope === "window" ? "Window" : scope === "all-windows" ? "All windows" : "Checkpoint";
+  return `${label}, ${stamp}`;
 };

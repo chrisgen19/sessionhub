@@ -67,6 +67,18 @@ The app must display which items were skipped during capture/restore and allow m
 - Account/device revocation enforced on every authenticated device request, not inferred solely from a client-sent ID.
 - Signing out removes/revokes cloud credentials but does not erase user-created local data without explicit consent.
 
+### Implemented web auth (verified 2026-10-16)
+
+- Better Auth 1.7.9 email/password. Passwords are stored hashed by Better Auth (verified: the `account.password` value never contains the plaintext; algorithm is Better Auth's default and was not separately audited).
+- Session cookie is `HttpOnly`, `SameSite=Lax` (verified in E2E). `Secure` is expected when served over HTTPS in production: **not verified yet** (no HTTPS deployment).
+- Sign-in/sign-up go through Better Auth's HTTP endpoints, so its rate limiter and origin checks apply: 3 attempts per window per client IP, then 429 and "Too many attempts" (verified). Server-side `auth.api.*` calls skip the rate limiter and must not be used for credential checks.
+- **Deployment requirement (M6):** the limiter keys on the client IP from `X-Forwarded-For`. Without a proxy setting that header, all clients share one bucket (a handful of bad attempts would briefly block sign-in for everyone); with a proxy, it must overwrite (not trust) client-supplied values, or attackers can rotate the header. Rate-limit storage is in memory: fine for one container, not for several.
+- Post-login redirects only accept same-site relative paths. Server logs record only the error class for failed sign-in/up, never emails, passwords or bodies.
+- Dashboard authorization: a forged session cookie passes the optimistic proxy but is rejected by the per-page database check (verified in E2E). All dashboard queries filter by the session's user id; seeded data for a second user never appears in lists, counts or search (verified in DB and E2E tests). Soft-deleted and archived sessions are excluded.
+- `/api/v1/sessions` (verified in DB and HTTP E2E tests): requests without a session get 401; another user's session id returns 404 for read, update and delete with nothing written (no change-log row, no clock row); creating with another user's id returns 409 without details. Writes require `Origin` = app origin (CSRF defense for cookie auth), JSON content type, at most 2 MB (checked before parsing) and reject unknown fields such as `userId`. Errors never echo internals; unexpected failures log the error class only. `/api/v1` writes are rate-limited per user (30 burst, then 1/s; 429 + `Retry-After`; verified in HTTP E2E, including that rejected anonymous and cross-origin requests don't consume the budget). The limiter is in memory: with several web instances each enforces its own budget, so move it to shared storage (database or Redis) before scaling out. Reads are not limited yet.
+- Saved links in the web app: every URL is re-classified at render time; only http(s) becomes a link (`rel="noopener noreferrer"`), everything else (javascript:, data:, chrome:, file:) is plain text. "Open links" nulls `window.opener` on each new tab. `/app/*` responses send `Referrer-Policy: no-referrer`, so opened sites never learn the session page URL. Tab titles render as text. All verified in E2E (including an HTML/script title and a `javascript:` URL stored as "restorable").
+- Known trade-offs: sign-up says when an email is already registered (account enumeration; accepted for MVP); no email verification or password reset yet; `BETTER_AUTH_SECRET` must be at least 32 characters and is validated at first use.
+
 ## 6. Extension permissions (minimum viable proposal)
 
 Permissions must be justified by features that are **actually shipped**. Proposed candidates:
@@ -81,9 +93,9 @@ Permissions must be justified by features that are **actually shipped**. Propose
 | `host_permissions` limited to API origin | Send HTTPS requests to your own backend |
 | `identity` (conditional) | Only if selected auth implementation needs Chrome identity flows |
 
-**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`. No host permissions, no `storage`, `alarms`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
+**Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints). No host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them.
 
-Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
+Recovery checkpoints contain only tab URLs, titles, pinned state and groups of normal windows; they stay in local IndexedDB and are never uploaded. Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
 
 `chrome.windows` is an API namespace, not necessarily an extra manifest permission. Do not request `history`, `<all_urls>` host access, `cookies`, `webRequest`, or `scripting` without a feature-specific justification and privacy review. Chrome policy requires the narrowest necessary permissions.
 
@@ -113,6 +125,10 @@ If this bridge isn't robust, omit it from MVP and use the extension's own manage
 - Limit server logs; audit security-relevant activity without raw tab URLs.
 - Dependabot/lockfile management, reproducible release build, malware/static analysis as appropriate.
 - Maintain documented incident response procedure and ability to invalidate all tokens.
+
+### Development database credentials
+
+`infra/docker/compose.dev.yaml` uses a fixed dev-only password and binds PostgreSQL to `127.0.0.1` only. `packages/database/.env` is git-ignored; only `.env.example` is committed. Production credentials must come from the host's secret configuration (M6).
 
 ## 9. Storage and encryption disclosures
 

@@ -4,6 +4,8 @@ import { BrowserError, type HandlerDeps } from "./command-handlers";
 
 const TAB_GROUP_ID_NONE = -1;
 
+const isOwnPage = (url: string) => url.startsWith(browser.runtime.getURL("/"));
+
 const toCaptureWindow = async (window: Browser.windows.Window): Promise<CaptureWindowInput> => {
   const groups = window.id === undefined ? [] : await browser.tabGroups.query({ windowId: window.id });
   return {
@@ -13,7 +15,8 @@ const toCaptureWindow = async (window: Browser.windows.Window): Promise<CaptureW
       color: group.color,
       collapsed: group.collapsed,
     })),
-    tabs: (window.tabs ?? []).map((tab) => ({
+    // SessionHub's own pages (manager, popup opened as a tab) are never captured.
+    tabs: (window.tabs ?? []).filter((tab) => !isOwnPage(tab.url || tab.pendingUrl || "")).map((tab) => ({
       url: tab.url || tab.pendingUrl || "",
       title: tab.title ?? "",
       pinned: tab.pinned,

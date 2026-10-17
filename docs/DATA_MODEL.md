@@ -136,6 +136,19 @@ Do not use IP address or user agent string as device identity. Avoid exposing un
 
 - Security-relevant events only: account sign-in, device pairing, device revoke, account deletion request, significant export. Sanitize logs; **never** log full URL lists/tokens by default.
 
+### Implemented server schema (Prisma 7.10.0, PostgreSQL 18, verified 2026-10-16)
+
+Source: `packages/database/prisma/schema.prisma`, migration `20261016052129_init`. All entities in this section exist, with these decisions:
+
+- **Auth tables** (`user`, `session`, `account`, `verification`) are exactly what the Better Auth CLI (`auth generate`, v1.7.9, email/password, Prisma/PostgreSQL) produced: string ids and camelCase columns. Only Prisma back-relation fields were added to `User`. Regenerate when auth plugins change and diff.
+- **Domain tables** use snake_case table and column names, app-generated UUID primary keys, `timestamptz(3)` timestamps and `varchar` limits equal to the contracts limits.
+- **Same-account ownership in the database:** composite foreign keys `(workspace_id, user_id)`, `(source_device_id, user_id)`, `(author_device_id, user_id)`, `(device_id, user_id)` and `(session_id, user_id)` reference `(id, user_id)` unique keys, and `(group_id, window_id)` references `(id, window_id)`, so a row can never point at another user's workspace/device/session or at a group in another window. These use `ON DELETE NO ACTION`: hard-deleting a device or workspace that is still referenced fails; services must clear the reference first (soft delete via `revoked_at` / `deleted_at` is the normal path).
+- Deleting a user cascades to all of their rows and nobody else's; deleting a saved session cascades to windows, groups, tabs and versions.
+- Unique keys: `(user_id, installation_id)` on devices, `(user_id, sequence)` on sync changes, primary key `(user_id, device_id, client_operation_id)` on receipts, `(session_id, version)` on versions, and `sort_order` per parent for windows, groups and tabs.
+- Naming reconciliations: group **`title`** (matches the contracts DTO; section 3 said `name`); **no `favicon_url` column** (clients use the browser's favicon cache); Postgres enum values use `_` where contracts use `-` (`browser_internal`), mapped in the service layer.
+- **Write semantics (API, 2026-10-16):** each accepted create/update writes a `session_versions` row whose `payload` is the full detail DTO and whose `checksum` is SHA-256 over id-independent content (name, description, workspace, pinned, archived, ordered groups and tabs with group positions). Deletes write a tombstone and a `sync_changes` delete row but no `session_versions` row. Web writes store `source_device_id = NULL`, `source_device_name = "Web"`. Child rows are deleted and recreated with new ids when the structure changes.
+- `AuditEvent.kind` is an enum: `sign_in`, `device_paired`, `device_revoked`, `account_deletion_requested`, `data_exported`.
+
 ## 4. Local IndexedDB schema (Dexie concept)
 
 ```text
@@ -155,7 +168,7 @@ LocalSessionStore (scope = 'local' or userAccountId):
 
 Use transactional writes when editing a synced entity: **update local entity + add outbox operation atomically**. Pull application similarly commits remote entity updates, cursor and conflict states in a single transaction per page.
 
-### Implemented local schema (Dexie version 1, verified 2026-10-16)
+### Implemented local schema (Dexie versions 1 and 2, verified 2026-10-16)
 
 Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 
@@ -163,11 +176,19 @@ Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 |---|---|---|
 | `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope: "local"`; windows/groups/tabs are nested in the record |
 | `device` | `key` (`"this-device"`) | `installationId` (UUID), `friendlyName` (default "This browser"), `createdAt` |
-| `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, per-tab outcomes, status `running` / `completed` / `partial` / `failed` |
+| `recoverySnapshots` (v2) | `id`, `capturedAt`, `[capturedAt+tabCount]` | Immutable checkpoint: `capturedAt`, `reason` (`automatic`/`manual`), `fingerprint`, counts, and `session` (a `SavedSession` whose id equals the snapshot id). Local only, never synced |
+| `recoveryState` (v2) | `key` (`"state"`) | `dirty`, `lastChangeAt`, `lastSnapshotAt`, `lastFingerprint`, `lastError` |
+| `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, append-only per-tab outcomes across attempts, `attempts` (absent on older records = 1), optional `interruptedAt`, status `running` / `completed` / `partial` / `failed` |
 
-Not yet created: `sessionVersions`, `recoverySnapshots`, `workspaces`, `outbox`, `syncState`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit version 1.
+Not yet created: `sessionVersions`, `workspaces`, `outbox`, `syncState`, `conflictDrafts`, `localPreferences`. Add them as new Dexie versions; never edit version 1.
 
-Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are not yet pruned (retention pending).
+Every session write is validated with `savedSessionSchema` before it reaches IndexedDB. Edits are read-modify-write inside one transaction with an `expectedVersion` check (`VersionConflictError` on mismatch). Restore jobs are pruned on every worker start (`RESTORE_JOB_RETENTION`: newest 50 within 30 days; the newest job and any `running` job are never pruned).
+
+**Recovery checkpoints (implemented):** every material browser change (tab created/removed/moved/attached/detached/replaced, URL/pinned/group change, window created/removed, group changes, browser startup/install) writes `dirty: true` and `lastChangeAt`. The clean-to-dirty transition arms a one-shot `recovery-debounce` alarm (30 s; Chrome before 120 rounds up to 1 min); a `recovery-periodic` alarm (30 min) is the safety net. A run reads all normal windows (incognito and SessionHub's own pages excluded), fingerprints URLs/order/pinned/groups (titles ignored), skips the insert if the fingerprint matches the last one, and stores nothing when there are no tabs. Insert + retention + state update happen in one transaction; the dirty flag is cleared only if no change arrived after the capture started. Retention (`RECOVERY_RETENTION`): newest 50 within 7 days, always keeping the newest checkpoint and the largest recent one. The v1 -> v2 upgrade is covered by a test.
+
+**Storage full (implemented):** any IndexedDB quota failure (detected through Dexie's `QuotaExceededError`, wrapped `AbortError`s, `cause` chains and bulk `failures`) returns error code `storage-full` with a command-specific message saying what didn't happen. Save, import and rename write nothing. A restore that can't create its job opens nothing; one that can't record a tab's outcome stops and says tabs may have opened. A checkpoint that hits the quota evicts down to half of the existing checkpoints (still keeping the newest and the largest recent one) and retries once; if that also fails, or nothing could safely be evicted, it records "Storage for SessionHub is full..." as `lastError` and keeps the existing checkpoints. User saves and imports do **not** delete checkpoints to make room.
+
+**Restore job lifecycle (implemented):** created as `running` with `attempts: 1` before any tab opens -> each tab's outcome appended before the next tab opens (a worker killed in between can leave only the tab it was opening unrecorded) -> status settled from outcomes (`completed` when every planned tab has an `opened` outcome, `failed` when none has, otherwise `partial`), also when a step throws. `restore.retry` claims a `partial`/`failed` job by switching it to `running` and incrementing `attempts` in one transaction (a `running` or `completed` job is refused), then runs `planRetry`: only planned tabs with no `opened` outcome in any attempt, re-classified, in new windows. A tab therefore never opens twice for the same job. On every worker start, jobs still `running` whose `updatedAt` is earlier than that worker's start time are settled from their outcomes and stamped `interruptedAt` (restores only run inside the worker, so such a job's worker is gone); jobs touched after the start time belong to the new worker and are left alone.
 
 **Implemented bounds** (`SESSION_LIMITS` in `packages/contracts/src/session.ts`): name 200 chars, tab title 1,024 chars (truncated on capture), URL 8,192 chars (longer URLs are stored truncated and classified `invalid`), group title 256, device name 120, 200 windows per session, 2,000 tabs and 500 groups per window (capture fails with a clear error above these).
 
@@ -220,6 +241,19 @@ Versioned export. Implemented as `sessionExportSchema` in `packages/contracts/sr
 ```
 
 Import must verify `format`, supported `schemaVersion`, structural bounds, ID collisions, duplicated ordering and URL classification. Never execute imported content as HTML/JavaScript. Imported sessions receive a safe new local identity and don't overwrite existing sessions by default.
+
+**Implemented (2026-10-16)** in `packages/core/src/session-import.ts`:
+
+1. Reject files over 10 MB (`IMPORT_MAX_BYTES`) before parsing.
+2. `JSON.parse`; then `format` must equal `sessionhub.session-export`; a `schemaVersion` above the current one gets an "update the extension" error. Only version 1 exists, so there is no migration path yet.
+3. Full `sessionExportSchema` validation (bounds, UUIDs, unique ids, group references). The first issue and its path are shown to the user.
+4. Every session, window, group and tab gets a fresh UUID; group links are remapped.
+5. Windows, groups and tabs are re-sorted by `sortOrder` (ties keep file order) and renumbered from 0.
+6. Every URL is re-classified; the file's `eligibility` values are ignored and differences are counted.
+7. Empty windows are dropped; a file with no tabs is rejected.
+8. The result has `version: 1`, `createdAt`/`updatedAt` set to import time, the original `name` and `sourceDeviceName`, and `sourceDeviceId: null`. **`sourceDeviceId: null` marks an imported session** and the UI labels it "Imported from <device>".
+
+The extension stores it with Dexie `add()` (not `put()`), so even an id collision fails instead of replacing a record.
 
 ## 6. Indexing and query guidance
 

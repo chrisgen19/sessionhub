@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { SESSION_LIMITS } from "@sessionhub/contracts/session";
 import type { CaptureReport } from "@sessionhub/core/capture";
+import { IMPORT_MAX_BYTES, type ImportReport } from "@sessionhub/core/session-import";
 import type { RestoreJobRecord } from "./db";
 
 /**
@@ -22,11 +23,20 @@ export const commandSchema = z.discriminatedUnion("type", [
     name: z.string().max(SESSION_LIMITS.nameMax * 2),
   }),
   z.object({ type: z.literal("session.delete"), sessionId: z.uuid() }),
+  // Raw file text: the worker parses and re-validates it rather than trusting a page-prepared session.
+  z.object({ type: z.literal("session.import"), content: z.string().max(IMPORT_MAX_BYTES) }),
   z.object({
     type: z.literal("restore.start"),
     sessionId: z.uuid(),
     tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
   }),
+  z.object({ type: z.literal("restore.retry"), jobId: z.uuid() }),
+  z.object({
+    type: z.literal("recovery.restore"),
+    snapshotId: z.uuid(),
+    tabIds: z.array(z.uuid()).max(SESSION_LIMITS.windowsMax * SESSION_LIMITS.tabsPerWindowMax).optional(),
+  }),
+  z.object({ type: z.literal("recovery.checkpointNow") }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -34,10 +44,27 @@ export interface CommandResults {
   "session.capture": { sessionId: string; report: CaptureReport };
   "session.rename": { version: number };
   "session.delete": Record<string, never>;
+  "session.import": { sessionId: string; report: ImportReport };
   "restore.start": { job: RestoreJobRecord };
+  "restore.retry": { job: RestoreJobRecord };
+  "recovery.restore": { job: RestoreJobRecord };
+  "recovery.checkpointNow": {
+    status: "created" | "unchanged" | "empty" | "clean";
+    snapshotId: string | null;
+    /** Older checkpoints removed because storage was full. */
+    freedForSpace: number;
+  };
 }
 
-export type ErrorCode = "invalid-command" | "not-found" | "conflict" | "invalid-input" | "browser-error" | "storage-error";
+export type ErrorCode =
+  | "invalid-command"
+  | "not-found"
+  | "conflict"
+  | "invalid-input"
+  | "browser-error"
+  | "storage-error"
+  /** IndexedDB quota exhausted; the message says what did and didn't happen. */
+  | "storage-full";
 
 export type CommandResponse<T extends Command["type"] = Command["type"]> =
   | { ok: true; data: CommandResults[T] }

@@ -12,7 +12,12 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "check": "turbo run lint typecheck test"
+    "check": "turbo run lint typecheck test",
+    "test:perf": "turbo run test:perf",
+    "db:up": "docker compose -f infra/docker/compose.dev.yaml up -d --wait",
+    "db:down": "docker compose -f infra/docker/compose.dev.yaml down",
+    "db:migrate": "pnpm --filter @sessionhub/database db:migrate",
+    "test:db": "turbo run test:db"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

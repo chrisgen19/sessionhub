@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock3, HardDrive, Info, Layers, RotateCcw, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 const FEATURES = [
@@ -22,12 +23,12 @@ const FEATURES = [
 const WORKS_TODAY = [
   "Chrome extension: save current or all windows to local storage",
   "Search saved sessions by name, tab title or URL",
-  "Restore into new windows with a preview and a per-tab result summary",
-  "Rename, delete with confirmation, and export a session as JSON",
+  "Restore into new windows with a preview, a per-tab result summary and retry for tabs that failed",
+  "Rename, delete with confirmation, and export or import sessions as JSON",
+  "Automatic local recovery checkpoints you can inspect and restore",
 ];
 
 const COMING_NEXT = [
-  "Automatic recovery snapshots and JSON import",
   "Side panel for navigating open tabs",
   "Account sign-in and opt-in sync between computers",
 ];
@@ -58,10 +59,18 @@ export default function HomePage() {
           </span>
           <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-fg-muted">
-          <HardDrive aria-hidden="true" className="size-3.5" />
-          Early preview
-        </span>
+        <nav aria-label="Account" className="flex items-center gap-2">
+          <span className="hidden items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-fg-muted sm:inline-flex">
+            <HardDrive aria-hidden="true" className="size-3.5" />
+            Early preview
+          </span>
+          <Link href="/login" className="rounded-lg px-3 py-2 text-[13px] font-semibold hover:bg-surface-muted">
+            Sign in
+          </Link>
+          <Link href="/signup" className="rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-on-brand hover:bg-brand-hover">
+            Create account
+          </Link>
+        </nav>
       </header>
 
       <main className="flex-1 py-10 sm:py-16">
