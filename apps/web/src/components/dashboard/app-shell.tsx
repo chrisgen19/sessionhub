@@ -28,8 +28,8 @@ function Brand() {
 }
 
 /**
- * Connected browsers, never "Sync on" or "Sync off": sync is turned on in each browser's extension,
- * which the server doesn't know. "Last activity", never "online": there is no heartbeat.
+ * Connected browsers, never "Sync on" or "Sync off": sync is a setting of each browser's extension,
+ * which the server doesn't know. The wording says where to change it, never what it is set to. "Last activity", never "online": there is no heartbeat.
  */
 function ConnectionNote({ connection }: { connection: ConnectionStatus }) {
   const connected = connection.connectedBrowsers > 0;
@@ -42,7 +42,7 @@ function ConnectionNote({ connection }: { connection: ConnectionStatus }) {
       </p>
       <p className="text-[11px] leading-relaxed text-fg-muted">
         {connected
-          ? `${connection.lastSeenAt ? `Last activity: ${formatRelative(connection.lastSeenAt)}. ` : ""}Sync is turned on in each browser's extension.`
+          ? `${connection.lastSeenAt ? `Last activity: ${formatRelative(connection.lastSeenAt)}. ` : ""}Turn sync on or off in each browser's extension.`
           : "Sessions stay in the extension until you connect a browser and turn on sync there."}
       </p>
     </div>

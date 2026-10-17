@@ -37,6 +37,8 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54369/58065):** `pnpm check --force` 17/17; web DB tests **67/67**; full web E2E **54/54**; Overview, sidebar and Settings checked at 1440 px in both states and Overview at 390 px in dark mode.
 
+**PR #20 review (Codex, 1 P2 finding), valid and fixed:** "Sync is turned on in each browser's extension" (sidebar) and "Sync is turned on in each browser, in the SessionHub extension" (Settings) read as status claims, which the server can't make: a connected browser may have sync off. Both now say where to change it ("Turn sync on or off in each browser's extension"). `dashboard.spec.ts` asserts the new wording and that no page says "sync is (turned) on/off". Dashboard, workspace and detail E2E specs 15/15; web unit tests pass.
+
 **Next step:** PR #20 is open (CI not yet seen); then workspace management on the web (`/app/workspaces`) or the side panel.
 
 ### 2026-10-17 (M5 workspaces, part 3: web dashboard filter and assignment) / Claude Code (Opus 5.5) / `feature/web-workspaces-filter` (macOS laptop)

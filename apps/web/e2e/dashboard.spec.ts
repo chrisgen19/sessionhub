@@ -127,11 +127,14 @@ test("devices show last seen and revoked state, never 'online'", async ({ page }
   await expect(page.getByText(/online/i)).toHaveCount(0);
   // The revoked browser doesn't count; the sidebar never claims sync is on or off.
   await expect(page.getByRole("complementary")).toContainText("1 browser connected");
-  await expect(page.getByRole("complementary")).toContainText("Last activity: 5m ago.");
+  await expect(page.getByRole("complementary")).toContainText("Last activity: 5m ago. Turn sync on or off in each browser's extension.");
+  // Pairing doesn't tell the server whether sync is on: nothing may claim it is.
+  await expect(page.getByText(/sync is (turned )?(on|off)\b/i)).toHaveCount(0);
   await page.goto("/app");
   await expect(page.getByText("No browser is connected yet.")).toHaveCount(0);
   await page.goto("/app/settings");
-  await expect(page.getByRole("region", { name: "Sync" })).toContainText("1 browser connected.");
+  await expect(page.getByRole("region", { name: "Sync" })).toContainText("1 browser connected. Turn sync on or off in each browser's SessionHub extension");
+  await expect(page.getByText(/sync is (turned )?(on|off)\b/i)).toHaveCount(0);
 });
 
 test("mobile: bottom navigation, no sidebar, no horizontal overflow", async ({ page }) => {

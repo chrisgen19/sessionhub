@@ -57,8 +57,8 @@ export default async function SettingsPage() {
             <span className="font-semibold text-fg">
               {connectedBrowsers > 0 ? `${plural(connectedBrowsers, "browser")} connected.` : "No browser connected."}
             </span>{" "}
-            Sync is turned on in each browser, in the SessionHub extension (Account, then Sync), and you see which titles and links
-            upload before anything is sent. Manage connected browsers on the Devices page.
+            Turn sync on or off in each browser&apos;s SessionHub extension (Account, then Sync). Before anything uploads, it shows which
+            titles and links will be sent. Manage connected browsers on the Devices page.
           </p>
         </Section>
         <Section title="Privacy">
