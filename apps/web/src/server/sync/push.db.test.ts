@@ -167,6 +167,10 @@ describe("sync push: workspaces and assignments", () => {
     expect(await prisma.workspace.findUniqueOrThrow({ where: { id } })).toMatchObject({ name: "Renamed in the extension", description: "Set on the web", icon: "folder" });
     expect(await one(pusher, create)).toMatchObject({ status: "accepted", serverVersion: 1, replayed: true });
     expect(await one(pusher, workspace(id, 1, { name: "Stale" }))).toMatchObject({ status: "conflict", code: "VERSION_CONFLICT", expectedVersion: 1, serverVersion: 3 });
+    // An update may carry only the field the device changed: the name set elsewhere stays.
+    expect(await one(pusher, workspace(id, 3, { color: "red" }))).toMatchObject({ status: "accepted", serverVersion: 4 });
+    expect(await prisma.workspace.findUniqueOrThrow({ where: { id } })).toMatchObject({ name: "Renamed in the extension", color: "red", version: 4 });
+    expect(await one(pusher, workspace(randomUUID(), 0, { color: "red" }))).toMatchObject({ status: "validation_error" });
   });
 
   it("assigns, keeps and removes a session's workspace; an upload without workspaceId leaves it as it is", async () => {

@@ -16,6 +16,8 @@ describe("pushOperationSchema", () => {
       base("savedSession", "delete", 3, null),
       base("workspace", "upsert", 0, { name: "W" }),
       base("workspace", "upsert", 4, { name: "W", description: null, icon: "folder", color: "blue", position: 3 }),
+      // An update carries only what changed (a per-field merge); the name can stay out.
+      base("workspace", "upsert", 4, { color: "red" }),
       base("workspace", "delete", 5, null),
     ]) {
       expect(pushOperationSchema.safeParse(operation).success, JSON.stringify(operation)).toBe(true);
@@ -30,6 +32,9 @@ describe("pushOperationSchema", () => {
       base("workspace", "upsert", 0, { name: "" }),
       base("workspace", "upsert", 0, { name: "W", icon: "<svg>" }),
       base("workspace", "delete", 0, null),
+      // A create needs a name, and an update must change something.
+      base("workspace", "upsert", 0, { color: "red" }),
+      base("workspace", "upsert", 4, {}),
       base("tag", "upsert", 0, { name: "T" }),
     ]) {
       expect(pushOperationSchema.safeParse(operation).success, JSON.stringify(operation)).toBe(false);

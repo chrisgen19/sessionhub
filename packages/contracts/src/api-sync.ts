@@ -25,16 +25,20 @@ export const syncSessionPayloadSchema = z.strictObject({
 export type SyncSessionPayload = z.infer<typeof syncSessionPayloadSchema>;
 
 /**
- * What a workspace upsert carries: its name, plus any other field the client changes. Absent fields
- * keep the server's value (a create uses the defaults), so a client never overwrites what it doesn't edit.
+ * What a workspace upsert carries: only the fields the client changes. Absent fields keep the
+ * server's value (a create uses the defaults and needs a name), so a client never overwrites what it
+ * doesn't edit, and can send its change again on top of a newer version after a conflict (since
+ * 2026-10-17 an update may leave out the name).
  */
-export const syncWorkspacePayloadSchema = z.strictObject({
-  name: workspaceFieldSchemas.name,
-  description: workspaceFieldSchemas.description.optional(),
-  icon: workspaceFieldSchemas.icon.optional(),
-  color: workspaceFieldSchemas.color.optional(),
-  position: workspaceFieldSchemas.position.optional(),
-});
+export const syncWorkspacePayloadSchema = z
+  .strictObject({
+    name: workspaceFieldSchemas.name.optional(),
+    description: workspaceFieldSchemas.description.optional(),
+    icon: workspaceFieldSchemas.icon.optional(),
+    color: workspaceFieldSchemas.color.optional(),
+    position: workspaceFieldSchemas.position.optional(),
+  })
+  .refine((payload) => Object.values(payload).some((value) => value !== undefined), { message: "Change at least one field" });
 export type SyncWorkspacePayload = z.infer<typeof syncWorkspacePayloadSchema>;
 
 const ids = { clientOperationId: z.uuid(), entityId: z.uuid() };
@@ -47,7 +51,9 @@ const sessionOperationSchema = z.discriminatedUnion("action", [
 ]);
 
 const workspaceOperationSchema = z.discriminatedUnion("action", [
-  z.strictObject({ ...ids, entityType: z.literal("workspace"), action: z.literal("upsert"), expectedVersion: upsertVersion, payload: syncWorkspacePayloadSchema }),
+  z
+    .strictObject({ ...ids, entityType: z.literal("workspace"), action: z.literal("upsert"), expectedVersion: upsertVersion, payload: syncWorkspacePayloadSchema })
+    .refine((operation) => operation.expectedVersion > 0 || operation.payload.name !== undefined, { message: "A new workspace needs a name", path: ["payload", "name"] }),
   z.strictObject({ ...ids, entityType: z.literal("workspace"), action: z.literal("delete"), expectedVersion: z.int().positive(), payload: z.null() }),
 ]);
 
