@@ -65,7 +65,7 @@ export const revokeDevice = async (prisma: PrismaClient, userId: string, id: str
 
 /** The calling device and its account, for the extension's "Connected as" view. */
 export const getDeviceWithAccount = async (prisma: PrismaClient, userId: string, deviceId: string): Promise<DeviceMeResponse> => {
-  const row = await prisma.device.findFirst({ where: { id: deviceId, userId }, select: { ...deviceFields, user: { select: { name: true, email: true } } } });
+  const row = await prisma.device.findFirst({ where: { id: deviceId, userId }, select: { ...deviceFields, user: { select: { id: true, name: true, email: true } } } });
   if (!row) throw notFound();
   const { user, ...device } = row;
   return { device: toDevice(device), account: user };

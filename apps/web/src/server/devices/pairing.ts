@@ -101,6 +101,6 @@ export const redeemPairing = async (prisma: PrismaClient, deviceCode: string, no
     const device = await tx.device.findFirst({ where: { id: pairing.deviceId, userId: pairing.userId }, include: { user: { select: { name: true, email: true } } } });
     if (!device || device.revokedAt) throw expired();
     const { credentials } = await issueCredential(tx, device, now);
-    return { status: "approved", credentials, device: toDevice(device), account: { name: device.user.name, email: device.user.email } };
+    return { status: "approved", credentials, device: toDevice(device), account: { id: device.userId, name: device.user.name, email: device.user.email } };
   });
 };
