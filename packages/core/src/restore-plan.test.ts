@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSavedSession } from "./capture";
-import { planRestore, planRetry } from "./restore-plan";
+import { planRestore, planRetry, withoutOpenTabs } from "./restore-plan";
 import { options, tab } from "./test-helpers";
 
 const sample = () =>
@@ -75,6 +75,68 @@ describe("planRestore", () => {
   it("is deterministic", () => {
     const session = sample();
     expect(planRestore(session)).toEqual(planRestore(session));
+  });
+});
+
+/** Two windows, each with a group; the second has a pinned tab after an unpinned one. */
+const twoWindows = () =>
+  buildSavedSession(
+    [
+      {
+        tabs: [tab(0, "https://a.test", { groupKey: 1 }), tab(1, "https://b.test")],
+        groups: [{ key: 1, title: "Dev", color: "green", collapsed: false }],
+      },
+      {
+        tabs: [tab(0, "https://c.test"), tab(1, "https://d.test", { pinned: true }), tab(2, "https://e.test", { groupKey: 2 })],
+        groups: [{ key: 2, title: "Docs", color: "blue", collapsed: true }],
+      },
+    ],
+    options(),
+  ).session;
+
+const urls = (plan: ReturnType<typeof planRestore>) => plan.windows.map((window) => window.tabs.map((tab) => tab.url));
+
+describe("planRestore with layout single", () => {
+  it("puts every window's tabs in one window: window order, pinned first overall, every group kept", () => {
+    const session = twoWindows();
+    const plan = planRestore(session, { layout: "single" });
+    expect(urls(plan)).toEqual([["https://d.test", "https://a.test", "https://b.test", "https://c.test", "https://e.test"]]);
+    expect(plan.windows[0]!.groups.map((group) => group.title)).toEqual(["Dev", "Docs"]);
+    expect(plan.windows[0]!.sourceWindowId).toBe(session.windows[0]!.id);
+    expect(plan.tabCount).toBe(5);
+  });
+
+  it("keeps skipped tabs and matches the original layout when only one window has tabs", () => {
+    const merged = planRestore(sample(), { layout: "single" });
+    expect(merged.skipped).toEqual(planRestore(sample()).skipped);
+    expect(urls(merged)).toEqual([["https://pinned.test", "https://c.test", "https://a.test", "https://b.test"]]);
+
+    const session = twoWindows();
+    const secondOnly = { tabIds: new Set(session.windows[1]!.tabs.map((t) => t.id)) };
+    expect(planRestore(session, { ...secondOnly, layout: "single" })).toEqual(planRestore(session, secondOnly));
+  });
+});
+
+describe("withoutOpenTabs", () => {
+  it("leaves out tabs whose exact url is open, lists them, and drops groups and windows left empty", () => {
+    const plan = withoutOpenTabs(planRestore(twoWindows()), new Set(["https://a.test", "https://c.test", "https://d.test", "https://e.test/other"]));
+    expect(urls(plan)).toEqual([["https://b.test"], ["https://e.test"]]);
+    expect(plan.windows[0]!.groups).toEqual([]);
+    expect(plan.windows[1]!.groups.map((group) => group.title)).toEqual(["Docs"]);
+    expect(plan.alreadyOpen?.map((tab) => tab.url)).toEqual(["https://a.test", "https://d.test", "https://c.test"]);
+    expect(plan.tabCount).toBe(2);
+  });
+
+  it("plans nothing when every tab is already open, and a retry never reopens them", () => {
+    const original = planRestore(twoWindows(), { layout: "single" });
+    const all = withoutOpenTabs(original, new Set(urls(original).flat()));
+    expect(all).toMatchObject({ windows: [], tabCount: 0 });
+    expect(all.alreadyOpen).toHaveLength(5);
+
+    const some = withoutOpenTabs(original, new Set(["https://b.test"]));
+    const retry = planRetry(some, new Set());
+    expect(urls(retry).flat()).not.toContain("https://b.test");
+    expect(retry).not.toHaveProperty("alreadyOpen");
   });
 });
 

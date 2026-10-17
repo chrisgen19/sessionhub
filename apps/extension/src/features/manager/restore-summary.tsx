@@ -7,17 +7,25 @@ import type { RestoreJobRecord } from "../../lib/db";
 import { plural } from "../../lib/format";
 import { summarizeRestoreJob } from "../../lib/restore-job-repository";
 
-export function SkippedList({ skipped }: { skipped: SkippedTab[] }) {
+type ListedTab = Pick<SkippedTab, "sourceTabId" | "url"> & { title?: string; reason?: string };
+
+/** Tabs that weren't opened, each with its reason when it has one. */
+export function SkippedList({ skipped }: { skipped: ListedTab[] }) {
   return (
     <ul className="mt-1.5 max-h-28 space-y-0.5 overflow-y-auto">
       {skipped.map((tab) => (
         <li key={tab.sourceTabId} className="truncate" title={tab.url}>
-          {tab.title || displayUrl(tab.url)}: {tab.reason}
+          {tab.title || displayUrl(tab.url)}
+          {tab.reason ? `: ${tab.reason}` : ""}
         </li>
       ))}
     </ul>
   );
 }
+
+/** Where the first run put the tabs (records from before targets existed used new windows). */
+const destination = (job: RestoreJobRecord) =>
+  job.target === "this-window" ? "in this window" : `in ${plural(job.plan.windows.length, "new window")}`;
 
 interface RestoreSummaryProps {
   session: SavedSession;
@@ -37,6 +45,8 @@ export function RestoreSummary({ session, job, retrying, retryError, onRetry, on
   const ok = job.status === "completed";
   const running = job.status === "running";
   const attempts = job.attempts ?? 1;
+  const alreadyOpen = (job.plan.alreadyOpen ?? []).map((tab) => ({ ...tab, title: tabsById.get(tab.sourceTabId)?.title }));
+  const nothingToOpen = job.plan.tabCount === 0 && alreadyOpen.length > 0;
 
   return (
     <>
@@ -48,9 +58,15 @@ export function RestoreSummary({ session, job, retrying, retryError, onRetry, on
         ) : (
           <XCircle aria-hidden="true" className="size-4" />
         )}
-        {running ? "Still restoring: opened " : "Opened "}
-        {openedCount} of {plural(job.plan.tabCount, "tab")}
-        {attempts > 1 ? ` after ${plural(attempts, "attempt")}` : ` in ${plural(job.plan.windows.length, "new window")}`}.
+        {nothingToOpen ? (
+          "Nothing to open: every tab you chose is already open in this window."
+        ) : (
+          <>
+            {running ? "Still restoring: opened " : "Opened "}
+            {openedCount} of {plural(job.plan.tabCount, "tab")}
+            {attempts > 1 ? ` after ${plural(attempts, "attempt")}` : ` ${destination(job)}`}.
+          </>
+        )}
       </p>
       {job.interruptedAt && (
         <p className="mt-2 text-xs text-fg-muted">
@@ -74,6 +90,12 @@ export function RestoreSummary({ session, job, retrying, retryError, onRetry, on
             {notAttemptedCount > 0 && <li>{plural(notAttemptedCount, "tab")} weren't reached before the restore stopped</li>}
           </ul>
           <p className="mt-1.5 text-fg-muted">Retry opens only these tabs, in a new window. Tabs that already opened aren't opened again.</p>
+        </div>
+      )}
+      {alreadyOpen.length > 0 && (
+        <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-fg-muted">
+          <p className="font-semibold">{plural(alreadyOpen.length, "tab")} already open in this window, so not opened again</p>
+          <SkippedList skipped={alreadyOpen} />
         </div>
       )}
       {job.plan.skipped.length > 0 && (

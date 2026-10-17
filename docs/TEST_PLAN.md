@@ -32,6 +32,8 @@ Never rely only on mocked `chrome.tabs` for critical browser restoration behavio
 ### Restore planner
 
 - New windows default.
+- One new window and this window: every chosen tab in one window, window order, pinned first, groups kept; appending to an open window leaves its tabs, groups and order alone (`e2e/restore-targets.spec.ts`, including a target window whose last tab is grouped).
+- Skip tabs already open in the target window: listed in `alreadyOpen`, never retried; a closed target window opens nothing and creates no job.
 - Order/pinning/group relationships rebuilt in a deterministic plan.
 - Unsupported items omitted with visible failures and user-readable reasons.
 - Partial restore resumes only failed operations and avoids duplicate successful ones.

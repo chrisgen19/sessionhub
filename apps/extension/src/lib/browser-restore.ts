@@ -1,7 +1,7 @@
 import { browser } from "wxt/browser";
-import type { PlannedWindow } from "@sessionhub/core/restore-plan";
+import type { PlannedTab, PlannedWindow } from "@sessionhub/core/restore-plan";
 import type { RestoreTabOutcome } from "./db";
-import type { HandlerDeps } from "./command-handlers";
+import { BrowserError, type HandlerDeps } from "./command-handlers";
 
 /** User-readable failure reason; Chrome's raw messages include runtime ids. */
 const message = (error: unknown): string => {
@@ -28,19 +28,57 @@ const applyGroups = async (window: PlannedWindow, windowId: number, createdIds: 
   }
 };
 
+/** Collects outcomes and records each one as it settles. */
+const outcomeLog = (record: (outcome: RestoreTabOutcome) => Promise<void>) => {
+  const outcomes: RestoreTabOutcome[] = [];
+  const settle = async (outcome: RestoreTabOutcome) => {
+    outcomes.push(outcome);
+    await record(outcome);
+  };
+  return { outcomes, settle };
+};
+
+/** Opens each tab in background in `windowId`, recording its outcome before the next tab opens. */
+const openTabs = async (
+  tabs: PlannedTab[],
+  windowId: number,
+  createdIds: Map<string, number>,
+  settle: (outcome: RestoreTabOutcome) => Promise<void>,
+) => {
+  for (const tab of tabs) {
+    let outcome: RestoreTabOutcome;
+    try {
+      const created = await browser.tabs.create({ windowId, url: tab.url, pinned: tab.pinned, active: false });
+      if (created.id !== undefined) createdIds.set(tab.sourceTabId, created.id);
+      outcome = { sourceTabId: tab.sourceTabId, status: "opened" };
+    } catch (error) {
+      outcome = { sourceTabId: tab.sourceTabId, status: "failed", error: message(error) };
+    }
+    await settle(outcome);
+  }
+};
+
 /**
- * Opens one planned window as a NEW browser window. Existing windows and tabs are
- * never closed, moved or navigated. Each tab is attempted independently, and its
- * outcome is recorded before the next tab opens, so a worker stopped mid-window
- * leaves at most the tab it was opening unrecorded. A recording error stops the window.
+ * Opens one planned window as a NEW browser window, or with `into` appends its tabs (in background,
+ * after the existing ones) to that open window. Existing windows and tabs are never closed, moved
+ * or navigated. Each tab is attempted independently, and its outcome is recorded before the next
+ * tab opens, so a worker stopped mid-window leaves at most the tab it was opening unrecorded. A
+ * recording error stops the window.
  */
-export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window, record) => {
+export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window, record, { into } = {}) => {
+  const createdIds = new Map<string, number>();
+  const { outcomes, settle } = outcomeLog(record);
+  if (into !== undefined) {
+    await openTabs(window.tabs, into, createdIds, settle);
+    await applyGroups(window, into, createdIds);
+    return outcomes;
+  }
+
   const [first, ...rest] = window.tabs;
   if (!first) return [];
 
   let windowId: number;
   let firstTabId: number;
-  const createdIds = new Map<string, number>();
   try {
     const created = await browser.windows.create({ url: first.url, focused: true });
     const returnedTabId = created?.tabs?.[0]?.id;
@@ -52,11 +90,6 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window,
     return window.tabs.map((tab) => ({ sourceTabId: tab.sourceTabId, status: "failed", error: message(error) }));
   }
 
-  const outcomes: RestoreTabOutcome[] = [];
-  const settle = async (outcome: RestoreTabOutcome) => {
-    outcomes.push(outcome);
-    await record(outcome);
-  };
   // Persist the successful open before cosmetic work: pinning can fail after the tab
   // exists. Reporting that as a failed open would duplicate it on Retry.
   await settle({ sourceTabId: first.sourceTabId, status: "opened" });
@@ -67,17 +100,17 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window,
       // Like group metadata, pinning is best effort; the URL is already open.
     }
   }
-  for (const tab of rest) {
-    let outcome: RestoreTabOutcome;
-    try {
-      const created = await browser.tabs.create({ windowId, url: tab.url, pinned: tab.pinned, active: false });
-      if (created.id !== undefined) createdIds.set(tab.sourceTabId, created.id);
-      outcome = { sourceTabId: tab.sourceTabId, status: "opened" };
-    } catch (error) {
-      outcome = { sourceTabId: tab.sourceTabId, status: "failed", error: message(error) };
-    }
-    await settle(outcome);
-  }
+  await openTabs(rest, windowId, createdIds, settle);
   await applyGroups(window, windowId, createdIds);
   return outcomes;
+};
+
+/** The URLs open in a window tabs are about to be restored into, after checking it can take them. */
+export const inspectBrowserWindow: NonNullable<HandlerDeps["inspectWindow"]> = async (windowId) => {
+  const window = await browser.windows.get(windowId, { populate: true }).catch(() => {
+    throw new BrowserError("That window is no longer open, so nothing was opened");
+  });
+  if (window.incognito) throw new BrowserError("SessionHub doesn't open tabs in private windows");
+  if (window.type !== "normal") throw new BrowserError("Tabs can only be opened in a normal browser window");
+  return { openUrls: (window.tabs ?? []).map((tab) => tab.url || tab.pendingUrl || "").filter((url) => url !== "") };
 };

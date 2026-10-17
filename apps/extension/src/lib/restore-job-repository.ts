@@ -1,4 +1,4 @@
-import type { RestorePlan } from "@sessionhub/core/restore-plan";
+import type { RestoreDestination, RestorePlan } from "@sessionhub/core/restore-plan";
 import type { RestoreJobRecord, RestoreTabOutcome, SessionHubDb } from "./db";
 
 export class RestoreJobNotFoundError extends Error {
@@ -12,7 +12,7 @@ export class RestoreJobNotRetryableError extends Error {
 /** Persists the plan before any tab is opened so an interrupted restore is inspectable later. */
 export const createRestoreJob = async (
   db: SessionHubDb,
-  input: { id: string; plan: RestorePlan; now: Date },
+  input: { id: string; plan: RestorePlan; now: Date; target?: RestoreDestination },
 ): Promise<RestoreJobRecord> => {
   const timestamp = input.now.toISOString();
   const job: RestoreJobRecord = {
@@ -24,6 +24,7 @@ export const createRestoreJob = async (
     plan: input.plan,
     outcomes: [],
     attempts: 1,
+    ...(input.target ? { target: input.target } : {}),
   };
   await db.restoreJobs.add(job);
   return job;

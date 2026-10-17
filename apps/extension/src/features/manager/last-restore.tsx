@@ -19,7 +19,9 @@ export function LastRestore({ session }: { session: SavedSession }) {
     job.status === "running"
       ? "in progress"
       : job.status === "completed"
-        ? `opened all ${job.plan.tabCount}`
+        ? job.plan.tabCount === 0
+          ? "everything was already open"
+          : `opened all ${job.plan.tabCount}`
         : `opened ${openedCount} of ${job.plan.tabCount}${job.interruptedAt ? ", interrupted" : ""}`;
   const needsAttention = job.status === "partial" || job.status === "failed";
 

@@ -24,6 +24,46 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (restore targets, PR 1 of the open picker) / Claude Code (Opus 5.5) / `feature/restore-targets` (macOS laptop)
+
+**Why:** restoring was all or nothing: always one new window per saved window, and only whole windows could be unticked. The user wants Session Buddy-style opening: pick windows and tabs, and open into new windows, one window or the current one.
+
+**User's choices (plan approved 2026-10-17):**
+- Destinations: new windows, one new window, this window; no replace.
+- Split button repeating the last destination; confirm only above 50 tabs; skip already-open tabs (this window, on by default).
+- Also: click a tab to open it, select search matches, lazy loading (spike first).
+- Popup with Open / Save tabs; window size and position later.
+
+**Delivery:** 4 PRs. This one is the worker side only (no UI beyond summary copy); next `feature/open-picker`, `feature/popup-open-save-tabs`, `feature/lazy-open`.
+
+**Implemented:**
+- `packages/core/src/restore-plan.ts`:
+  - `layout: "single"` merges every planned window into one (window order, pinned first, groups kept).
+  - `withoutOpenTabs` moves tabs whose exact URL is open into `plan.alreadyOpen` (`{ sourceTabId, url }`; the summary looks up titles) and recounts.
+  - `RestoreDestination` type; `planRetry` shares the group trimming.
+- `lib/messages.ts`: optional `target` on `restore.start` and `recovery.restore` (`new-windows` / `one-window` / `this-window` with `windowId` and `skipOpen`).
+- `lib/command-handlers.ts`:
+  - New optional `inspectWindow` dep. For this window it is checked before the job exists, so a closed, private or non-normal window opens nothing.
+  - The job stores `target` (kind only). Retry still opens in a new window.
+- `lib/browser-restore.ts`: `restoreBrowserWindow(window, record, { into })` appends in background to an open window (shared `openTabs` loop), plus `inspectBrowserWindow`. Wired in `background.ts`.
+- Copy:
+  - The summary says "in 2 new windows", "in 1 new window" or "in this window".
+  - It lists tabs that were already open.
+  - When nothing was left: "Nothing to open: every tab you chose is already open in this window.", and the Last restore line says "everything was already open".
+- Docs: SYSTEM_DESIGN decisions (3 rows); UI_UX_DESIGN section 12 update and 18a (popup change marked planned); DATA_MODEL `restoreJobs`; TEST_PLAN.
+- Deviation from the plan: `tabMatchesQuery` moves to PR 2, where it is first used.
+
+**Validated:**
+- `pnpm check`: all packages pass. Core 95 tests (4 new); extension 264 (15 new: adapter into-window and inspect, 8 handler target cases, 3 summary copy).
+- `pnpm build`, then `pnpm test:e2e`: extension 14/14, including the new `e2e/restore-targets.spec.ts` (3):
+  - this window: its last tab is grouped, the appended tabs don't join that group, the existing order is kept, the new pinned tab goes to the end of the pinned area, and the already-open tab is skipped;
+  - one new window from 2 saved windows;
+  - a closed window opens nothing and creates no job.
+- Web E2E 57/57.
+- Not run: `test:perf`; there's no new UI to screenshot.
+
+**Next step:** commit, push and open the PR. Then PR 2 (`feature/open-picker`): the selectable tree, split button and preferences in the manager and Recovery inspectors, replacing the restore dialog.
+
 ### 2026-10-17 (extension 0.1.1 release ZIP rebuilt with the popup fix) / Claude Code (Opus 5.5) / `main` at `fc4ec7e` (macOS laptop)
 
 **Why:** PR #35 (popup empty space, `fc4ec7e`) changed extension code after the 0.1.1 ZIP was built from `60f4f63`. That ZIP was never uploaded, so the version stays 0.1.1 and this record replaces the earlier one.

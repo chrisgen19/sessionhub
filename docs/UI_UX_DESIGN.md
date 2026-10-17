@@ -411,6 +411,14 @@ Clarify that revoking a device blocks new cloud sync but does not remotely erase
 - Large jobs display `X of Y restored`; cancellation applies only to not-yet-started actions. Describe unavoidable partial outcomes honestly.
 - Never automatically close existing windows. Destructive "replace session" is out of MVP.
 
+**Update 2026-10-17 (user's decision, after research into Session Buddy v4):** the modal is being replaced by an in-place open picker. The worker side is built (PR `feature/restore-targets`); the picker UI and popup opening are planned (`feature/open-picker`, `feature/popup-open-save-tabs`).
+
+- Destinations: **Open in new windows** (one per saved window, default), **Open in one new window**, **Open in this window** (appended after its tabs; "Skip tabs already open here" on by default). Still additive: nothing is closed or replaced, and there is no "replace this window".
+- Selection: tick windows and single tabs in the session's own tree (tri-state window boxes, Shift ranges); tabs that can't reopen are listed and can't be ticked.
+- One split button that repeats the last destination used; its menu lists all three.
+- The ticked tree is the preview, so opening needs no extra dialog, except above 50 tabs ("Open 120 tabs?").
+- Retry still opens the remaining tabs in a new window, whatever the first destination.
+
 ## 13. Sync indicators and UX state contract
 
 | State | Visual label | Meaning | Primary user action |
@@ -505,9 +513,10 @@ Component states must cover default, hover, keyboard-focus, selected, disabled, 
 
 Built so far: popup (search, Save window, Save all (N), recent sessions, Open manager; the save buttons were replaced by the save picker on 2026-10-17, section 18i) and the manager's Saved Sessions view (list, search, inspector with window/group/tab tree, rename, export, delete confirmation, restore preview and summary). Deviations from the wireframes, all deliberate for this slice:
 
-- Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus.
+- Popup recent-session click opens the manager on that session (`manager.html#session=<id>`) instead of a preview sheet. Restoring from the popup is unsafe because the popup closes when the new window takes focus. *Planned change (2026-10-17, section 12 update):* the popup gets Open and Save tabs and opens sessions itself; the worker runs restores, so a popup closing mid-restore doesn't stop one, and the result stays in the manager's Last restore.
 - Popup has no workspace selector, side-panel button or settings entry yet: those features don't exist, and the UI must not expose actions a surface can't perform.
-- Restore modal offers only "Open in new windows" (stated as text, no radio). "Add to current window" is not implemented.
+- Restore modal offers only "Open in new windows" (stated as text, no radio). "Add to current window" is not implemented in the UI yet; the worker accepts it since 2026-10-17 (section 12 update).
+- Restore summary (2026-10-17) says where tabs went ("in 2 new windows", "in 1 new window", "in this window"), lists tabs skipped because they were already open in that window, and reads "Nothing to open: every tab you chose is already open in this window." when nothing was left; the Last restore line then says "everything was already open".
 - Manager nav shows Saved sessions and Recovery (a horizontal row under the top bar below 1024 px). Below 1280 px the inspector replaces the list with a Back link; below 1024 px the sidebar collapses to a top bar.
 - Sync status: see 18e (it was always "Local only" before sync existed).
 - The window tree is not virtualized yet (fine at hundreds of tabs; M5 item).

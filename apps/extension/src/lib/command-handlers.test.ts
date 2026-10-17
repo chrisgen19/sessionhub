@@ -333,3 +333,98 @@ describe("handleCommand", () => {
     });
   });
 });
+
+describe("restore targets", () => {
+  const urlsPassedTo = (fn: HandlerDeps["restoreWindow"]) =>
+    vi.mocked(fn).mock.calls.map(([window]) => window.tabs.map((tab) => tab.url));
+  const optionsPassedTo = (fn: HandlerDeps["restoreWindow"]) => vi.mocked(fn).mock.calls.map(([, , options]) => options);
+  const start = async (deps: HandlerDeps, target: Record<string, unknown> | undefined) => {
+    const { sessionId } = await capture(deps);
+    return handleCommand({ type: "restore.start", sessionId, ...(target ? { target } : {}) }, deps);
+  };
+  const jobOf = (response: Awaited<ReturnType<typeof handleCommand>>) => {
+    if (!response.ok) throw new Error(response.error.message);
+    return (response.data as { job: RestoreJobRecord }).job;
+  };
+
+  it("opens new windows by default and records that", async () => {
+    const deps = makeDeps();
+    const job = jobOf(await start(deps, undefined));
+    expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn"], ["https://example.com/"]]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined }, { into: undefined }]);
+    expect(job.target).toBe("new-windows");
+  });
+
+  it("puts every window's tabs in one new window", async () => {
+    const deps = makeDeps();
+    const job = jobOf(await start(deps, { kind: "one-window" }));
+    expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn", "https://example.com/"]]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined }]);
+    expect(job).toMatchObject({ target: "one-window", status: "completed" });
+  });
+
+  it("appends to the current window, skipping tabs already open there, and never stores the window id", async () => {
+    const inspectWindow = vi.fn(async () => ({ openUrls: ["https://react.dev/learn", "https://other.test/"] }));
+    const deps = makeDeps({ inspectWindow });
+    const job = jobOf(await start(deps, { kind: "this-window", windowId: 987654, skipOpen: true }));
+
+    expect(inspectWindow).toHaveBeenCalledWith(987654);
+    expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://example.com/"]]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: 987654 }]);
+    expect(job).toMatchObject({ target: "this-window", status: "completed", plan: { tabCount: 2 } });
+    expect(job.plan.alreadyOpen?.map((tab) => tab.url)).toEqual(["https://react.dev/learn"]);
+    expect(JSON.stringify(await deps.db.restoreJobs.get(job.id))).not.toContain("987654");
+  });
+
+  it("opens every chosen tab in the current window when asked not to skip open ones", async () => {
+    const deps = makeDeps({ inspectWindow: async () => ({ openUrls: ["https://react.dev/learn"] }) });
+    const job = jobOf(await start(deps, { kind: "this-window", windowId: 42, skipOpen: false }));
+    expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn", "https://example.com/"]]);
+    expect(job.plan.alreadyOpen).toBeUndefined();
+  });
+
+  it("opens nothing and creates no job when the window can't take tabs", async () => {
+    for (const overrides of [
+      { inspectWindow: async () => Promise.reject(new BrowserError("That window is no longer open, so nothing was opened")) },
+      {},
+    ] satisfies Partial<HandlerDeps>[]) {
+      const deps = makeDeps(overrides);
+      expect(await start(deps, { kind: "this-window", windowId: 42, skipOpen: true })).toMatchObject({ ok: false, error: { code: "browser-error" } });
+      expect(deps.restoreWindow).not.toHaveBeenCalled();
+      expect(await deps.db.restoreJobs.count()).toBe(0);
+    }
+  });
+
+  it("settles as completed without opening anything when every tab is already open", async () => {
+    const deps = makeDeps({ inspectWindow: async () => ({ openUrls: ["https://github.com/acme/pull/42", "https://react.dev/learn", "https://example.com/"] }) });
+    const job = jobOf(await start(deps, { kind: "this-window", windowId: 42, skipOpen: true }));
+    expect(deps.restoreWindow).not.toHaveBeenCalled();
+    expect(job).toMatchObject({ status: "completed", plan: { tabCount: 0, windows: [] } });
+    expect(job.plan.alreadyOpen).toHaveLength(3);
+  });
+
+  it("retries a current-window restore in a new window, without the tabs that were already open", async () => {
+    const deps = makeDeps({
+      inspectWindow: async () => ({ openUrls: ["https://example.com/"] }),
+      restoreWindow: vi.fn<HandlerDeps["restoreWindow"]>(async (window) =>
+        window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "failed", error: "No window with id: 42" })),
+      ),
+    });
+    const job = jobOf(await start(deps, { kind: "this-window", windowId: 42, skipOpen: true }));
+    expect(job.status).toBe("failed");
+
+    deps.restoreWindow = vi.fn<HandlerDeps["restoreWindow"]>(async (window) =>
+      window.tabs.map((tab): RestoreTabOutcome => ({ sourceTabId: tab.sourceTabId, status: "opened" })),
+    );
+    expect(await handleCommand({ type: "restore.retry", jobId: job.id }, deps)).toMatchObject({ ok: true, data: { job: { status: "completed" } } });
+    expect(urlsPassedTo(deps.restoreWindow)).toEqual([["https://github.com/acme/pull/42", "https://react.dev/learn"]]);
+    expect(optionsPassedTo(deps.restoreWindow)).toEqual([{ into: undefined }]);
+  });
+
+  it("rejects a malformed target", async () => {
+    const deps = makeDeps();
+    for (const target of [{ kind: "replace-window" }, { kind: "this-window", skipOpen: true }, { kind: "this-window", windowId: "42", skipOpen: true }]) {
+      expect(await start(deps, target)).toMatchObject({ ok: false, error: { code: "invalid-command" } });
+    }
+  });
+});

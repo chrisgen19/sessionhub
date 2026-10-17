@@ -1,7 +1,7 @@
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
 import { readBrowserWindows } from "../lib/browser-capture";
-import { restoreBrowserWindow } from "../lib/browser-restore";
+import { inspectBrowserWindow, restoreBrowserWindow } from "../lib/browser-restore";
 import { handleCommand, toSyncDeps, type HandlerDeps } from "../lib/command-handlers";
 import { API_ORIGIN } from "../lib/api-config";
 import { getDb } from "../lib/db";
@@ -20,6 +20,7 @@ const deps = (): HandlerDeps => ({
   db: getDb(),
   readWindows: readBrowserWindows,
   restoreWindow: restoreBrowserWindow,
+  inspectWindow: inspectBrowserWindow,
   now: () => new Date(),
   createId: () => crypto.randomUUID(),
   account: {
