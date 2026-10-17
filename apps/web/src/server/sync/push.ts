@@ -3,7 +3,8 @@ import { pushOperationSchema, pushResultSchema, type PushOperation, type PushRes
 import type { PrismaClient } from "@sessionhub/database/client";
 import type { DevicePrincipal } from "../devices/credentials";
 import { RollbackWith, ServiceError } from "../service-errors";
-import { createSessionInTx, deleteSessionInTx, updateSessionInTx, type DeleteResult, type WriteResult } from "../sessions/mutations";
+import { createSessionInTx, deleteSessionInTx, updateSessionInTx } from "../sessions/mutations";
+import { createWorkspaceInTx, deleteWorkspaceInTx, updateWorkspaceInTx } from "../workspaces/service";
 import { log } from "../observability/logger";
 import { nextSequence, runMutation, type Tx } from "./transaction";
 
@@ -17,7 +18,7 @@ type Receipted = Extract<PushResult, { status: "accepted" | "conflict" | "reject
 type StoredResult = Receipted extends infer R ? (R extends Receipted ? Omit<R, "replayed"> : never) : never;
 type StoredAccepted = Extract<StoredResult, { status: "accepted" }>;
 
-const REJECTED_CODES = ["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE", "LIMIT_REACHED"] as const;
+const REJECTED_CODES = ["NOT_FOUND", "ID_IN_USE", "INVALID_WORKSPACE", "LIMIT_REACHED", "WORKSPACE_NOT_EMPTY"] as const;
 const isRejectedCode = (code: string): code is (typeof REJECTED_CODES)[number] => (REJECTED_CODES as readonly string[]).includes(code);
 
 /** The device row behind a principal, with what the push route needs to know about its account. */
@@ -29,7 +30,7 @@ export const loadPusher = async (prisma: PrismaClient, { userId, deviceId }: Dev
   return { pusher: { userId, deviceId, deviceName: device.displayName }, emailVerified: device.user.emailVerified };
 };
 
-/** One operation per session per push: a later one could otherwise apply on top of an earlier one's conflict. */
+/** One operation per entity (session or workspace) per push: a later one could otherwise apply on top of an earlier one's conflict. */
 export const hasRepeatedEntity = (operations: unknown[]): boolean => {
   const seen = new Set<string>();
   for (const operation of operations) {
@@ -54,29 +55,59 @@ const accepted = (operation: PushOperation, serverVersion: number, serverSequenc
   serverSequence,
 });
 
-/** Runs the shared session mutation for one operation inside the push transaction. */
-const apply = async (tx: Tx, pusher: Pusher, sequence: bigint, operation: PushOperation): Promise<StoredAccepted> => {
-  const source = { deviceId: pusher.deviceId, deviceName: pusher.deviceName };
+type SessionOperation = Extract<PushOperation, { entityType: "savedSession" }>;
+type WorkspaceOperation = Extract<PushOperation, { entityType: "workspace" }>;
+type Written = { version: number; sequence: string | null };
+
+/** The version a service's idempotent repeat answered with (a session or workspace detail, or a tombstone). */
+const repeatedVersion = (value: unknown): number => {
+  const answer = value as { detail?: { version: number }; workspace?: { version: number }; version?: number };
+  return answer.detail?.version ?? answer.workspace?.version ?? answer.version ?? 1;
+};
+
+/**
+ * Runs one write. The service's own idempotent repeat (same create content again, delete of a
+ * tombstone) wrote nothing, so it rolls back without a receipt; the same operation computes the
+ * same answer again.
+ */
+const acceptedOrRepeat = async (operation: PushOperation, write: () => Promise<Written>): Promise<StoredAccepted> => {
   try {
-    if (operation.action === "delete") {
-      const result = await deleteSessionInTx(tx, pusher.userId, sequence, operation.entityId, operation.expectedVersion);
-      return accepted(operation, result.version, result.sequence);
-    }
-    const { name, windows } = operation.payload;
-    const { detail, sequence: written } =
-      operation.expectedVersion === 0
-        ? await createSessionInTx(tx, pusher.userId, sequence, { id: operation.entityId, name, description: null, workspaceId: null, isPinned: false, windows }, source)
-        : await updateSessionInTx(tx, pusher.userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, windows }, source);
-    return accepted(operation, detail.version, written);
+    const { version, sequence } = await write();
+    return accepted(operation, version, sequence);
   } catch (error) {
-    // The service's own idempotent repeat (same create content again, delete of a tombstone): nothing
-    // was written, so roll back without a receipt; the same operation computes the same answer again.
     if (!(error instanceof RollbackWith)) throw error;
-    const value = error.value as WriteResult | DeleteResult;
-    const result: PushResult = { ...accepted(operation, "detail" in value ? value.detail.version : value.version, null), replayed: false };
+    const result: PushResult = { ...accepted(operation, repeatedVersion(error.value), null), replayed: false };
     throw new RollbackWith(result);
   }
 };
+
+/** A session upload through the shared session mutations. An absent workspaceId keeps the server's. */
+const applySession = (tx: Tx, pusher: Pusher, sequence: bigint, operation: SessionOperation) =>
+  acceptedOrRepeat(operation, async () => {
+    if (operation.action === "delete") return deleteSessionInTx(tx, pusher.userId, sequence, operation.entityId, operation.expectedVersion);
+    const source = { deviceId: pusher.deviceId, deviceName: pusher.deviceName };
+    const { name, windows, workspaceId } = operation.payload;
+    const { detail, sequence: written } =
+      operation.expectedVersion === 0
+        ? await createSessionInTx(tx, pusher.userId, sequence, { id: operation.entityId, name, description: null, workspaceId: workspaceId ?? null, isPinned: false, windows }, source)
+        : await updateSessionInTx(tx, pusher.userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, windows, workspaceId }, source);
+    return { version: detail.version, sequence: written };
+  });
+
+/** A workspace upload through the workspace service (same rules as the REST API). Absent fields keep the server's. */
+const applyWorkspace = (tx: Tx, userId: string, sequence: bigint, operation: WorkspaceOperation) =>
+  acceptedOrRepeat(operation, async () => {
+    if (operation.action === "delete") return deleteWorkspaceInTx(tx, userId, sequence, operation.entityId, operation.expectedVersion);
+    const { name, description, icon, color, position } = operation.payload;
+    const { workspace, sequence: written } =
+      operation.expectedVersion === 0
+        ? await createWorkspaceInTx(tx, userId, sequence, { id: operation.entityId, name, description: description ?? null, icon: icon ?? null, color: color ?? null, position: position ?? 0 })
+        : await updateWorkspaceInTx(tx, userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, description, icon, color, position });
+    return { version: workspace.version, sequence: written };
+  });
+
+const apply = (tx: Tx, pusher: Pusher, sequence: bigint, operation: PushOperation): Promise<StoredAccepted> =>
+  operation.entityType === "workspace" ? applyWorkspace(tx, pusher.userId, sequence, operation) : applySession(tx, pusher, sequence, operation);
 
 /**
  * Records a conflict or rejection outside the rolled-back mutation (it wrote nothing, so it used no

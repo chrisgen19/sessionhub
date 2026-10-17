@@ -19,3 +19,7 @@ Implemented the fresh local identity and atomic cursor/bootstrap reset, preservi
 Validated: initial regression run 6 failed / 2 passed before the fix; focused repository/downloader suites 35/35 after the fix; `pnpm check --force` 17/17 tasks and 416 unit tests; `pnpm build` both apps; focused new browser test 1/1; full web E2E 48/48; extension E2E 9/9; `git diff --check`. Exact commands and verification caveats are in PROGRESS.
 
 No schema migration, server behavior or personal data changed. Already-resolved old local-id collisions are not bulk-migrated. LIMIT_REACHED retry and revoked web-session redirects remain pending. No push or PR is included in this implementation task.
+
+## PR #17 and main integration
+
+On the user's subsequent PR request, pushed `1a3487f` and opened #17. Main had advanced through #15 (`3b8a37a`); integrated it with only a PROGRESS documentation conflict, preserving both histories. Combined-branch checks: `pnpm check --force --concurrency=1` 17/17 and 419 unit tests; web DB suite 66/66; both builds; root `pnpm test:e2e` extension 9/9 + web 49/49. Git diff checks pass; CI on the pushed resolution remains to be observed. No extra behavior or migration was introduced during integration.

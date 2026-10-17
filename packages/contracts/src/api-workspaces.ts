@@ -18,6 +18,9 @@ const description = z.string().trim().max(WORKSPACE_LIMITS.descriptionMax).nulla
 const icon = z.string().regex(/^[a-z0-9-]{1,40}$/, "Use a short icon name (a-z, 0-9, -)").nullable();
 const position = z.int().min(0).max(WORKSPACE_LIMITS.positionMax);
 
+/** The editable fields' rules, shared with the sync upload (api-sync.ts). */
+export const workspaceFieldSchemas = { name, description, icon, color: tabGroupColorSchema.nullable(), position } as const;
+
 export const createWorkspaceRequestSchema = z.strictObject({
   /** Client-generated id makes a retried create idempotent (same id + content returns 200). */
   id: z.uuid().optional(),

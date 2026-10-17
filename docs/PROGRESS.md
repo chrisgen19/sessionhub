@@ -17,11 +17,26 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 merged as `8c4102e` (M6 worktree/branches cleaned up). Current fix: `bugfix/local-only-conflict-identity` in `sessionhub-fix-local-only-conflict`. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 merged as `8c4102e` (M6 worktree/branches cleaned up); PR #15 (workspace sync, server side) merged as `3b8a37a`. Current fix: `bugfix/local-only-conflict-identity` in `sessionhub-fix-local-only-conflict`. Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (PR #17: integrate current main and resolve documentation conflict) / Codex / `bugfix/local-only-conflict-identity`
+
+**Request:** open the local-only identity fix as a PR, then continue until it is reviewable. PR #17 was created from `1a3487f`; GitHub reported a conflict because PR #15 had meanwhile merged into main as `3b8a37a`.
+
+**Resolution:** merged current main into this branch. The only textual conflict was `docs/PROGRESS.md`: kept both session histories and both sets of remaining work, updated #15/#16 as merged and #17 as open. Workspace contracts/server behavior from main and the local-only fix are preserved. No source conflict or additional fix behavior change. Compared against `origin/main`, the diff remains the original fix, regression tests and documentation. Other worktrees were not changed.
+
+**Verification of the combined branch:**
+- `pnpm check --force --concurrency=1`: **17/17 tasks**, lint/typecheck plus **419 unit tests** (core 84, contracts 39, sync 17, web 74, extension 205). Sequential tasks avoid the previously observed generated-client race.
+- `TEST_DATABASE_URL=postgresql://sessionhub:<test-only-password>@127.0.0.1:54359/sessionhub_test pnpm --filter @sessionhub/web test:db`: **66/66**, including the newly merged workspace server cases; non-destructive migration deployment.
+- `pnpm build`: **both apps pass**.
+- Same isolated database env plus `TEST_MAILPIT_URL=http://127.0.0.1:58055 pnpm test:e2e`: **4/4 tasks**, extension **9/9** and web **49/49**, including workspace round-trip, two-profile sync/conflict and the new oversized-edit/local-only recovery flow.
+- `git diff --cached --check`: pass. The two disposable test containers are removed after verification. No production/personal data was used.
+
+PR #17 description is updated with these combined-branch results. GitHub CI must run on the pushed merge-resolution commit; local success is not a claim that CI has already passed. Existing already-resolved old id collisions remain outside automatic migration.
 
 ### 2026-10-17 (issue #5 Smaller leftovers: local-only conflict identity) / Codex / `bugfix/local-only-conflict-identity`
 
@@ -51,6 +66,49 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - `git diff --check`: pass. No DB reset suite, separate backend DB suite, Docker image/backup/perf suites or GitHub CI run for this slice (no server, dependency, manifest, backup or restore behavior change). The web browser harness applied migrations non-destructively to the new isolated test database.
 
 **Remaining limits / next work:** newly performed local-only resolutions are fixed; older already-resolved id collisions are not automatically migrated. No production deployment exists. `LIMIT_REACHED` retry after freeing capacity is the next recommended Smaller leftover; revoked-session deep-link preservation, M0 decisions and production log shipping are still pending. Branch is ready for review; not pushed or merged in this task. The two disposable test services are removed after verification; other worktrees/services are untouched.
+
+### 2026-10-17 (M5 workspaces, part 1: sync server side) / Claude Code (Opus 5.5) / `feature/m5-workspaces` (macOS laptop)
+
+**Goal:** workspace switcher and assignment in the extension (user's scope).
+
+**Found:**
+- `/api/v1/workspaces` is cookie-only (web), and the extension talks to the server only through sync.
+- Sync push accepted only sessions, and only `{ name, windows }`: SYNC_PROTOCOL.md 13f made the workspace a web-only field.
+- Pull already sent workspace changes, but the extension skipped them (`sync-apply.ts:45`).
+- `SYNC_PROTOCOL.md` says "MVP synced: Workspace".
+
+**Decisions** (user's choices): workspaces sync both ways; server first, extension in the next PR. Recorded in SYSTEM_DESIGN.md 14.
+
+**Implemented:**
+- `packages/contracts/src/api-sync.ts`:
+  - the push operation is a union of `savedSession` and `workspace` operations
+  - the session payload gets an optional `workspaceId` (absent keeps the server's, `null` unassigns)
+  - new `syncWorkspacePayloadSchema` (`name`, plus optional `description`, `icon`, `color`, `position`; absent keeps the server's)
+  - new rejected code `WORKSPACE_NOT_EMPTY`
+- `packages/contracts/src/api-workspaces.ts`: `workspaceFieldSchemas` is shared with sync.
+- `apps/web/src/server/workspaces/service.ts`: `createWorkspaceInTx`, `updateWorkspaceInTx`, `deleteWorkspaceInTx`, with the REST wrappers unchanged in behavior.
+- `apps/web/src/server/sync/push.ts`:
+  - `applySession` (passes `workspaceId` through) and `applyWorkspace`
+  - one `acceptedOrRepeat` wrapper for the services' idempotent repeats
+- `apps/web/src/server/sync/pull.ts`: the first bootstrap page carries the complete set of live workspaces ahead of the sessions; `nextAfter` still pages sessions only, so current extensions keep working.
+  - After PR #15's review (Codex P2), tombstones aren't sent: they only grow, and would bypass the 4 MB page budget for an account that keeps creating and deleting workspaces (about 35,000 to pass it). A client drops account workspaces missing from the set after a bootstrap.
+- Tests:
+  - `packages/contracts/src/api-sync.test.ts` (3, new)
+  - `push.db.test.ts` (+4): workspace create, edit and delete with receipts; absent fields keep the web's; repeat and conflict; assign, keep and unassign in one push; not-empty and other-account refusals
+  - `pull.db.test.ts` (+2): bootstrap order, live set only, and first page only
+  - `e2e/sync-push.spec.ts` (+1): the full round trip between device and web over HTTP
+- Docs: SYNC_PROTOCOL 13f and 13g, SYSTEM_DESIGN 14, ROADMAP M5 note.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54339/58035):**
+- Contracts tests 3/3; sync and workspace DB tests 24/24; the new round-trip E2E passes.
+- Typecheck with `--force`: Turbo had served the dependents' typecheck from cache after the contracts change, and only the forced run found the `push.ts` error.
+- `pnpm check --force` 17/17; `pnpm --filter @sessionhub/web test:db` **66/66** (+6); `pnpm build`.
+- Full web E2E **47/47** (+1). That includes pairing and two-profile sync with the real, unchanged extension against the new server: current extensions still work, and they skip workspace items.
+- Not run: the extension E2E suite (no extension change).
+
+**Known gaps (for the extension PR):**
+- Workspace edit conflicts need a policy.
+- The extension must drop account workspaces missing from a bootstrap's live set, unless they have pending local changes.
 
 ### 2026-10-17 (remaining M6 repository work from issue #5) / Codex / `feature/m6-release-hardening`
 
@@ -1065,10 +1123,19 @@ The #4 and #8 fixes were written by other sessions and committed and pushed from
 
 ## Immediate next executable task
 
-1. Review the `bugfix/local-only-conflict-identity` branch and open a PR when requested. #14 and #16 are already merged; do not repeat them.
-2. Before public launch choose the production domain, finalize `/privacy` operator/private contact/provider/retention details, set `EXTENSION_API_BASE_URL` and follow DEPLOYMENT, BACKUPS and RELEASE on the actual host. Record live evidence before checking the remaining two M6 boxes.
-3. Next Smaller leftover after the local-only fix lands: allow `LIMIT_REACHED` changes to retry with a fresh operation after capacity is freed. Re-review the three dependency advisories before release/by 2026-11-17; current reachability evidence is in SECURITY_REVIEW_M6.
-4. Complete Windows/macOS stable Chrome smoke and final account-flow screenshots/reviewer materials. M5 remains separate. Old fix worktrees belong to other sessions; leave them alone unless asked.
+1. Review PR #17 (`bugfix/local-only-conflict-identity`) once its checks pass. The branch includes current main; #14, #15 and #16 are merged.
+2. PR #15 (workspace sync, server side) is merged. Build the extension half on a new branch off `main`:
+   - a `workspaces` table (Dexie v6) and `workspaceId` on local sessions
+   - pull and bootstrap applying workspace changes, dropping account workspaces missing from a bootstrap's live set (unless they have pending local changes); uploads of workspace operations and assignments (workspace first, unassign before delete)
+   - a workspace switcher (a per-browser view; new saves go into the active workspace)
+   - assigning sessions, and moving a session's workspace along when local sessions move into the account
+   - deleting a workspace by unassigning its sessions first, after confirmation
+   - a policy for workspace edit conflicts
+
+   From now on: one small PR per slice, off `main`.
+3. Before public launch choose the production domain, finalize `/privacy` operator/private contact/provider/retention details, set `EXTENSION_API_BASE_URL` and follow DEPLOYMENT, BACKUPS and RELEASE on the actual host. Record live evidence before checking the remaining two M6 boxes.
+4. Next Smaller leftover after the local-only fix lands: allow `LIMIT_REACHED` changes to retry with a fresh operation after capacity is freed. Re-review the three dependency advisories before release/by 2026-11-17; current reachability evidence is in SECURITY_REVIEW_M6.
+5. Complete Windows/macOS stable Chrome smoke and final account-flow screenshots/reviewer materials. Old fix worktrees belong to other sessions; leave them alone unless asked.
 
 ## Open questions / architecture validations
 

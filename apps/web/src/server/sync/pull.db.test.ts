@@ -107,4 +107,43 @@ describe("sync bootstrap", () => {
     await write(pusher, operation(ids[0]!, "upsert", 1, "After the snapshot"));
     expect((await pullPage(prisma, pusher.userId, first.cursor, 100)).changes.map((change) => [change.entityId, change.version])).toEqual([[ids[0], 2]]);
   });
+
+  it("carries the complete set of live workspaces on the first page, ahead of the sessions that reference them, and no tombstones", async () => {
+    const [pusher, other] = [await newPusher(), await newPusher()];
+    const [live, gone] = [randomUUID(), randomUUID()].sort() as [string, string];
+    const session = randomUUID();
+    const space = (entityId: string, action: "upsert" | "delete", expectedVersion: number) => ({
+      clientOperationId: randomUUID(),
+      entityType: "workspace",
+      entityId,
+      action,
+      expectedVersion,
+      payload: action === "delete" ? null : { name: `Space ${entityId.slice(0, 4)}` },
+    });
+    await pushOperations(prisma, pusher, [space(live, "upsert", 0), space(gone, "upsert", 0), space(gone, "delete", 1)]);
+    await pushOperations(prisma, pusher, [{ ...operation(session, "upsert", 0), payload: { name: "In a space", windows: [{ tabs: [{ url: "https://a.test/" }] }], workspaceId: live } }]);
+    await createWorkspace(prisma, other.userId, createWorkspaceRequestSchema.parse({ name: "Someone else's" }));
+
+    const first = await bootstrapPage(prisma, pusher.userId, undefined, 1);
+    // The deleted workspace isn't listed: a client treats it as gone (SYNC_PROTOCOL.md 13g).
+    expect(first.items.map(({ entityType, entityId, action, version }) => [entityType, entityId, action, version])).toEqual([
+      ["workspace", live, "upsert", 1],
+      ["savedSession", session, "upsert", 1],
+    ]);
+    expect(first.items.some((item) => item.entityId === gone)).toBe(false);
+    expect(first.items[0]!.payload).toMatchObject({ id: live, name: `Space ${live.slice(0, 4)}`, version: 1 });
+    expect(first.items[1]!.payload).toMatchObject({ id: session, workspaceId: live });
+    expect(first).toMatchObject({ hasMore: false, nextAfter: null });
+  });
+
+  it("sends workspaces only on the first page", async () => {
+    const pusher = await newPusher();
+    const ids = [randomUUID(), randomUUID()].sort();
+    await pushOperations(prisma, pusher, [{ clientOperationId: randomUUID(), entityType: "workspace", entityId: randomUUID(), action: "upsert", expectedVersion: 0, payload: { name: "Only once" } }]);
+    for (const id of ids) await write(pusher, operation(id, "upsert", 0));
+    const first = await bootstrapPage(prisma, pusher.userId, undefined, 1);
+    expect(first.items.map((item) => item.entityType)).toEqual(["workspace", "savedSession"]);
+    const second = await bootstrapPage(prisma, pusher.userId, first.nextAfter ?? undefined, 1);
+    expect(second.items.map((item) => [item.entityType, item.entityId])).toEqual([["savedSession", ids[1]]]);
+  });
 });

@@ -2,6 +2,7 @@ import { SYNC_PULL_LIMITS, type BootstrapItem, type BootstrapResponse, type Pull
 import type { PrismaClient } from "@sessionhub/database/client";
 import { ServiceError } from "../service-errors";
 import { structureInclude, toDetail } from "../sessions/dto";
+import { toWorkspace } from "../workspaces/dto";
 import { decodeSyncCursor, encodeSyncCursor } from "./cursor";
 
 const ENTITY_TYPES = { saved_session: "savedSession", workspace: "workspace" } as const;
@@ -55,8 +56,24 @@ export const pullPage = async (prisma: PrismaClient, userId: string, cursor: str
  * has no usable cursor. The cursor is read before the rows, so anything written meanwhile is pulled
  * afterwards; rows newer than the cursor are fine because clients apply by version.
  */
+/**
+ * The complete set of the account's live workspaces: at most WORKSPACE_LIMITS.perUserMax (about
+ * 150 KB at the largest field sizes), so they ride on the first page, ahead of the sessions that
+ * may reference them, instead of paging. Tombstones are left out because they only ever grow: a
+ * client treats a workspace missing from this set as deleted (docs/SYNC_PROTOCOL.md 13g).
+ */
+const workspaceItems = async (prisma: PrismaClient, userId: string): Promise<BootstrapItem[]> =>
+  (await prisma.workspace.findMany({ where: { userId, deletedAt: null }, orderBy: { id: "asc" } })).map((row) => ({
+    entityType: "workspace",
+    entityId: row.id,
+    action: "upsert",
+    version: row.version,
+    payload: toWorkspace(row),
+  }));
+
 export const bootstrapPage = async (prisma: PrismaClient, userId: string, after: string | undefined, limit: number): Promise<BootstrapResponse> => {
   const cursor = encodeSyncCursor(userId, await lastSequence(prisma, userId));
+  const workspaces = after ? [] : await workspaceItems(prisma, userId);
   const rows = await prisma.savedSession.findMany({
     where: { userId, ...(after ? { id: { gt: after } } : {}) },
     orderBy: { id: "asc" },
@@ -70,5 +87,5 @@ export const bootstrapPage = async (prisma: PrismaClient, userId: string, after:
   );
   const page = withinBudget(items.slice(0, limit), (item) => item.payload);
   const hasMore = page.length < rows.length;
-  return { protocolVersion: 1, cursor, nextAfter: hasMore ? (page.at(-1)?.entityId ?? null) : null, hasMore, items: page };
+  return { protocolVersion: 1, cursor, nextAfter: hasMore ? (page.at(-1)?.entityId ?? null) : null, hasMore, items: [...workspaces, ...page] };
 };
