@@ -14,11 +14,14 @@ import {
 } from "./recovery-repository";
 import { isQuotaError } from "./storage-errors";
 
+/** `removed` is how many older checkpoints were already evicted (and committed) before this failure. */
 class CheckpointStorageFullError extends Error {
   override name = "CheckpointStorageFullError";
-  constructor(cause: unknown) {
+  constructor(cause: unknown, removed = 0) {
     super(
-      "Storage for SessionHub is full, so this checkpoint wasn't saved. Earlier checkpoints are kept. Delete or export sessions you no longer need.",
+      removed === 0
+        ? "Storage for SessionHub is full, so this checkpoint wasn't saved. Earlier checkpoints are kept. Delete or export sessions you no longer need."
+        : `Storage for SessionHub is full, so this checkpoint wasn't saved, even after removing ${removed} older checkpoint${removed === 1 ? "" : "s"} to make room. Delete or export sessions you no longer need.`,
       { cause },
     );
   }
@@ -32,7 +35,8 @@ export type CheckpointResult =
 /**
  * Commits a checkpoint; if storage is full, evicts older checkpoints (never the newest
  * or largest recent one) and retries exactly once. The failed attempt's transaction
- * aborted, so it removed nothing on its own.
+ * aborted, so it removed nothing on its own, but the eviction is committed separately,
+ * so a failed retry must still say how many were removed.
  */
 const commitWithSpaceRecovery = async (db: Parameters<typeof commitCheckpoint>[0], input: CommitCheckpointInput) => {
   try {
@@ -44,7 +48,7 @@ const commitWithSpaceRecovery = async (db: Parameters<typeof commitCheckpoint>[0
     try {
       return { committed: await commitCheckpoint(db, input), freedForSpace };
     } catch (retryError) {
-      throw isQuotaError(retryError) ? new CheckpointStorageFullError(retryError) : retryError;
+      throw isQuotaError(retryError) ? new CheckpointStorageFullError(retryError, freedForSpace) : retryError;
     }
   }
 };

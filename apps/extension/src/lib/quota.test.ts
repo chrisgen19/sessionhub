@@ -100,15 +100,17 @@ describe("storage full during checkpoints", () => {
     expect(await urls(deps)).toEqual(["https://new.test/", "https://s5.test/", "https://s4.test/", "https://s3.test/"]);
   });
 
-  it("records a specific error and keeps the newest checkpoint when the retry also fails", async () => {
+  it("says how many older checkpoints were removed when the retry also fails, and keeps the newest", async () => {
     const deps = await seeded();
     const add = vi.spyOn(deps.db.recoverySnapshots, "add").mockImplementation(quota);
     const result = await runCheckpoint(deps, { force: true, reason: "automatic" });
 
-    expect(result).toMatchObject({ status: "error", storageFull: true, message: expect.stringMatching(/Earlier checkpoints are kept/) });
+    const message = /^Storage for SessionHub is full, so this checkpoint wasn't saved, even after removing 3 older checkpoints to make room\./;
+    expect(result).toMatchObject({ status: "error", storageFull: true, message: expect.stringMatching(message) });
+    expect(result).not.toMatchObject({ message: expect.stringMatching(/kept/) });
     expect(add).toHaveBeenCalledTimes(2);
-    expect((await urls(deps))[0]).toBe("https://s5.test/");
-    expect((await getRecoveryState(deps.db)).lastError).toMatch(/^Storage for SessionHub is full/);
+    expect(await urls(deps)).toEqual(["https://s5.test/", "https://s4.test/", "https://s3.test/"]);
+    expect((await getRecoveryState(deps.db)).lastError).toMatch(message);
   });
 
   it("does not retry when there is nothing safe to evict", async () => {
@@ -116,7 +118,11 @@ describe("storage full during checkpoints", () => {
     await runCheckpoint(deps, { force: true, reason: "automatic" });
     deps.readWindows = vi.fn(async () => withUrl("https://other.test/"));
     const add = vi.spyOn(deps.db.recoverySnapshots, "add").mockImplementation(quota);
-    expect(await runCheckpoint(deps, { force: true, reason: "automatic" })).toMatchObject({ status: "error", storageFull: true });
+    expect(await runCheckpoint(deps, { force: true, reason: "automatic" })).toMatchObject({
+      status: "error",
+      storageFull: true,
+      message: expect.stringMatching(/Earlier checkpoints are kept/),
+    });
     expect(add).toHaveBeenCalledTimes(1);
     expect(await deps.db.recoverySnapshots.count()).toBe(1);
   });
