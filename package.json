@@ -17,7 +17,8 @@
     "db:up": "docker compose -f infra/docker/compose.dev.yaml up -d --wait",
     "db:down": "docker compose -f infra/docker/compose.dev.yaml down",
     "db:migrate": "pnpm --filter @sessionhub/database db:migrate",
-    "test:db": "turbo run test:db"
+    "test:db": "turbo run test:db",
+    "test:docker": "pnpm --filter @sessionhub/web test:docker"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

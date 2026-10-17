@@ -1,0 +1,70 @@
+# Production-like local stack: PostgreSQL -> one-shot migrations -> web.
+#   cp infra/docker/.env.example infra/docker/.env   # then set real values
+#   docker compose -f infra/docker/compose.yaml up -d --build --wait
+# For day-to-day development use compose.dev.yaml (database only) instead.
+name: sessionhub
+
+x-database-url: &database-url "postgresql://sessionhub:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (URL-safe characters only)}@postgres:5432/sessionhub"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: sessionhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: sessionhub
+    # Not published to the host: only the migrate and web services can reach it.
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sessionhub -d sessionhub"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      target: runner
+    environment:
+      DATABASE_URL: *database-url
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET (at least 32 random characters)}
+      # Must be the exact origin browsers use (Better Auth and the API check it). Unset or
+      # empty, it follows WEB_PORT; behind a proxy, set it to the public HTTPS origin.
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:${WEB_PORT:-3030}}
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3030}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache:uid=1000,gid=1000,mode=0755
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
