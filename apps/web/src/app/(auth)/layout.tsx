@@ -1,9 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
+    <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Link href="/" className="mb-8 flex items-center gap-2.5" aria-label="SessionHub home">
         <span aria-hidden="true" className="grid size-8 place-items-center rounded-[9px] bg-brand font-extrabold text-on-brand">
           S

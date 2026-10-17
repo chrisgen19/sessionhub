@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
+import { THEME_INIT_SCRIPT } from "@sessionhub/core/theme";
 
 /**
  * The SessionHub server this build talks to (docs/SYSTEM_DESIGN.md section 6). Set
@@ -42,4 +43,11 @@ export default defineConfig({
   vite: () => ({
     plugins: [tailwindcss()],
   }),
+  hooks: {
+    // The popup and manager load this before their bundle, so the stored theme applies before the
+    // first paint (docs/UI_UX_DESIGN.md 4.1). Generated from the web app's inline script.
+    "build:publicAssets": (_wxt, files) => {
+      files.push({ relativeDest: "theme-init.js", contents: THEME_INIT_SCRIPT });
+    },
+  },
 });

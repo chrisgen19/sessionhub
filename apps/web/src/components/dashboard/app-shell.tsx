@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { signOutAction } from "@/app/(auth)/actions";
 import { formatRelative, initials, plural } from "@/lib/format";
 import type { ConnectionStatus } from "@/server/queries/dashboard";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { BottomNav, SidebarNav } from "./nav-links";
 import { TopSearch } from "./top-search";
 import { VerifyEmailBanner } from "./verify-email-banner";
@@ -77,11 +78,14 @@ export function AppShell({ user, askToVerify, connection, children }: AppShellPr
           <div className="order-last w-full lg:order-none lg:w-auto lg:flex-1">
             <TopSearch />
           </div>
+          <div className="ml-auto">
+            <ThemeToggle />
+          </div>
           <Link
             href="/app/settings"
             title={`${user.name} (${user.email})`}
             aria-label={`Account settings for ${user.name}`}
-            className="ml-auto grid size-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-on-brand"
+            className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-on-brand"
           >
             {initials(user.name)}
           </Link>
