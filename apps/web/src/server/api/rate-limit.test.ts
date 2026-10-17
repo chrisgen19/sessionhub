@@ -14,6 +14,14 @@ describe("TokenBucketLimiter", () => {
     expect(limiter.take("u")).toEqual({ allowed: false, retryAfterSeconds: 1 });
   });
 
+  it("takes a multi-token cost all at once or not at all, waiting for the whole cost", () => {
+    const time = clock();
+    const limiter = new TokenBucketLimiter({ capacity: 30, refillPerSecond: 1 }, time.now);
+    expect(limiter.take("u", 25)).toEqual({ allowed: true, remaining: 5 });
+    expect(limiter.take("u", 10)).toEqual({ allowed: false, retryAfterSeconds: 5 });
+    expect(limiter.take("u", 5)).toEqual({ allowed: true, remaining: 0 });
+  });
+
   it("refills over time and never above capacity", () => {
     const time = clock();
     const limiter = new TokenBucketLimiter({ capacity: 2, refillPerSecond: 0.5 }, time.now);

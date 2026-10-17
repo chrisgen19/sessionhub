@@ -17,6 +17,7 @@ import {
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
+import { pushNow, type SyncDeps } from "./sync-uploader";
 import { getSnapshot } from "./recovery-repository";
 import { isQuotaError, RestoreRecordingError, STORAGE_FULL_HINT } from "./storage-errors";
 import { commandSchema, type Command, type CommandResponse, type ErrorCode } from "./messages";
@@ -56,6 +57,8 @@ export interface HandlerDeps {
   createId: () => string;
   /** Network and tab access for account commands; absent in tests that don't need them. */
   account?: Omit<AccountDeps, "db" | "now" | "createId">;
+  /** Jitter source and retry alarm for uploads; absent in tests that don't need them. */
+  sync?: Pick<SyncDeps, "random" | "scheduleRetry">;
 }
 
 export class BrowserError extends Error {
@@ -80,6 +83,7 @@ const NOT_DONE: Record<Command["type"], string> = {
   "account.cancel": "the request wasn't cancelled",
   "account.check": "the connection couldn't be checked",
   "account.disconnect": "this browser wasn't disconnected",
+  "sync.pushNow": "nothing was uploaded",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
@@ -188,6 +192,12 @@ const accountDeps = (deps: HandlerDeps): AccountDeps => {
   return { ...deps.account, db: deps.db, now: deps.now, createId: deps.createId };
 };
 
+/** Everything the uploader needs, from the worker's handler dependencies. */
+export const toSyncDeps = (deps: HandlerDeps): SyncDeps => {
+  if (!deps.sync) throw new BrowserError("Sync isn't available here");
+  return { ...deps.sync, db: deps.db, now: deps.now, account: accountDeps(deps) };
+};
+
 type AccountCommand = Extract<Command, { type: `account.${string}` }>;
 
 const runAccountCommand = async (command: AccountCommand, deps: HandlerDeps): Promise<CommandResponse> => {
@@ -247,6 +257,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         if (result.status === "clean") return { ok: true, data: { status: "clean", snapshotId: null, freedForSpace: 0 } };
         return { ok: true, data: { status: result.status, snapshotId: result.snapshotId, freedForSpace: result.freedForSpace } };
       }
+      case "sync.pushNow":
+        return { ok: true, data: await pushNow(toSyncDeps(deps), { force: true }) };
       default:
         return await runAccountCommand(command, deps);
     }

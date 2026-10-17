@@ -10,7 +10,8 @@
     "./api-sessions": "./src/api-sessions.ts",
     "./api-workspaces": "./src/api-workspaces.ts",
     "./api-devices": "./src/api-devices.ts",
-    "./api-pairing": "./src/api-pairing.ts"
+    "./api-pairing": "./src/api-pairing.ts",
+    "./api-sync": "./src/api-sync.ts"
   },
   "scripts": {
     "lint": "eslint .",

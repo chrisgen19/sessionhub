@@ -144,6 +144,8 @@ export const apiErrorCodeSchema = z.enum([
   "INVALID_TOKEN",
   "ACCESS_TOKEN_EXPIRED",
   "DEVICE_REVOKED",
+  /** A sync push named a device other than the one its token belongs to. */
+  "DEVICE_MISMATCH",
   "RATE_LIMITED",
   "INTERNAL_ERROR",
 ]);

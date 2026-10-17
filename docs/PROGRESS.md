@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) in progress: **extension pairing, device credentials, local account scope and outbox done**; push and pull next. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) in progress: **extension pairing, device credentials, local account scope, outbox and push done**; pull next. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -14,10 +14,10 @@
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
-| Sync | **Local half only:** account-scoped records (`account:<id>`), durable outbox, tombstones (Dexie v4), atomic with each edit; no account-scoped data is created yet and nothing is uploaded. No push/pull endpoints (`packages/sync` intentionally not created yet) |
+| Sync | **Upload works end to end:** account-scoped records (`account:<id>`), durable outbox and tombstones (Dexie v4); `POST /api/v1/sync/push` with receipts; extension uploader with backoff. Gated on local consent (`syncState.enabledAt`), which nothing sets yet, so no session data leaves a browser in normal use. **No pull** (`packages/sync` still not created; planned with pull's reconciliation logic) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + this status update). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). **`feature/m4-sync-push`** (off #6, uncommitted at the end of the 2026-10-16 push session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -77,6 +77,25 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps (decision needed):** if an attacker wins the single retry, the real extension gets `INVALID_TOKEN`, disconnects as "expired" (`withAccessToken`) and never presents its refresh token, so the server doesn't revoke; the attacker's pair lives until the user pairs again. Revoking when a rotated, never-used pair is presented would close this but changes the documented `INVALID_TOKEN` response.
 
+### 2026-10-17 (PR #7 review fixes: uploader round cap) / Claude Code (Opus 5.5) / `bugfix/sync-uploader-review-fixes` (worktree `sessionhub-pr7-fix`, based on `feature/m4-sync-push`)
+
+**Goal:** assess the two Codex findings on PR #7 (review 5555201179, both P2, `apps/extension/src/lib/sync-uploader.ts`).
+
+**Finding 1 (valid, fixed):** when the 10-round cap ended a run with sendable work left, `run` cleared `nextAttemptAt`, returned `done` with `remaining > 0` and armed no alarm. The only other triggers here are worker start and `session.rename` / `session.delete`, so the rest waited for one of those. Likely when sync is first turned on with more than 250 sessions, or fewer large ones (1.5 MB per push). `feature/m6-hardening` adds a 10-minute `sync-periodic` alarm, which limits the delay there, but doesn't continue the run right away.
+
+- `sync-uploader.ts`: after a successful run, if `selectPushBatch` still finds something sendable, call `scheduleRetry(now)` (the `sync-retry` alarm continues the upload). Work held back behind a `conflict` / `rejected` operation doesn't count, so a held session can't re-arm the alarm forever. `nextAttemptAt` stays null.
+- `sync-uploader.test.ts`: 251 queued sessions -> 10 pushes, `remaining: 1`, alarm armed, next run sends the last one and arms nothing; 250 sendable plus one session held behind a conflict -> `remaining: 1`, no alarm.
+- `SYNC_PROTOCOL.md` 13e uploader step 5 updated.
+
+**Finding 2 (not valid, no change):** the claim is that re-pairing gives the browser a new device id, so a retried `sending` operation misses its receipt and turns into a false conflict. Re-pairing doesn't change the device id. `disconnect` and revocation keep the local installation id (`account-service.ts`, only the `connection` / `notice` / `pairing` keys are deleted), the server upserts the device on `(userId, installationId)` and clears the revocation (`devices/pairing.ts` `upsertDevice`), and nothing deletes device rows (receipts cascade only on device delete). Covered by `e2e/pairing.spec.ts` ("Pair again: same device row", one device after revoke and re-pair). A new device id only comes with a reinstall or wiped extension data, which also removes the outbox.
+
+**Validated commands and results:**
+
+- New round-cap test against the unfixed uploader: **fail** as expected (`scheduleRetry` never called after `done` with `remaining: 1`); the held-work test passed before and after.
+- `apps/extension`: `vitest run src/lib/sync-uploader.test.ts` **13/13**. `pnpm check`: **pass** (14 tasks; extension 134/134).
+- E2E: Not run (uploader-only change, unit-tested; no E2E reaches the round cap).
+
+**Next step:** after PR #7 takes this fix, carry it up the stack (#8 to #11). `sync-uploader.ts` is restructured there (`sync-gate` `recordSuccess`), so expect a small conflict in `run`.
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
@@ -97,6 +116,28 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M4 sync push slice) / Claude Code (Opus 5.5) / `feature/m4-sync-push` (macOS laptop)
+
+**Goal:** `POST /api/v1/sync/push` with `sync_operation_receipts`, plus the extension uploader following SYNC_PROTOCOL.md 13e (user's scope). Protocol decisions recorded in SYSTEM_DESIGN.md 14 and SYNC_PROTOCOL.md 13f.
+
+**Implemented:**
+
+- Contracts: `packages/contracts/src/api-sync.ts` (envelope, per-operation schema, results, `SYNC_LIMITS.operationsPerPushMax = 25`), error code `DEVICE_MISMATCH`.
+- Web: `src/server/sessions/mutations.ts` split into `createSessionInTx` / `updateSessionInTx` / `deleteSessionInTx` + unchanged wrappers; `src/server/sync/push.ts` (per-operation transaction: clock lock, receipt lookup, mutation, receipt; conflict/rejection receipts after rollback; replays with `replayed: true`); route `src/app/api/v1/sync/push/route.ts`; `TokenBucketLimiter.take(key, cost)` and `chargeWrites` in `src/server/api/http.ts`.
+- Extension: `db.ts` (outbox `conflict`/`rejected`, session state `error`, `syncState.enabledAt`/`failures`/`nextAttemptAt`; no Dexie version change), `account-api.ts` `pushChanges`, `sync-batch.ts` (payload mapper, batch selection with held sessions, backoff), `sync-uploader.ts` (`pushNow`), `sync.pushNow` command, background triggers (worker start, after rename/delete, `sync-retry` alarm).
+- E2E: `apps/web/e2e/pairing-flow.ts` (helpers moved out of `pairing.spec.ts`), `apps/web/e2e/sync-push.spec.ts`.
+- Docs: SYNC_PROTOCOL 13a/13e/new 13f, DATA_MODEL (statuses, syncState, receipts), SECURITY_PRIVACY 5a item 9, SYSTEM_DESIGN 14 (eight rows), ROADMAP, README (status line was still "no backend").
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit as in the outbox session):**
+
+- `pnpm check --force`: **pass** (14 tasks). Contracts 36, core 84, extension **132** (+16: 11 uploader, 5 batch), web **61** (+1 limiter cost).
+- `pnpm build`: **pass** (route list includes `/api/v1/sync/push`).
+- `pnpm --filter @sessionhub/web test:db`: **43/43** (+8 push: create/edit/delete with receipts and device provenance, replay changes nothing, 20 concurrent deliveries make one change, a stale edit stays a conflict even after the server reaches its expected version, another account's session is never touched, no edit-back of a tombstone, per-operation validation, receipts per device).
+- `e2e/sync-push.spec.ts`: **2/2**, then **6/6** over `--repeat-each 3`: HTTP gates (cookie 401, `DEVICE_MISMATCH` 403, repeated session 400, 26 operations 400, unconfirmed email 403) and replay; the **real extension** in Chromium uploads a queued create via `sync.pushNow`, then the worker uploads a rename and a delete made through its normal commands on its own (server version 3, 3 accepted receipts, outbox empty).
+- Full web E2E: **36/37** (only the pre-existing macOS password-reset failure). Extension E2E: **8/9** (only the pre-existing macOS mid-restore retry failure).
+
+**Known gaps:** no pull; no UI shows sync state or sets consent (the E2E seeds an account-scoped session, its operation and `enabledAt` directly, standing in for the upload preview); conflict/rejected operations wait for a resolution UI; no periodic or network-change trigger; receipts are never pruned.
 
 ### 2026-10-16 (M4 local account scope + outbox slice) / Claude Code (Opus 5.5) / `feature/m4-local-outbox` (macOS laptop)
 
@@ -552,10 +593,10 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Review and merge the stacked PRs #1 -> #2 -> #3 -> #4 (merge or rebase-merge, not squash), then #6 (`feature/m4-local-outbox`). GitGuardian: mark the findings on #1 and #2 as false positives or move the placeholders to CI variables.
-2. M4 next slice: `POST /api/v1/sync/push` (Bearer via `authenticateDevice`, confirmed email, `authorizeDeviceWrite` limits) writing `sync_operation_receipts` in the same transaction as the reused session mutation (`apps/web/src/server/sessions/mutations.ts`, `WriteSource` with the device), plus the extension uploader following the contract in SYNC_PROTOCOL.md 13e (commit `sending` before the request, `seq` order, connected account only, set `serverVersion` on acceptance, keep conflicts).
-3. Laptop: install Docker Compose (`brew install docker-compose` + `cliPluginsExtraDirs`, or Docker Desktop) so `pnpm db:up` and `pnpm test:docker` work; investigate the two macOS-only E2E failures.
-4. Production email (Resend key + verified domain) is still untested against the live service.
+1. Commit and push `feature/m4-sync-push`, open its PR on top of #6. Then the stack merges in order #1 -> #2 -> #3 -> #4 -> #6 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+2. M4 next slice: `GET /api/v1/sync/pull` with safe cursors (+ `CURSOR_EXPIRED` bootstrap), and the extension pull that applies pages and the cursor in one transaction, never overwrites entities with pending operations or tombstones, purges tombstones once passed, and ignores its own echoes (SYNC_PROTOCOL.md 6, 7, 11, 13e). Create `packages/sync` for the pure reconciliation rules there.
+3. Then: opt-in + upload preview (sets `syncState.enabledAt`, moves or copies chosen local sessions) and the sync status UI; conflict review.
+4. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures.
 
 ## Open questions / architecture validations
 

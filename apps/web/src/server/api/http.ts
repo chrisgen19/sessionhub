@@ -112,9 +112,14 @@ export const limitByIp = (request: Request, name: "pairing-start" | "device-toke
 /** Device writes share the account's write budget with the web app. */
 export const authorizeDeviceWrite = async (request: Request): Promise<DevicePrincipal> => {
   const principal = await authenticateDevice(request);
-  const decision = getWriteLimiter().take(principal.userId);
-  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
+  chargeWrites(principal.userId, 1);
   return principal;
+};
+
+/** Takes `count` writes from the account's shared budget, or throws 429 without taking any. */
+export const chargeWrites = (userId: string, count: number): void => {
+  const decision = getWriteLimiter().take(userId, count);
+  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
 };
 
 /**

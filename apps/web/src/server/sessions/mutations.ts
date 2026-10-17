@@ -72,59 +72,63 @@ const guarded = <T>(update: Promise<T>): Promise<T> =>
     throw error;
   });
 
-export const createSession = (prisma: PrismaClient, userId: string, input: CreateSessionRequest, source: WriteSource = WEB_SOURCE) =>
-  runMutation(prisma, async (tx): Promise<WriteResult> => {
-    const sequence = await nextSequence(tx, userId);
-    const id = input.id ?? randomUUID();
-    const structure = buildCanonicalStructure(input.windows, randomUUID);
-    const existing = await tx.savedSession.findUnique({ where: { id }, include: structureInclude });
-    if (existing) {
-      // Exact retry of our own create (same id and content): return it, write nothing.
-      const content = { ...input, isArchived: false, windows: structure.windows };
-      const first = existing.userId === userId && !existing.deletedAt && existing.version === 1
-        ? await tx.sessionVersion.findUnique({ where: { sessionId_version: { sessionId: id, version: 1 } }, select: { checksum: true } })
-        : null;
-      if (first?.checksum === contentChecksum(content)) throw new RollbackWith<WriteResult>({ detail: toDetail(existing), sequence: null });
-      throw new ServiceError("ID_IN_USE", "A different session already uses that id. Retry without an id or with a new one.");
-    }
-    await assertWorkspace(tx, userId, input.workspaceId);
-    const row = await tx.savedSession.create({
-      data: {
-        id, userId, name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned,
-        sourceDeviceId: source.deviceId, sourceDeviceName: source.deviceName, tabCount: structure.tabCount, windowCount: structure.windowCount,
-      },
-    });
-    await insertStructure(tx, id, structure.windows);
-    const detail = { ...toSummary(row), windows: structure.windows };
-    await recordUpsert(tx, userId, sequence, detail, source);
-    return { detail, sequence: sequence.toString() };
+/** The create inside the caller's transaction, after its clock lock (`nextSequence`). Sync push uses it directly. */
+export const createSessionInTx = async (tx: Tx, userId: string, sequence: bigint, input: CreateSessionRequest, source: WriteSource): Promise<WriteResult> => {
+  const id = input.id ?? randomUUID();
+  const structure = buildCanonicalStructure(input.windows, randomUUID);
+  const existing = await tx.savedSession.findUnique({ where: { id }, include: structureInclude });
+  if (existing) {
+    // Exact retry of our own create (same id and content): return it, write nothing.
+    const content = { ...input, isArchived: false, windows: structure.windows };
+    const first = existing.userId === userId && !existing.deletedAt && existing.version === 1
+      ? await tx.sessionVersion.findUnique({ where: { sessionId_version: { sessionId: id, version: 1 } }, select: { checksum: true } })
+      : null;
+    if (first?.checksum === contentChecksum(content)) throw new RollbackWith<WriteResult>({ detail: toDetail(existing), sequence: null });
+    throw new ServiceError("ID_IN_USE", "A different session already uses that id. Retry without an id or with a new one.");
+  }
+  await assertWorkspace(tx, userId, input.workspaceId);
+  const row = await tx.savedSession.create({
+    data: {
+      id, userId, name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned,
+      sourceDeviceId: source.deviceId, sourceDeviceName: source.deviceName, tabCount: structure.tabCount, windowCount: structure.windowCount,
+    },
   });
+  await insertStructure(tx, id, structure.windows);
+  const detail = { ...toSummary(row), windows: structure.windows };
+  await recordUpsert(tx, userId, sequence, detail, source);
+  return { detail, sequence: sequence.toString() };
+};
+
+export const createSession = (prisma: PrismaClient, userId: string, input: CreateSessionRequest, source: WriteSource = WEB_SOURCE) =>
+  runMutation(prisma, async (tx) => createSessionInTx(tx, userId, await nextSequence(tx, userId), input, source));
+
+/** The update inside the caller's transaction, after its clock lock. */
+export const updateSessionInTx = async (tx: Tx, userId: string, sequence: bigint, id: string, input: UpdateSessionRequest, source: WriteSource): Promise<WriteResult> => {
+  const current = await tx.savedSession.findFirst({ where: { id, userId }, include: structureInclude });
+  // Tombstones win: a deleted session can't be edited back to life.
+  if (!current || current.deletedAt) throw notFound();
+  if (current.version !== input.expectedVersion) throw conflict(current, input.expectedVersion);
+  await assertWorkspace(tx, userId, input.workspaceId);
+  const structure = input.windows ? buildCanonicalStructure(input.windows, randomUUID) : null;
+  if (structure) {
+    await tx.savedSessionWindow.deleteMany({ where: { sessionId: id } });
+    await insertStructure(tx, id, structure.windows);
+  }
+  const row = await guarded(tx.savedSession.update({
+    where: { id, userId, version: input.expectedVersion, deletedAt: null },
+    data: {
+      name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned, isArchived: input.isArchived,
+      version: { increment: 1 },
+      ...(structure ? { tabCount: structure.tabCount, windowCount: structure.windowCount } : {}),
+    },
+  }));
+  const detail = { ...toSummary(row), windows: structure?.windows ?? toWindows(current) };
+  await recordUpsert(tx, userId, sequence, detail, source);
+  return { detail, sequence: sequence.toString() };
+};
 
 export const updateSession = (prisma: PrismaClient, userId: string, id: string, input: UpdateSessionRequest, source: WriteSource = WEB_SOURCE) =>
-  runMutation(prisma, async (tx): Promise<WriteResult> => {
-    const sequence = await nextSequence(tx, userId);
-    const current = await tx.savedSession.findFirst({ where: { id, userId }, include: structureInclude });
-    // Tombstones win: a deleted session can't be edited back to life.
-    if (!current || current.deletedAt) throw notFound();
-    if (current.version !== input.expectedVersion) throw conflict(current, input.expectedVersion);
-    await assertWorkspace(tx, userId, input.workspaceId);
-    const structure = input.windows ? buildCanonicalStructure(input.windows, randomUUID) : null;
-    if (structure) {
-      await tx.savedSessionWindow.deleteMany({ where: { sessionId: id } });
-      await insertStructure(tx, id, structure.windows);
-    }
-    const row = await guarded(tx.savedSession.update({
-      where: { id, userId, version: input.expectedVersion, deletedAt: null },
-      data: {
-        name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned, isArchived: input.isArchived,
-        version: { increment: 1 },
-        ...(structure ? { tabCount: structure.tabCount, windowCount: structure.windowCount } : {}),
-      },
-    }));
-    const detail = { ...toSummary(row), windows: structure?.windows ?? toWindows(current) };
-    await recordUpsert(tx, userId, sequence, detail, source);
-    return { detail, sequence: sequence.toString() };
-  });
+  runMutation(prisma, async (tx) => updateSessionInTx(tx, userId, await nextSequence(tx, userId), id, input, source));
 
 export interface DeleteResult {
   id: string;
@@ -133,21 +137,22 @@ export interface DeleteResult {
   sequence: string | null;
 }
 
-/** Soft delete: tombstone (deleted_at, version + 1) plus a delete change event. Idempotent. */
-export const deleteSession = (prisma: PrismaClient, userId: string, id: string, expectedVersion: number) =>
-  runMutation(prisma, async (tx): Promise<DeleteResult> => {
-    const sequence = await nextSequence(tx, userId);
-    const current = await tx.savedSession.findFirst({ where: { id, userId }, include: structureInclude });
-    if (!current) throw notFound();
-    if (current.deletedAt) {
-      throw new RollbackWith<DeleteResult>({ id, version: current.version, deletedAt: current.deletedAt.toISOString(), sequence: null });
-    }
-    if (current.version !== expectedVersion) throw conflict(current, expectedVersion);
-    const row = await guarded(
-      tx.savedSession.update({ where: { id, userId, version: expectedVersion, deletedAt: null }, data: { deletedAt: new Date(), version: { increment: 1 } } }),
-    );
-    await tx.syncChange.create({
-      data: { userId, sequence, entityType: "saved_session", entityId: id, changeKind: "delete", entityVersion: row.version },
-    });
-    return { id, version: row.version, deletedAt: (row.deletedAt ?? new Date()).toISOString(), sequence: sequence.toString() };
+/** Soft delete: tombstone (deleted_at, version + 1) plus a delete change event. Idempotent. Runs inside the caller's transaction, after its clock lock. */
+export const deleteSessionInTx = async (tx: Tx, userId: string, sequence: bigint, id: string, expectedVersion: number): Promise<DeleteResult> => {
+  const current = await tx.savedSession.findFirst({ where: { id, userId }, include: structureInclude });
+  if (!current) throw notFound();
+  if (current.deletedAt) {
+    throw new RollbackWith<DeleteResult>({ id, version: current.version, deletedAt: current.deletedAt.toISOString(), sequence: null });
+  }
+  if (current.version !== expectedVersion) throw conflict(current, expectedVersion);
+  const row = await guarded(
+    tx.savedSession.update({ where: { id, userId, version: expectedVersion, deletedAt: null }, data: { deletedAt: new Date(), version: { increment: 1 } } }),
+  );
+  await tx.syncChange.create({
+    data: { userId, sequence, entityType: "saved_session", entityId: id, changeKind: "delete", entityVersion: row.version },
   });
+  return { id, version: row.version, deletedAt: (row.deletedAt ?? new Date()).toISOString(), sequence: sequence.toString() };
+};
+
+export const deleteSession = (prisma: PrismaClient, userId: string, id: string, expectedVersion: number) =>
+  runMutation(prisma, async (tx) => deleteSessionInTx(tx, userId, await nextSequence(tx, userId), id, expectedVersion));

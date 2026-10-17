@@ -10,6 +10,7 @@ import {
   type StartPairingResponse,
 } from "@sessionhub/contracts/api-pairing";
 import { apiErrorResponseSchema, type ApiErrorCode } from "@sessionhub/contracts/api-sessions";
+import { pushResponseSchema, type PushRequest, type PushResponse } from "@sessionhub/contracts/api-sync";
 import type { z } from "zod";
 
 /** A failed call to the SessionHub server, with the API error code when there is one. */
@@ -75,3 +76,7 @@ export const fetchMe = (fetchImpl: Fetch, origin: string, accessToken: string): 
 
 export const disconnectSelf = (fetchImpl: Fetch, origin: string, accessToken: string): Promise<unknown> =>
   call(fetchImpl, origin, "/api/v1/devices/me/disconnect", deviceMeResponseSchema.shape.device, { method: "POST", accessToken });
+
+/** Uploads queued changes (POST /api/v1/sync/push); one result per operation. */
+export const pushChanges = (fetchImpl: Fetch, origin: string, accessToken: string, body: PushRequest): Promise<PushResponse> =>
+  call(fetchImpl, origin, "/api/v1/sync/push", pushResponseSchema, { method: "POST", body, accessToken });

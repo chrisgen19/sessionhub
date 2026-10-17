@@ -3,6 +3,7 @@ import { SESSION_LIMITS } from "@sessionhub/contracts/session";
 import type { CaptureReport } from "@sessionhub/core/capture";
 import { IMPORT_MAX_BYTES, type ImportReport } from "@sessionhub/core/session-import";
 import type { AccountStatus, PairingOutcome } from "./account-service";
+import type { PushSummary } from "./sync-uploader";
 import type { RestoreJobRecord } from "./db";
 
 /**
@@ -45,6 +46,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("account.cancel") }),
   z.object({ type: z.literal("account.check") }),
   z.object({ type: z.literal("account.disconnect") }),
+  // Upload the connected account's queued changes now (only once sync is turned on for it).
+  z.object({ type: z.literal("sync.pushNow") }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -68,6 +71,7 @@ export interface CommandResults {
   "account.cancel": AccountStatus;
   "account.check": AccountStatus;
   "account.disconnect": AccountStatus;
+  "sync.pushNow": PushSummary;
 }
 
 export type ErrorCode =

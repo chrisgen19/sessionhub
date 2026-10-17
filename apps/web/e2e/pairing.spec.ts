@@ -1,56 +1,15 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { expect, test } from "@playwright/test";
 import { createPrismaClient } from "@sessionhub/database/client";
 import { BASE_URL } from "../playwright.config";
 import { launchWithExtension } from "./extension";
 import { waitForEmail } from "./mailpit";
+import { openAccountView, randomIp, signUp, startConnect } from "./pairing-flow";
 
 const prisma = createPrismaClient(process.env.TEST_DATABASE_URL);
 test.afterAll(async () => {
   await prisma.$disconnect();
 });
-
-const randomIp = () => {
-  const [a, b, c] = randomBytes(3);
-  return `10.${a}.${b}.${c}`;
-};
-
-/** Signs up in the extension's own profile, so the approve page sees the session cookie. */
-const signUp = async (context: BrowserContext, { confirm = true } = {}) => {
-  const page = await context.newPage();
-  const email = `pair-${randomUUID()}@example.test`;
-  await page.goto(`${BASE_URL}/signup`);
-  await page.getByLabel("Name").fill("Pat Pairing");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("correct horse battery");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  if (confirm) {
-    const { link } = await waitForEmail(email, /Confirm your email/);
-    await page.goto(link!);
-    await expect(page.getByRole("heading", { name: "Email confirmed" })).toBeVisible();
-  }
-  return { page, email };
-};
-
-const openAccountView = async (context: BrowserContext, extensionId: string) => {
-  const manager = await context.newPage();
-  await manager.goto(`chrome-extension://${extensionId}/manager.html#view=account`);
-  await expect(manager.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
-  return manager;
-};
-
-/** Clicks Connect account and returns the approve tab the extension opened, plus the code it shows. */
-const startConnect = async (context: BrowserContext, manager: Page) => {
-  const approveTab = context.waitForEvent("page");
-  await manager.getByRole("button", { name: "Connect account" }).click();
-  const code = (await manager.getByLabel("Connection code").textContent())?.trim() ?? "";
-  expect(code).toMatch(/^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/);
-  const tab = await approveTab;
-  await tab.waitForLoadState();
-  expect(tab.url()).toBe(`${BASE_URL}/app/pair?code=${code}`);
-  return { tab, code };
-};
 
 test("pair, see the device on the web, revoke from the web, pair again, disconnect from the extension", async () => {
   const { context, extensionId, close } = await launchWithExtension({ "x-forwarded-for": randomIp() });
