@@ -1,6 +1,6 @@
 import { describeEligibility, displayUrl } from "@sessionhub/core/url-classification";
 import { Pin, X } from "lucide-react";
-import type { ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { TabFavicon } from "../../components/tab-favicon";
 import type { OpenTab } from "../../lib/tab-selection";
 
@@ -14,7 +14,7 @@ interface OpenTabRowProps {
   duplicate?: boolean;
   /** With it, the title is a button that switches to the tab (the manager); without, plain text (the popup). */
   onGoTo?: () => void;
-  /** With it, an ✕ closes the tab. */
+  /** With it, an ✕ closes the tab once confirmed in the row. */
   onClose?: () => void;
 }
 
@@ -55,18 +55,64 @@ export function OpenTabRow({ tab, checked, onToggle, duplicate = false, onGoTo, 
           </span>
         )}
       </label>
-      {/* Outside the label, so its name isn't part of the checkbox's. Shown on hover or focus; always on touch screens. */}
-      {onClose && (
-        <button
-          type="button"
-          aria-label={`Close tab: ${title}`}
-          title="Close tab"
-          onClick={onClose}
-          className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-fg-muted opacity-0 group-hover/row:opacity-100 hover:bg-danger-soft hover:text-danger focus-visible:opacity-100 pointer-coarse:opacity-100"
-        >
-          <X aria-hidden="true" className="size-3.5" />
-        </button>
-      )}
+      {/* Outside the label, so its name isn't part of the checkbox's. */}
+      {onClose && <CloseTabButton title={title} onClose={onClose} />}
     </li>
+  );
+}
+
+/**
+ * The row's ✕ (shown on hover or focus; always on touch screens). Closing is destructive, so the
+ * first click only asks, in place: "Close tab" closes it; Cancel, Escape or moving focus away keeps it.
+ */
+function CloseTabButton({ title, onClose }: { title: string; onClose: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const cross = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+  // After Cancel or Escape, keyboard focus goes back to the ✕ instead of the page.
+  useEffect(() => {
+    if (!asking && refocus.current) {
+      refocus.current = false;
+      cross.current?.focus();
+    }
+  }, [asking]);
+  const keep = (returnFocus: boolean) => {
+    refocus.current = returnFocus;
+    setAsking(false);
+  };
+
+  if (!asking) {
+    return (
+      <button
+        ref={cross}
+        type="button"
+        aria-label={`Close tab: ${title}`}
+        title="Close tab"
+        onClick={() => setAsking(true)}
+        className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-fg-muted opacity-0 group-hover/row:opacity-100 hover:bg-danger-soft hover:text-danger focus-visible:opacity-100 pointer-coarse:opacity-100"
+      >
+        <X aria-hidden="true" className="size-3.5" />
+      </button>
+    );
+  }
+  return (
+    <span
+      role="group"
+      aria-label={`Close tab: ${title}?`}
+      className="mr-1 flex shrink-0 items-center gap-1"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) keep(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") keep(true);
+      }}
+    >
+      <button type="button" autoFocus onClick={onClose} className="h-7 rounded-md bg-danger px-2.5 text-xs font-semibold text-surface hover:opacity-90">
+        Close tab
+      </button>
+      <button type="button" onClick={() => keep(true)} className="h-7 rounded-md px-2 text-xs font-semibold text-fg-muted hover:bg-line">
+        Cancel
+      </button>
+    </span>
   );
 }

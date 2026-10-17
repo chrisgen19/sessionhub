@@ -161,7 +161,17 @@ describe("open tabs view", () => {
     expect(actions.goToTab).toHaveBeenCalledWith(201, 2);
     expect(checkbox(/Example/).checked).toBe(false);
 
+    // The ✕ only asks; Escape keeps the tab and puts focus back on the ✕.
     await userEvent.click(screen.getByRole("button", { name: "Close tab: Example" }));
+    const ask = screen.getByRole("group", { name: "Close tab: Example?" });
+    expect(document.activeElement).toBe(within(ask).getByRole("button", { name: "Close tab" }));
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Close tab: Example?" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close tab: Example" }));
+    expect(actions.closeTabs).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Close tab: Example" }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Close tab: Example?" })).getByRole("button", { name: "Close tab" }));
     expect(actions.closeTabs).toHaveBeenCalledWith([201]);
     expect(screen.getByText("2 tabs in 1 window selected")).toBeTruthy();
   });
@@ -171,6 +181,10 @@ describe("open tabs view", () => {
     await userEvent.click(screen.getByRole("button", { name: "Close 2 tabs…" }));
     const confirm = screen.getByRole("alertdialog", { name: "Confirm closing" });
     expect(within(confirm).getByText("Close 2 tabs?")).toBeTruthy();
+    expect(within(within(confirm).getByRole("list", { name: "Tabs to close" })).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Fix login PRgithub.com/acme/pull/42",
+      "React docsreact.dev/learn",
+    ]);
     await userEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
     expect(actions.closeTabs).not.toHaveBeenCalled();
 
@@ -187,5 +201,15 @@ describe("open tabs view", () => {
     expect(await screen.findByText("Saved locally: 2 tabs in 1 window.")).toBeTruthy();
     expect(await savedTitles()).toEqual([["Fix login PR", "React docs"]]);
     expect(actions.closeTabs).toHaveBeenCalledWith([101, 102]);
+  });
+
+  it("lists ticked tabs a search hides in the close confirmation", async () => {
+    render(<ManagerApp />);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search open tabs" }), "react");
+    expect(screen.queryByRole("checkbox", { name: /Fix login PR/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Close 2 tabs…" }));
+    const list = within(screen.getByRole("alertdialog")).getByRole("list", { name: "Tabs to close" });
+    expect(within(list).getByText("Fix login PR")).toBeTruthy();
+    expect(within(list).getByText("React docs")).toBeTruthy();
   });
 });

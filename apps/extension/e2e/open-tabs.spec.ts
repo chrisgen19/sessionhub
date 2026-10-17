@@ -8,7 +8,7 @@ declare const chrome: typeof browser;
 const urlsIn = (worker: Worker, windowId: number) =>
   worker.evaluate(async (id) => (await chrome.tabs.query({ windowId: id })).map((tab) => tab.url ?? tab.pendingUrl ?? ""), windowId);
 
-test("open tabs: duplicates are marked, closing asks first and closes only the ticked tabs, a title goes to its tab", async ({ context, worker, extensionId }) => {
+test("open tabs: duplicates are marked, closing asks first (listing the tabs) and closes only those, a title goes to its tab", async ({ context, worker, extensionId }) => {
   const windowId = await worker.evaluate(async (site) => {
     const window = await chrome.windows.create({ url: [`${site}/one`, `${site}/two`, `${site}/one`, `${site}/three`], focused: false });
     return window!.id!;
@@ -24,7 +24,8 @@ test("open tabs: duplicates are marked, closing asks first and closes only the t
   await manager.getByRole("button", { name: "Select duplicates (1)" }).click();
   await expect(manager.getByText("1 tab in 1 window selected")).toBeVisible();
   await manager.getByRole("button", { name: "Close 1 tab…" }).click();
-  await expect(manager.getByRole("alertdialog", { name: "Confirm closing" })).toBeVisible();
+  // The confirmation lists exactly what would close.
+  await expect(manager.getByRole("alertdialog", { name: "Confirm closing" }).getByRole("list", { name: "Tabs to close" }).getByRole("listitem")).toHaveText([/sessionhub\.test\/one/]);
   expect(await urlsIn(worker, windowId)).toHaveLength(4);
   await manager.getByRole("alertdialog").getByRole("button", { name: "Close 1 tab" }).click();
   await expect(manager.getByText("Closed 1 tab.")).toBeVisible();
@@ -37,7 +38,9 @@ test("open tabs: duplicates are marked, closing asks first and closes only the t
     .poll(() => worker.evaluate(async (id) => (await chrome.tabs.query({ windowId: id, active: true }))[0]?.url, windowId))
     .toBe(`${SITE}/two`);
 
-  // The ✕ closes one tab at once, ticked or not.
+  // The ✕ asks in the row first; only "Close tab" closes it.
   await row("sessionhub.test/three").getByRole("button", { name: /^Close tab/ }).click();
+  expect(await urlsIn(worker, windowId)).toHaveLength(3);
+  await row("sessionhub.test/three").getByRole("group").getByRole("button", { name: "Close tab", exact: true }).click();
   await expect.poll(() => urlsIn(worker, windowId)).toEqual([`${SITE}/one`, `${SITE}/two`]);
 });

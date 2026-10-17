@@ -21,6 +21,8 @@ export function OpenTabsView() {
   const duplicates = useMemo(() => duplicateTabIds(windows), [windows]);
   const matches = useMemo(() => matchingOpenTabIds(windows, query), [windows, query]);
   const tabCount = windows.reduce((sum, window) => sum + window.tabs.length, 0);
+  // Every ticked tab, in list order, for the close confirmation's preview.
+  const ticked = useMemo(() => windows.flatMap((window) => window.tabs.filter((tab) => selection.has(tab.id))), [windows, selection]);
 
   const saveAndClose = async () => {
     const ids = [...selection];
@@ -107,8 +109,8 @@ export function OpenTabsView() {
         />
         <div className="border-t border-line pt-2">
           <CloseTabsControl
-            count={picker.summary.tabs}
-            canSave={picker.destination !== null && picker.name.trim().length > 0}
+            tabs={ticked}
+            canSave={picker.destination !== null && picker.name.trim().length > 0 && picker.result.status !== "saving"}
             onClose={() => closeTabs([...selection])}
             onSaveAndClose={saveAndClose}
           />

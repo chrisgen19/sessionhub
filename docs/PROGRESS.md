@@ -39,7 +39,13 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - `lib/open-tabs.ts` (+ test): `duplicateTabIds`, `matchingOpenTabIds`. `lib/open-tab-actions.ts`: `goToTab`, `closeTabs`.
 - Tests: `save-ui.test.tsx` +3 (search and Select matches, go to and ✕ without ticking, close only once confirmed and Save and close), `open-tabs.test.ts` 3, `e2e/open-tabs.spec.ts` (duplicates, confirm, close, go to, ✕ in real Chromium).
 
-**Verified:** `pnpm --filter @sessionhub/extension lint`, `typecheck`: pass. `test`: 40 files, 299 tests. `build` then `test:e2e`: 20 passed. Screenshots at 1920, 1440, 1180 and 390 px, light and dark, search, hover, confirmation, and the popup's Save tab (unchanged).
+**PR #44 review (Codex P1 x2, CodeRabbit minor), all valid, fixed in a second commit:**
+- The row ✕ closed a tab at once: against AGENTS.md's consent rule and the feature as offered to the user ("Closing is destructive, so it always asks"). Now it asks in the row (Close tab / Cancel; Escape or leaving cancels).
+- The bulk confirmation showed only a count, while a search or a collapsed window can hide ticked tabs. It now lists every tab it would close.
+- Save and close stayed enabled during a running save (a quick double save). Now disabled while saving.
+- Tests: the ✕ test confirms and cancels with Escape (focus back on the ✕); a new test checks a tab hidden by the search is in the confirmation's list; the e2e checks the list and the row confirmation in Chromium.
+
+**Verified:** `pnpm --filter @sessionhub/extension lint`, `typecheck`: pass. `test`: 40 files, 300 tests (after the review fixes). `build` then `test:e2e`: 20 passed. Screenshots at 1920, 1440, 1180 and 390 px, light and dark, search, hover, confirmation, and the popup's Save tab (unchanged).
 
 **Not done:** `~/SessionHub/extension` not rebuilt from this branch (`build:unpacked` after merge). Moving tabs between windows and closing whole windows were not part of the request.
 
