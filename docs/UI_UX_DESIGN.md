@@ -574,6 +574,18 @@ Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `uplo
 - "Server" is avoided in user copy: "the other version", "your account".
 - Verified at 390 and 1280 px and dark mode at 390 px (inspector banner, dialog, Sync card list): no horizontal overflow.
 
+## 18g. Extension workspaces (2026-10-17)
+
+`apps/extension/src/features/workspaces/` (`workspace-switcher.tsx`, `workspaces-dialog.tsx`, `workspace-row.tsx`, `workspace-fields.tsx`, `workspace-picker.tsx`). Rules: `SYNC_PROTOCOL.md` 13j.
+
+- **Switcher** in the Saved sessions header, beside search, while connected (and sync is on or workspaces exist): a native select "Workspace" with All sessions, each workspace with its session count, and No workspace (which includes sessions only in this browser). It filters the list only: no tabs open or close. The choice is in the URL hash (`#workspace=<id|none>`, kept when a session is selected); an unknown id shows all sessions.
+- **List rows** name the session's workspace before the tab counts while All sessions is shown. An empty filtered list says "No sessions in <name>" and "Open a session and choose its workspace in the details."
+- **Workspaces dialog** (folder button "Manage workspaces"): one line on what workspaces are, a name + color form with **Add workspace** (only while sync is on; otherwise "Turn on sync in Account to add workspaces."), then each workspace with a color dot, session count and "Waiting to sync", plus **Edit** (name and color in place) and **Delete**. The delete confirmation is inline and states the scope: "Its N sessions move to No workspace. No session is deleted and no tabs close, here or in your other browsers." A new workspace is selected in the switcher.
+- **Inspector:** "Workspace" select (No workspace + workspaces) for account sessions; "Not downloaded yet" for an assigned workspace this browser doesn't have. Sessions only in this browser get "Only sessions in your account can be in a workspace. Upload this one first: Account, then Sync." Errors read "Not moved: ...".
+- **A workspace the account refused** shows "Not added to your account: <reason>. Its sessions wait until you delete it." in the dialog, and under "Needs review" in the Sync card with **Remove workspace**.
+- **Deviations:** native selects (not the customizable `base-select` picker); no workspace in the popup or side panel yet; no "move sessions to..." target on delete (they go to No workspace, user's choice); new saves are not put in the selected workspace.
+- Verified at 1280 and 390 px (list, dialog, delete confirmation, inspector) and the Sync card in dark mode at 390 px: no horizontal overflow.
+
 ## 18d. Web session detail (2026-10-16)
 
 `/app/sessions/[id]` (list rows link to it; the list has Active / Archived views). Layout: breadcrumb, name with Pinned/Archived badges, "From <source> · N windows · N tabs · updated ... · version N", an action row, a restore note, and the window tree (groups as labelled runs in saved order, pinned icon, "Won't open" badge with a screen-reader reason).

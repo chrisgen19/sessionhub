@@ -171,24 +171,25 @@ LocalSessionStore (scope = 'local' or userAccountId):
 
 Use transactional writes when editing a synced entity: **update local entity + add outbox operation atomically**. Pull application similarly commits remote entity updates, cursor and conflict states in a single transaction per page.
 
-### Implemented local schema (Dexie versions 1 to 4, verified 2026-10-16)
+### Implemented local schema (Dexie versions 1 to 6, verified 2026-10-17)
 
 Source: `apps/extension/src/lib/db.ts`. Database name `sessionhub`.
 
 | Table | Primary key / indexes | Record |
 |---|---|---|
-| `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope` (`"local"` or `"account:<account id>"`) and, for account-scoped records only, `sync: { serverVersion, state }`; windows/groups/tabs are nested in the record |
+| `sessions` | `id`, `[scope+updatedAt]` | Full `SavedSession` (contracts schema) plus `scope` (`"local"` or `"account:<account id>"`) and, for account-scoped records only, `sync: { serverVersion, state }` and `workspaceId` (v6: null = none; absent = not known yet, so uploads leave the server's as it is); windows/groups/tabs are nested in the record. Exports never include `workspaceId` |
 | `device` | `key` (`"this-device"`) | `installationId` (UUID), `friendlyName` (default "This browser"), `createdAt` |
 | `recoverySnapshots` (v2) | `id`, `capturedAt`, `[capturedAt+tabCount]` | Immutable checkpoint: `capturedAt`, `reason` (`automatic`/`manual`), `fingerprint`, counts, and `session` (a `SavedSession` whose id equals the snapshot id). Local only, never synced |
 | `recoveryState` (v2) | `key` (`"state"`) | `dirty`, `lastChangeAt`, `lastSnapshotAt`, `lastFingerprint`, `lastError` |
 | `restoreJobs` | `id`, `sessionId`, `createdAt` | Restore plan, append-only per-tab outcomes across attempts, `attempts` (absent on older records = 1), optional `interruptedAt`, status `running` / `completed` / `partial` / `failed` |
 | `account` (v3) | `key` (`"pairing"`, `"connection"`, `"notice"`) | Pending pairing (device code), the connection (API origin, device id, `account: { id, name, email }`, access and refresh tokens) and the last involuntary disconnect reason. `account.id` is absent on connections saved before v4 until the next account check fills it in |
-| `outbox` (v4) | `++seq`, `&id`, `[scope+seq]`, `entityId` | One pending change of an account-scoped session: `id` (clientOperationId), `scope`, `entityType: "savedSession"`, `entityId`, `action` (`upsert` with the full session as `payload`, or `delete` with `null`), `expectedVersion`, `status` (`queued` / `sending` / `conflict` / `rejected`), `attempts`, `nextAttemptAt`, `lastError`, timestamps. `seq` is the upload order. `conflict` and `rejected` keep the payload and hold back the session's later operations until resolved |
+| `outbox` (v4) | `++seq`, `&id`, `[scope+seq]`, `entityId` | One pending change of an account-scoped session or workspace: `id` (clientOperationId), `scope`, `entityType` (`savedSession`, or `workspace` since v6), `entityId`, `action` (`upsert` with the full session and its known `workspaceId`, or only a workspace's changed fields, as `payload`; or `delete` with `null`, plus `waitFor` on a workspace delete), `expectedVersion`, `status` (`queued` / `sending` / `conflict` / `rejected`), `attempts`, `nextAttemptAt`, `lastError`, timestamps. `seq` is the upload order. `conflict` and `rejected` keep the payload and hold back the entity's later operations until resolved |
 | `sessionTombstones` (v4) | `id`, `scope` | Deleted account-scoped session (`id`, `scope`, `deletedAt`) the server may still list |
 | `syncState` (v4) | `scope` | Per account: `enabledAt` (local consent; nothing uploads without it), `cursor` (pull slice), `lastSyncAt` (last completed run, upload and download), `lastError` and `lastErrorCode` (NETWORK = offline), `failures` and `nextAttemptAt` (backoff). Field additions need no new Dexie version (no index change). `bootstrap` (`{ cursor, after }`) while a full rebuild is in progress |
 | `serverCopies` (v5) | `id`, `scope` | The newest server state (`action`, `version`, `payload` = server detail or null) of a session whose local changes are still waiting; settled when they are accepted (`SYNC_PROTOCOL.md` 13g) |
+| `workspaces` (v6) | `id`, `scope` | A workspace of an account (account scope only): `name`, `description`, `icon`, `color`, `position`, timestamps, `sync: { serverVersion, state: pending / synced / error, lastError }`, and `deletedAt` while a delete made here waits for the account (hidden). The v6 upgrade clears every account's `cursor` and `bootstrap`, so each rebuilds once and learns its workspaces and assignments (`SYNC_PROTOCOL.md` 13j) |
 
-Not yet created: `sessionVersions`, `workspaces`, `localPreferences`. `conflictDrafts` isn't needed: the held operation keeps the local payload and `serverCopies` the server's (`SYNC_PROTOCOL.md` 13i). Add them as new Dexie versions; never edit an existing version.
+Not yet created: `sessionVersions`, `localPreferences`. `conflictDrafts` isn't needed: the held operation keeps the local payload and `serverCopies` the server's (`SYNC_PROTOCOL.md` 13i). Add them as new Dexie versions; never edit an existing version.
 
 **Account scope and outbox (implemented, v4):**
 

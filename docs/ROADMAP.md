@@ -1,6 +1,6 @@
 # SessionHub — Development Roadmap & Acceptance Backlog
 
-**Status:** M1–M4 complete; M0 has one open decision item; M5 not started. M6 repository preparation is implemented (6/8 checklist items); public privacy/operator details and live deployment/off-host recovery verification remain pending (2026-10-17). See `PROGRESS.md`.
+**Status:** M1–M4 complete; M0 has one open decision item; M5 started (workspace switcher and assignment done). M6 repository preparation is implemented (6/8 checklist items); public privacy/operator details and live deployment/off-host recovery verification remain pending (2026-10-17). See `PROGRESS.md`.
 **Delivery principle:** End-to-end tested vertical slices before broad UI feature completion.
 
 ## Recommended ordering
@@ -82,7 +82,7 @@ flowchart LR
 ## M5 — Full experience / refinement
 
 - [ ] Side panel with live tab tree, search, focus/move/group.
-- [ ] Workspace switcher and saved-session assignment. (2026-10-17: server and sync side done: sync push takes workspace operations and a session's `workspaceId`, bootstrap carries workspaces, SYNC_PROTOCOL.md 13f/13g. Extension store, switcher and assignment: next PR.)
+- [x] Workspace switcher and saved-session assignment. (2026-10-17: server and sync side: sync push takes workspace operations and a session's `workspaceId`, bootstrap carries workspaces, SYNC_PROTOCOL.md 13f/13g. Extension: Dexie v6 workspaces, per-field merge, switcher, Workspaces dialog and inspector assignment, SYNC_PROTOCOL.md 13j, UI_UX_DESIGN.md 18g; verified across two real extension profiles. Not yet: workspaces in the popup, side panel and web dashboard.)
 - [ ] Advanced session inspector, tags/filters/sort/bulk select.
 - [ ] Versions and recovery timeline with useful preview.
 - [ ] Device management and revocation UX.

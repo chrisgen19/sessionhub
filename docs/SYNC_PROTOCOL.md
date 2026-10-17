@@ -363,7 +363,7 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
   - **`workspaceId` (since 2026-10-17):** absent keeps the server's assignment, which is what uploads from extensions without workspaces do. `null` removes it. An id assigns the session, and must be a live workspace of the account (else `INVALID_WORKSPACE`).
   - The other web-only fields (description, pinned, archived) are left as they are.
 - **Workspace upsert and delete** (`entityType: workspace`, since 2026-10-17):
-  - The upsert carries `{ name, description?, icon?, color?, position? }`, with the rules of 13b. Absent fields keep the server's value; a create uses the defaults.
+  - The upsert carries `{ name?, description?, icon?, color?, position? }`, with the rules of 13b. Absent fields keep the server's value; a create uses the defaults and needs a name. An update may leave out the name (since the extension PR, 2026-10-17: its per-field merge in 13j sends only the fields it changed) but must carry at least one field.
   - A delete is `expectedVersion` plus `payload: null`. It is refused with `WORKSPACE_NOT_EMPTY` while live sessions are still in the workspace, as on the web: moving sessions out is always an explicit edit of each session.
   - A repeated delete of the tombstone is `accepted` with `serverSequence: null`.
 - **Order inside a push matters:** operations apply in request order. A client that creates a workspace and assigns sessions to it sends the workspace first; one that empties and deletes a workspace sends the session unassignments first (tested in DB and HTTP).
@@ -395,7 +395,7 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 - **`CURSOR_EXPIRED`** when the cursor is ahead of the user's clock (the server lost changes, e.g. a backup restore) or when the change right after it is missing (log pruned). Detection relies on the gap-free log (13a); a false positive only costs a bootstrap. No pruning job exists yet.
 - **Bootstrap** pages through the user's sessions by id, **tombstones included as deletes**, each as a change without a sequence (its current version and detail). `cursor` is the clock read **before** the rows: the client keeps the first page's and pulls from it afterwards; changes written meanwhile replay harmlessly because clients apply by version. **The first page also carries the complete set of the account's live workspaces**, ahead of the sessions that reference them (since 2026-10-17).
   - There are at most 100, about 150 KB at the largest field sizes, so they don't page, and `nextAfter` keeps paging sessions only.
-  - **Workspace tombstones are not sent:** unlike the live set, they only ever grow. A client treats a workspace of the account that is missing from this set as deleted, and drops it after the bootstrap finishes, unless it has local changes waiting to upload.
+  - **Workspace tombstones are not sent:** unlike the live set, they only ever grow. A client treats a workspace of the account that is missing from this set as deleted and drops it, unless it has local changes waiting to upload. The extension does this when it applies the first page (13j).
   - Extensions that don't store workspaces skip these items.
 
 **Extension download** (`pullNow`, run by `syncNow` after a successful push; same consent gate and backoff as 13f, the gate checked again before every page). A run counts as synced only when its download completes (2026-10-17): that is when `lastSyncAt` moves and the backoff resets. A successful upload records neither, so a failing download keeps backing off even while pushes work, and "Last synced" never covers changes that weren't downloaded.
@@ -409,7 +409,8 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
    - a local tombstone is never undone, and the server's delete purges it
    - anything not newer than the stored `serverVersion` is ignored (this covers its own uploads coming back)
    - otherwise the session is written as `synced` or removed
-   - workspace changes and payloads that don't validate are skipped, so one bad change never blocks a page
+   - payloads that don't validate are skipped, so one bad change never blocks a page
+   - workspace changes follow 13j
 5. **Echo reconciliation:** when a push is accepted, `reconcileHeldCopy` settles a held copy:
    - not newer than the accepted version: it was this device's own change, so it is dropped (an own delete also ends its tombstone)
    - newer, with nothing else waiting: it is applied now, because the cursor already passed it
@@ -418,7 +419,7 @@ Both endpoints: `Authorization: Bearer` device token only, confirmed email when 
 6. Up to 20 pages per run, then a follow-up run is scheduled. Triggers: as 13f, plus a 10-minute `sync-periodic` alarm and the `sync.now` command (push then pull, which replaces `sync.pushNow`).
 7. A pull never opens, closes or navigates tabs: it touches only IndexedDB (verified on both profiles of the two-profile E2E around every pull).
 
-**Local fields not stored:** description, pinned and archived stay on the server (an upload doesn't change them). The workspace is stored too once the extension has workspaces (the M5 extension slice, next PR); until then an upload without `workspaceId` leaves it unchanged. Pulled sessions keep the server's `sourceDeviceId`/`sourceDeviceName`.
+**Local fields not stored:** description, pinned and archived stay on the server (an upload doesn't change them). The workspace is stored beside the session since 13j. Pulled sessions keep the server's `sourceDeviceId`/`sourceDeviceName`.
 
 ## 13h. Implemented: opt-in, upload preview and sync status (2026-10-16)
 
@@ -455,6 +456,23 @@ The uploader now stores why an operation was refused (`lastErrorCode`) and, for 
   - it does the choice, then the worker syncs
 - Every outcome keeps at least one copy of the user's work, and nothing is resolved automatically.
 - Not implemented: section 9's field-level merge (no automatic merging of disjoint fields).
+
+## 13j. Implemented: workspaces in the extension (2026-10-17)
+
+Extension only, on the server side of 13f/13g. Code: `apps/extension/src/lib/workspace-repository.ts` (local changes), `workspace-sync.ts` (pull and push rules), `outbox-repository.ts`, `sync-batch.ts`. Schema: `DATA_MODEL.md` section 4 (Dexie v6). UI: `UI_UX_DESIGN.md` 18g. Decisions (user's, 2026-10-17): account only, per-field merge, deleting moves sessions out.
+
+- **Account only.** Workspaces live in the connected account's scope, like its sessions. A session only in this browser can't be put in one (`session.assign` refuses it); sessions entering the account (opt-in move, saves while sync is on) start in no workspace.
+- **Commands:** `workspace.create { name, color }`, `workspace.update { workspaceId, name?, color? }`, `workspace.delete { workspaceId }`, `session.assign { sessionId, workspaceId | null }`. Each commits its records and its queued upload in one IndexedDB transaction, then the worker syncs. The extension edits name and color; description, icon and position are kept as they are. More than 100 live workspaces is refused locally.
+- **Session uploads** carry `workspaceId` once this browser knows it (absent keeps the server's). Sessions cached before v6 don't know it: the v6 upgrade clears every account's cursor, so the next sync bootstraps, and a bootstrap item at the version already stored fills in the workspace.
+- **Per-field merge.** A workspace upload carries only the fields changed here; a still-queued edit absorbs later ones (newest value per field). A pulled workspace is shown as the server's fields with the fields still waiting here on top. After `VERSION_CONFLICT` the change is sent again on the server's version under a new operation id (the refused id keeps its receipt), so this browser wins only for the fields it changed. On acceptance the record takes the new version only if it held exactly the version the edit built on; otherwise the pull that follows brings the other browser's fields.
+- **Deletes win** over edits both ways. A workspace deleted in the account (pulled delete, `NOT_FOUND` for an edit, or missing from the first bootstrap page with nothing waiting here) is forgotten: its record, its unsent operations and every local assignment to it. Queued session uploads that would put a session in it are changed to no workspace. A delete here that conflicts with an edit elsewhere is sent again on the newer version.
+- **Deleting a workspace with sessions** queues an unassignment upload for each of them, then the delete with `waitFor` (those sessions). The workspace stays hidden here until the delete is accepted. `WORKSPACE_NOT_EMPTY` (another browser put a session in it meanwhile) brings it back. A workspace whose create was never accepted is just dropped, with nothing sent.
+- **Upload order** (`selectPushBatch`): an operation waits while an entity it depends on still has an earlier operation queued: a session for the workspace it goes into (the create may still be refused), a workspace delete for the sessions it moved out. This costs a round trip, never a refusal.
+- **Refusals resolved without the user:** a session upload answered `INVALID_WORKSPACE` (its workspace was deleted elsewhere while the upload was on its way) goes again without the workspace. Workspaces never go to conflict review.
+- **Refusals the user sees:** a create the account refuses (`LIMIT_REACHED`, `ID_IN_USE`, `VALIDATION_ERROR`) stays `rejected`; the workspace shows the reason, counts under "Needs review" in the Sync card (with **Remove workspace**), and sessions put in it wait until it is removed.
+- **Bootstrap drop on the first page,** not after the last: the first page holds the complete live set, a push never runs while a pull does (`sync-runner`), so nothing accepted after the server read the set can look deleted, and the server never lists a live session in a deleted workspace.
+
+Tested: `workspaces.test.ts` (13, against an in-memory stand-in for the sync endpoints), `workspaces-ui.test.tsx` (4), the v5 to v6 migration, and `apps/web/e2e/sync-workspaces.spec.ts` (two real extension profiles and the web).
 
 ## 14. References
 

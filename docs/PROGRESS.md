@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M6 release preparation; M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 repository release preparation implemented (6/8 checklist items; production privacy/operator details and real-host/off-host recovery still pending): rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done; trusted-proxy client IP, HTTPS requirements and the Coolify checklist (`docs/DEPLOYMENT.md`) done, not yet deployed. Public privacy page, store copy/icons/screenshots, encrypted backup/restore scripts and release/rollback docs are now implemented. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M5 started (workspace switcher and assignment, on `feature/m5-workspaces-extension`); M6 release preparation; M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 repository release preparation implemented (6/8 checklist items; production privacy/operator details and real-host/off-host recovery still pending): rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done; trusted-proxy client IP, HTTPS requirements and the Coolify checklist (`docs/DEPLOYMENT.md`) done, not yet deployed. Public privacy page, store copy/icons/screenshots, encrypted backup/restore scripts and release/rollback docs are now implemented. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-17)
 
@@ -10,18 +10,58 @@
 |---|---|
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice** plus opted-in account sync and durable outbox. Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
-| Side panel, workspaces, settings | Not implemented |
+| Workspaces | **Working (M5, 2026-10-17, on `feature/m5-workspaces-extension`, not merged).** Synced both ways between the web and the extension (account only, per-field merge, deletes win, deleting moves sessions out). Manager: switcher filter, Workspaces dialog (create, rename, recolor, delete), inspector assignment. Verified across two real extension profiles. Not in the popup, side panel or web dashboard yet |
+| Side panel, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
 | Database | **Schema, 3 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
-| Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
+| Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces and session assignments sync too (SYNC_PROTOCOL.md 13j) |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`) for every PR (`check`: lint, typecheck, unit, DB and E2E tests with PostgreSQL + Mailpit services; `docker`: the production image and compose stack) and every push to `main` (a newer push cancels a run in progress). GitGuardian's findings on #1 and #2 were false positives (marked by the user) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 (M6 release hardening, from a separate worktree) merged as `8c4102e`. Latest change: PR #15 `feature/m5-workspaces` (workspace sync, server side). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). **The whole stack (#1 to #11) was merged on 2026-10-17** (`765989c`), bottom-up, one merge commit per PR (`e305902` #1 ... `765989c` #11), and every `feature/*` branch was deleted. New work goes on short branches off `main`, one small PR each. PR #12 (`bugfix/restore-retry-e2e`, flaky restore-retry E2E fix) merged as `b048a6d`. PR #13 (framing protection) merged as `dc827cd`. PR #14 (CI release ZIP) merged as `1b9dd50`. PR #16 (M6 release hardening, from a separate worktree) merged as `8c4102e`. PR #15 `feature/m5-workspaces` (workspace sync, server side) merged as `3b8a37a`. Latest change: `feature/m5-workspaces-extension` (workspaces in the extension; committed locally, not pushed yet). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (M5 workspaces, part 2: extension) / Claude Code (Opus 5.5) / `feature/m5-workspaces-extension` (macOS laptop)
+
+**Goal (user's scope):** Dexie v6 `workspaces` table, `workspaceId` on local sessions, pull/bootstrap apply (drop account workspaces missing from the live set unless they have pending changes), upload of workspace operations and assignments, the workspace switcher and assignment in the manager. Branched off `main` at `3b8a37a` (CI green).
+
+**Decisions (user's choices, 2026-10-17):**
+- Workspaces are **account only**: sessions only in this browser can't be assigned. Local workspaces may come later.
+- Workspace edit conflicts use a **per-field merge**: an upload carries only the fields changed here, and after a conflict it is sent again on top of the newer version. Deletes win over edits in both directions. No review dialog for workspaces.
+- Deleting a workspace that still has sessions **moves them out** (to "No workspace"), with the count in the confirmation. The unassignments upload before the delete.
+
+**Plan:** (1) contracts and push: a workspace update may leave out `name` (needed by the per-field merge; a create still needs it); (2) extension data and sync: v6 schema, workspace repository and commands, outbox dependencies (a session waits for its workspace's create, a workspace delete waits for its unassignments), push results, pull and bootstrap apply, a one-time rebuild so existing assignments and workspaces download; (3) manager UI: switcher, workspace dialog, assignment in the inspector; (4) docs.
+
+**Implemented** (commits `1ea0b72`, `0601a59`, `31ae851`, `1234b6f`, plus docs):
+- Contracts and server (small, backward compatible): `syncWorkspacePayloadSchema` fields are all optional with at least one present, and a create needs `name` (`packages/contracts/src/api-sync.ts`); `apps/web/src/server/sync/push.ts` passes an update without a name through.
+- Extension data (`apps/extension/src/lib/`):
+  - `db.ts`: Dexie v6 `workspaces` table, `workspaceId` beside account sessions, outbox `entityType` `workspace` with `waitFor` on deletes. The v6 upgrade clears every account's cursor (one rebuild).
+  - `workspace-repository.ts`: create (local limit of 100), update (only changed fields), delete (sessions moved out first; never-uploaded workspaces just dropped), `assignSession` (account sessions only), `readWorkspaces`.
+  - `outbox-repository.ts`: `enqueueWorkspaceUpsert` (merges into a queued edit), `enqueueWorkspaceDelete`, `requeueRefused`, `clearWorkspaceFromQueue`.
+  - `sync-batch.ts`: workspace operations, `workspaceId` in session uploads once known, dependency waits.
+  - `workspace-sync.ts`: pull apply with waiting fields on top, `forgetWorkspace`, first-page bootstrap drop, push results (merge and resend on conflict, deletes win, `WORKSPACE_NOT_EMPTY` brings it back, refused creates kept as errors), `INVALID_WORKSPACE` resend without the workspace.
+  - `sync-apply.ts`, `sync-downloader.ts`, `sync-uploader.ts`, `session-repository.ts`, `sync-consent.ts`, `review-repository.ts` (sessions only in review; keep mine/keep both keep the workspace), `messages.ts` and `command-handlers.ts` (`workspace.create/update/delete`, `session.assign`), `background.ts` (sync after them).
+- Manager UI (`apps/extension/src/features/workspaces/`, `manager/`, `review/review-list.tsx`, `hooks/use-workspaces.ts`, `hooks/use-manager-route.ts`, `components/color-dot.tsx`): switcher with counts in the URL hash, workspace names in rows, Workspaces dialog, inspector picker, refused workspaces under Needs review.
+- Tests: `workspaces.test.ts` (13, with the in-memory `workspace-test-server.ts`), `workspaces-ui.test.tsx` (4), v5 to v6 migration test (+1), contracts (+2 cases), `push.db.test.ts` (an update with only a color), web E2E `sync-workspaces.spec.ts` (new: two real extension profiles plus the web, UI-driven create, assign and delete, per-field merge, web delete).
+- Docs: SYNC_PROTOCOL 13f/13g amended and new 13j, DATA_MODEL section 4, UI_UX_DESIGN 18g, SYSTEM_DESIGN decisions, ROADMAP M5, TEST_PLAN multi-device rows, README status.
+
+**Validated (macOS, temporary `docker run` PostgreSQL + Mailpit on 54369/58065; another session's containers on 54359/58055 left alone):**
+- `pnpm check --force`: 17/17 tasks; extension unit tests **215** (+18).
+- The new UI test first failed under the parallel Turbo run (`getByRole` on the inspector's picker, which renders once its own live query loads); fixed with `findByRole`, then 5/5 parallel runs passed.
+- `pnpm build`: pass. `pnpm --filter @sessionhub/web test:db`: **66/66**.
+- Full web E2E: **49/49** (+1), including both existing two-profile specs and `sync-push`. Extension E2E: **9/9**.
+- Manager checked in Chromium with the built extension and seeded data at 1280 and 390 px (list, Workspaces dialog, delete confirmation, inspector) and the Sync card in dark mode at 390 px: no horizontal overflow.
+- Not run: `pnpm test:docker` (no image or compose change), the backup drill.
+
+**Known gaps:**
+- No workspace in the popup, side panel or web dashboard; new saves aren't put in the selected workspace; the selected workspace isn't remembered across manager tabs (URL hash only).
+- A delete refused with `WORKSPACE_NOT_EMPTY` brings the workspace back without a message.
+- Not pushed and no PR yet (waiting for the user).
+
+**Next step:** push `feature/m5-workspaces-extension` and open the PR (CI runs the same checks), then the next M5 item from ROADMAP.md (workspaces on the web dashboard, or the side panel).
 
 ### 2026-10-17 (M5 workspaces, part 1: sync server side) / Claude Code (Opus 5.5) / `feature/m5-workspaces` (macOS laptop)
 
