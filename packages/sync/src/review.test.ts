@@ -44,7 +44,12 @@ describe("reviewChoices", () => {
     const gone = input({ hasLocalRecord: false });
     expect(reviewChoices("edit-conflict", gone)).toEqual(["keep-server"]);
     expect(reviewChoices("deleted-on-server", gone)).toEqual(["keep-server"]);
-    expect(reviewChoices("id-in-use", gone)).toEqual([]);
+  });
+
+  it("lets a refused upload of a session deleted here be dropped, so it can't stay in review forever", () => {
+    const gone = input({ hasLocalRecord: false, serverCopy: null, conflictServerVersion: null });
+    expect(reviewChoices("id-in-use", gone)).toEqual(["keep-server"]);
+    expect(reviewChoices("rejected", gone)).toEqual(["keep-server"]);
   });
 });
 

@@ -7,8 +7,10 @@ describe("review copy", () => {
   it("has a label for every choice any situation can offer", () => {
     const kinds: ReviewKind[] = ["edit-conflict", "deleted-on-server", "delete-conflict", "id-in-use", "rejected"];
     for (const kind of kinds) {
-      const offered = reviewChoices(kind, { operation: { action: "upsert", status: "conflict", code: null }, hasLocalRecord: true, serverCopy: { action: "upsert", version: 2 }, conflictServerVersion: 2 });
-      for (const choice of offered) expect(REVIEW_CHOICE_TEXT[kind][choice]?.label).toBeTruthy();
+      for (const hasLocalRecord of [true, false]) {
+        const offered = reviewChoices(kind, { operation: { action: "upsert", status: "conflict", code: null }, hasLocalRecord, serverCopy: { action: "upsert", version: 2 }, conflictServerVersion: 2 });
+        for (const choice of offered) expect(REVIEW_CHOICE_TEXT[kind][choice]?.label).toBeTruthy();
+      }
     }
   });
 });

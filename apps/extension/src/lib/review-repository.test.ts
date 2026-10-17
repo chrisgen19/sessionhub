@@ -5,6 +5,7 @@ import { accountScope } from "./account-scope";
 import type { OutboxRecord, SessionHubDb } from "./db";
 import { listOutbox } from "./outbox-repository";
 import { listReviewItems, resolveReview, ReviewGoneError } from "./review-repository";
+import { deleteSession } from "./session-repository";
 import { connectAs, freshDb, idFactory, sampleSession, seedAccountSession } from "./test-fixtures";
 
 const ALICE = "AliceAccount00000000000000000000";
@@ -140,6 +141,39 @@ describe("resolving the other situations", () => {
       expect(after.record).toEqual({ ...session, scope: "local" });
       expect(after.operations).toEqual([]);
     }
+  });
+
+  it("an id taken by another session of the account keeps that session under the id, whichever choice", async () => {
+    for (const choice of ["keep-mine", "local-only"] as const) {
+      const { db, session } = await refused({ status: "rejected", code: "ID_IN_USE", copy: { action: "upsert", version: 1 } });
+      const { sessionId } = await resolveReview(db, session.id, choice, context);
+      // The pull already passed the account's session, so dropping its copy would hide it here for good.
+      expect(await state(db, session.id)).toMatchObject({ record: { name: "Theirs", scope: SCOPE, sync: { serverVersion: 1, state: "synced" } }, copy: undefined });
+      expect(sessionId).not.toBe(session.id);
+      expect(await db.sessions.get(sessionId)).toMatchObject({ name: "Mine", scope: choice === "keep-mine" ? SCOPE : "local" });
+      const created = choice === "keep-mine" ? [{ entityId: sessionId, action: "upsert", expectedVersion: 0, status: "queued" }] : [];
+      expect((await state(db, sessionId)).operations).toEqual(created);
+    }
+  });
+
+  it("a session deleted here after its upload was refused can drop the change, uploading nothing", async () => {
+    for (const code of ["ID_IN_USE", "TOO_LARGE", "VALIDATION_ERROR"]) {
+      const { db, session } = await refused({ status: "rejected", code, copy: null });
+      await deleteSession(db, session.id, context);
+      const [item] = await listReviewItems(db);
+      expect(item?.choices).toEqual(["keep-server"]);
+      await resolveReview(db, session.id, "keep-server", context);
+      // The refused upload, the delete queued behind it and the tombstone all go; nothing is sent.
+      expect(await state(db, session.id)).toEqual({ record: undefined, operations: [], copy: undefined, tombstone: undefined });
+      expect(await listReviewItems(db)).toEqual([]);
+    }
+  });
+
+  it("dropping the change of a session deleted here keeps the account's session that holds its id", async () => {
+    const { db, session } = await refused({ status: "rejected", code: "ID_IN_USE", copy: { action: "upsert", version: 1 } });
+    await deleteSession(db, session.id, context);
+    await resolveReview(db, session.id, "keep-server", context);
+    expect(await state(db, session.id)).toMatchObject({ record: { name: "Theirs", sync: { state: "synced" } }, operations: [], copy: undefined, tombstone: undefined });
   });
 });
 

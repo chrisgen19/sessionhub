@@ -101,6 +101,15 @@ const forgetHere = async ({ db, sessionId }: Resolution) => {
   await db.serverCopies.delete(sessionId);
 };
 
+/**
+ * This browser's version is leaving the id. A session of the account that holds it (its copy
+ * arrived) is stored under the id: the pull already passed it, so dropping it would hide it here.
+ */
+const releaseId = async (r: Resolution) => {
+  const kept = r.item.server !== null && r.copy !== undefined && (await writeServerSession(r.db, r.scope, r.item.server, r.copy.version, r.record));
+  if (!kept) await forgetHere(r);
+};
+
 type Handler = (resolution: Resolution) => Promise<string>;
 
 /** Upload this browser's version on top of the server's current one (a new conflict if it moves again). */
@@ -130,7 +139,7 @@ const keepBoth: Handler = async (r) => {
 const reuploadAsNew: Handler = async (r) => {
   if (!r.item.local) throw unavailable();
   const mine = copyAsNewSession(r.item.local, r.context);
-  await forgetHere(r);
+  await releaseId(r);
   await addAsNew(r, mine);
   return mine.id;
 };
@@ -147,10 +156,30 @@ const acceptServerDelete: Handler = async (r) => {
   return r.sessionId;
 };
 
+/** Stops syncing this browser's version; it moves to new ids when an account session holds the id. */
 const backToThisBrowser: Handler = async (r) => {
   if (!r.item.local) throw unavailable();
-  await r.db.sessions.put({ ...r.item.local, scope: "local" });
-  await r.db.serverCopies.delete(r.sessionId);
+  if (!r.item.server) {
+    await r.db.sessions.put({ ...r.item.local, scope: "local" });
+    await r.db.serverCopies.delete(r.sessionId);
+    return r.sessionId;
+  }
+  const mine = copyAsNewSession(r.item.local, r.context);
+  await releaseId(r);
+  await r.db.sessions.add({ ...mine, scope: "local" });
+  return mine.id;
+};
+
+/**
+ * Deleted here after its upload was refused: the refused change, the delete queued behind it and
+ * the tombstone are dropped (resolveReview already removed the operations), so nothing is sent and
+ * no server session is deleted. An account session holding the id, if its copy arrived, is kept.
+ */
+const dropDeletedChange: Handler = async (r) => {
+  // A record left under this id belongs to another scope (this account's was deleted): leave it.
+  if (r.record) await r.db.serverCopies.delete(r.sessionId);
+  else await releaseId(r);
+  await r.db.sessionTombstones.delete(r.sessionId);
   return r.sessionId;
 };
 
@@ -158,8 +187,8 @@ const HANDLERS: Record<ReviewKind, Partial<Record<ReviewChoice, Handler>>> = {
   "edit-conflict": { "keep-mine": uploadMineOver, "keep-server": keepServer, "save-both": keepBoth },
   "deleted-on-server": { "keep-mine": reuploadAsNew, "keep-server": acceptServerDelete },
   "delete-conflict": { "keep-mine": deleteEverywhere, "keep-server": keepServer },
-  "id-in-use": { "keep-mine": reuploadAsNew, "local-only": backToThisBrowser },
-  rejected: { "local-only": backToThisBrowser },
+  "id-in-use": { "keep-mine": reuploadAsNew, "local-only": backToThisBrowser, "keep-server": dropDeletedChange },
+  rejected: { "local-only": backToThisBrowser, "keep-server": dropDeletedChange },
 };
 
 const unavailable = () => new ReviewGoneError("That choice isn't available for this change any more. Look at it again.");

@@ -58,13 +58,14 @@ export const reviewChoices = (kind: ReviewKind, input: ReviewInput): ReviewChoic
   const serverUpsert = input.serverCopy?.action === "upsert";
   const known = serverVersionOf(input) !== null;
   // Keeping this browser's version needs it to still exist here (it may have been deleted since).
+  // Once it was deleted here, a refused upload can only be dropped (nothing is sent).
   const mine = input.hasLocalRecord;
   const choices: Record<ReviewKind, [ReviewChoice, boolean][]> = {
     "edit-conflict": [["keep-mine", mine && known], ["keep-server", serverUpsert], ["save-both", mine && serverUpsert]],
     "deleted-on-server": [["keep-mine", mine], ["keep-server", true]],
     "delete-conflict": [["keep-server", serverUpsert], ["keep-mine", known]],
-    "id-in-use": [["keep-mine", mine], ["local-only", mine]],
-    rejected: [["local-only", mine]],
+    "id-in-use": [["keep-mine", mine], ["local-only", mine], ["keep-server", !mine]],
+    rejected: [["local-only", mine], ["keep-server", !mine]],
   };
   return choices[kind].filter(([, available]) => available).map(([choice]) => choice);
 };

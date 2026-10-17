@@ -28,9 +28,11 @@ export const REVIEW_CHOICE_TEXT: Record<ReviewKind, Partial<Record<ReviewChoice,
   "id-in-use": {
     "keep-mine": { label: "Upload as a new session", detail: "Give it a new ID and upload it." },
     "local-only": { label: "Keep in this browser only", detail: "Stop syncing it. It stays here." },
+    "keep-server": { label: "Drop this change", detail: "It was deleted here. Nothing is uploaded, and your account's session with this ID stays." },
   },
   rejected: {
     "local-only": { label: "Keep in this browser only", detail: "Stop syncing it. It stays here, unchanged." },
+    "keep-server": { label: "Drop this change", detail: "It was deleted here. Nothing is uploaded, and your account keeps what it had." },
   },
 };
 
