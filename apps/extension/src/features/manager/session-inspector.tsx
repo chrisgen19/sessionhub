@@ -7,6 +7,8 @@ import { buttonClass } from "../../components/modal";
 import { downloadSessionExport } from "../../lib/export-download";
 import { formatFullDate, plural, sessionOrigin } from "../../lib/format";
 import type { SessionSyncLabel } from "../../lib/sync-status";
+import { useReviewItems } from "../../hooks/use-review";
+import { ReviewDialog } from "../review/review-dialog";
 import { DeleteDialog } from "./delete-dialog";
 import { LastRestore } from "./last-restore";
 import { RenameTitle } from "./rename-title";
@@ -18,10 +20,13 @@ interface SessionInspectorProps {
   syncLabel: SessionSyncLabel;
   onBack: () => void;
   onDeleted: () => void;
+  /** Opens another session (after a review that kept this browser's version as a new one). */
+  onOpen: (id: string) => void;
 }
 
-export function SessionInspector({ session, syncLabel, onBack, onDeleted }: SessionInspectorProps) {
-  const [dialog, setDialog] = useState<"restore" | "delete" | null>(null);
+export function SessionInspector({ session, syncLabel, onBack, onDeleted, onOpen }: SessionInspectorProps) {
+  const [dialog, setDialog] = useState<"restore" | "delete" | "review" | null>(null);
+  const review = useReviewItems()?.find((item) => item.sessionId === session.id);
   const summary = summarizeSession(session);
   const notRestorable = summary.tabCount - summary.restorableTabCount;
 
@@ -65,6 +70,17 @@ export function SessionInspector({ session, syncLabel, onBack, onDeleted }: Sess
         </button>
       </div>
 
+      {review && (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg bg-warning-soft px-3 py-2.5 text-xs text-fg">
+          <span className="min-w-0 flex-1">
+            <span className="font-semibold">Needs review.</span> Your account didn&apos;t accept the last change. Both versions are kept until you choose.
+          </span>
+          <button type="button" className={buttonClass.secondary} onClick={() => setDialog("review")}>
+            Review…
+          </button>
+        </div>
+      )}
+
       <LastRestore session={session} />
 
       {notRestorable > 0 && (
@@ -78,6 +94,16 @@ export function SessionInspector({ session, syncLabel, onBack, onDeleted }: Sess
       <WindowTree session={session} />
 
       {dialog === "restore" && <RestoreDialog session={session} onClose={() => setDialog(null)} />}
+      {dialog === "review" && review && (
+        <ReviewDialog
+          item={review}
+          onClose={() => setDialog(null)}
+          onResolved={(id) => {
+            setDialog(null);
+            if (id !== session.id) onOpen(id);
+          }}
+        />
+      )}
       {dialog === "delete" && (
         <DeleteDialog
           session={session}

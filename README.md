@@ -1,6 +1,6 @@
 # SessionHub — Product & Engineering Reference Pack
 
-> **Status:** Local extension (M2) and web app with accounts and APIs (M3) work. Cross-device sync (M4) is in progress: pairing, the extension's local outbox, upload (`sync/push`) and download (`sync/pull`, `sync/bootstrap`) work between profiles, with an opt-in and upload preview in the extension's Account view and real sync status everywhere; conflict review doesn't exist yet. See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for verified status.
+> **Status:** Local extension (M2) and web app with accounts and APIs (M3) work. Cross-device sync (M4) works: pairing, the extension's local outbox, upload (`sync/push`) and download (`sync/pull`, `sync/bootstrap`) between profiles, an opt-in with upload preview, real sync status everywhere, and conflict review (keep mine / keep the other version / keep both). See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for verified status.
 >
 > **Updated:** 2026-10-16  
 > **Product:** SessionHub (working name)  

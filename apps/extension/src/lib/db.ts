@@ -147,6 +147,10 @@ export type OutboxRecord = {
   attempts: number;
   nextAttemptAt: string | null;
   lastError: string | null;
+  /** Why the server refused it (VERSION_CONFLICT, NOT_FOUND, ID_IN_USE, VALIDATION_ERROR, TOO_LARGE); absent on older records. */
+  lastErrorCode?: string | null;
+  /** The server version a conflict reported, so "keep mine" can build on it before the server copy arrives. */
+  conflictServerVersion?: number | null;
 } & ({ action: "upsert"; payload: SavedSession } | { action: "delete"; payload: null });
 
 /**

@@ -111,7 +111,7 @@ For mixed-result batches, report per-operation statuses: `accepted`, `duplicate`
 }
 ```
 
-The local pending change, including its original payload, is kept in `conflictDrafts`. Do not delete it on conflict. The UI offers safe reconciliation; the API never silently performs destructive merge.
+The local pending change, including its original payload, is kept (implemented: in the held outbox operation, with the server's state in `serverCopies`; see 13i). Do not delete it on conflict. The UI offers safe reconciliation; the API never silently performs destructive merge.
 
 ## 6. Pull response (illustrative)
 
@@ -357,7 +357,7 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
 5. Up to 10 rounds per run. When the cap ends a run with operations still sendable (not held back), it arms the retry alarm at once to continue. Failures back off 5 s doubling to 15 minutes with jitter, or longer if `Retry-After` says so; the retry alarm (`sync-retry`) runs it again. Revocation stops it (the connection is removed; queued operations stay).
 6. Triggers: worker start (resends anything left `sending`), after a successful `session.rename` / `session.delete`, the retry alarm, and `sync.pushNow`. One run at a time per worker (in-memory single flight; safety comes from receipts, not from this).
 
-**Not yet:** conflict resolution UI (conflicting operations and the held server copy are both kept, 13g), URL exclusions before upload (no exclusion settings exist yet). The opt-in that sets `enabledAt` is 13h.
+**Not yet:** URL exclusions before upload (no exclusion settings exist yet). The opt-in that sets `enabledAt` is 13h; conflict review is 13i.
 
 ## 13g. Implemented: sync pull and bootstrap (2026-10-16)
 
@@ -405,6 +405,33 @@ Extension only. Commands: `sync.enable { sessionIds }`, `sync.disable`, `sync.no
 - `sync.disable` only clears `enabledAt`: uploads and downloads stop (the gate in 13f/13g), including a run in progress before its next request, nothing is deleted, queued changes wait.
 - While sync is on, `session.capture` and `session.import` save into the account scope with a queued create; their results carry `syncing: true`.
 - The worker runs a sync after `session.capture`, `session.import`, `session.rename`, `session.delete` and `sync.enable`. A sync requested while a run is in progress gets **one follow-up run right after it**, shared by everyone who asked meanwhile. Joining the running run instead would miss a change made after that run's upload (found by the real-extension E2E: a rename waited for the 10-minute alarm).
+
+## 13i. Implemented: conflict review (2026-10-16)
+
+Extension only. Rules: `packages/sync/src/review.ts`. Storage and resolution: `apps/extension/src/lib/review-repository.ts`. Command: `sync.resolve { sessionId, choice }`. UI: `UI_UX_DESIGN.md` 18f.
+
+The uploader now stores why an operation was refused (`lastErrorCode`) and, for a version conflict, the server's version (`conflictServerVersion`). A session needs review while it has an operation in `conflict` or `rejected` status. Its first such operation, the local record and the held server copy decide the situation and the choices (section 9 mapped):
+
+| Situation (`ReviewKind`) | Comes from | Choices |
+|---|---|---|
+| `edit-conflict` | upsert answered `VERSION_CONFLICT` | **Keep mine**: one new upload of this browser's current version with `expectedVersion` = the server's version (it conflicts again if the server moved meanwhile, never a blind overwrite). **Keep the other version**: write the server copy, drop local changes. **Keep both**: the server copy stays under the id; this browser's version becomes a new session "<name> (this browser's version)" with a queued create |
+| `deleted-on-server` | upsert answered `NOT_FOUND`, or the held copy is a delete | **Keep mine as a new session** (a tombstone can't be edited back, so: new ids, queued create); **Delete it here too** |
+| `delete-conflict` | delete answered `VERSION_CONFLICT` (edited elsewhere) | **Restore the other version** (write the copy, drop the tombstone); **Delete it everywhere** (a new delete on the server's version) |
+| `id-in-use` | create answered `ID_IN_USE` | **Upload as a new session** (new ids); **Keep in this browser only** (back to `local` scope). Once the account's session holding the id has downloaded, both store it under the id and move this browser's version to new ids. Deleted here: **Drop this change** |
+| `rejected` | `VALIDATION_ERROR` or too large | **Keep in this browser only** (new ids if an account session holding the id has downloaded). Deleted here: **Drop this change** |
+
+- Choices are offered only when they can be carried out.
+  - Taking the other version needs the server copy.
+  - Uploading over it needs its version (copy or conflict result).
+  - Keeping this browser's version needs the local record (it may have been deleted here since).
+  - Deleted here after a refused upload: **Drop this change** removes the refused operation, the delete queued behind it and the tombstone. Nothing is uploaded and no server session is deleted.
+  - With nothing possible yet, the UI says to Sync now (the pull holds the server's state).
+- Every resolution runs in one IndexedDB transaction:
+  - it re-checks that the item and the choice are still current (otherwise `conflict`: "already resolved" / "not available any more")
+  - it removes the held operation and everything queued after it for that session
+  - it does the choice, then the worker syncs
+- Every outcome keeps at least one copy of the user's work, and nothing is resolved automatically.
+- Not implemented: section 9's field-level merge (no automatic merging of disjoint fields).
 
 ## 14. References
 

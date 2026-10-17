@@ -5,6 +5,7 @@ import { buttonClass } from "../../components/modal";
 import { OverviewChip } from "../../components/sync-status-chip";
 import { useSyncActions, useSyncOverview } from "../../hooks/use-sync";
 import { formatFullDate, plural } from "../../lib/format";
+import { ReviewList } from "../review/review-list";
 import { UploadPreview } from "./upload-preview";
 
 /** Sync opt-in, status and actions for a connected browser (docs/UI_UX_DESIGN.md section 13). */
@@ -51,7 +52,7 @@ export function SyncSection({ localSessions }: { localSessions: SavedSession[] }
             {overview.review > 0 && (
               <>
                 <dt className="text-fg-muted">Needs review</dt>
-                <dd className="font-medium text-warning">{plural(overview.review, "change")} the server didn&apos;t accept. They&apos;re kept here.</dd>
+                <dd className="font-medium text-warning">{plural(overview.review, "change")} your account didn&apos;t accept. They&apos;re kept here.</dd>
               </>
             )}
           </dl>
@@ -76,6 +77,7 @@ export function SyncSection({ localSessions }: { localSessions: SavedSession[] }
           </div>
         </>
       )}
+      <ReviewList />
       <div aria-live="polite">{message && <p className={`text-[13px] ${message.tone === "ok" ? "text-brand" : "text-danger"}`}>{message.text}</p>}</div>
       {preview && (
         <UploadPreview

@@ -20,7 +20,7 @@ const claimBatch = (db: SessionHubDb, scope: AccountScope, now: string): Promise
   db.transaction("rw", [db.outbox, db.sessions], async () => {
     const { operations, tooLarge } = selectPushBatch(await listOutbox(db, scope));
     for (const operation of tooLarge) {
-      await db.outbox.put({ ...operation, status: "rejected", lastError: TOO_LARGE, updatedAt: now });
+      await db.outbox.put({ ...operation, status: "rejected", lastError: TOO_LARGE, lastErrorCode: "TOO_LARGE", updatedAt: now });
       await setSessionState(db, scope, operation.entityId, "error");
     }
     const claimed = operations.map((operation) => ({ ...operation, status: "sending" as const, attempts: operation.attempts + 1, updatedAt: now }));
@@ -66,7 +66,14 @@ const applyResults = (db: SessionHubDb, scope: AccountScope, claimed: OutboxReco
         tally.accepted += 1;
       } else {
         const conflict = result.status === "conflict" || result.status === "rejected";
-        await db.outbox.put({ ...operation, status: result.status === "conflict" ? "conflict" : "rejected", lastError: result.message, updatedAt: now });
+        await db.outbox.put({
+          ...operation,
+          status: result.status === "conflict" ? "conflict" : "rejected",
+          lastError: result.message,
+          lastErrorCode: result.status === "validation_error" ? "VALIDATION_ERROR" : result.code,
+          conflictServerVersion: result.status === "conflict" ? result.serverVersion : null,
+          updatedAt: now,
+        });
         await setSessionState(db, scope, operation.entityId, conflict ? "conflict" : "error");
         if (result.status === "conflict") tally.conflicts += 1;
         else tally.rejected += 1;

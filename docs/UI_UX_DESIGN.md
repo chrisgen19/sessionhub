@@ -553,8 +553,26 @@ Implemented in `apps/extension/src/features/account/` (`sync-section.tsx`, `uplo
 - **Deviations:**
   - no per-row "Syncing..." state (a run is in worker memory, not IndexedDB)
   - no first-run sync banner in the popup yet
-  - conflict review isn't built: "Needs review" explains that both versions are kept
+  - conflict review: see 18f
 - Verified at 390 and 1280 px (and dark mode at 390 px) with no horizontal overflow.
+
+## 18f. Extension conflict review (2026-10-16)
+
+`apps/extension/src/features/review/` (`review-dialog.tsx`, `review-compare.tsx`, `review-list.tsx`), copy in `lib/review-text.ts`.
+
+- **Entry points:**
+  - The session inspector shows a "Needs review" banner ("Your account didn't accept the last change. Both versions are kept until you choose.") with **Review...**.
+  - The Account view's Sync card lists every change to review (name and a short reason) with **Review...**. This is the only entry for a session deleted here but changed elsewhere, which has no row.
+- **Dialog** "Review "<name>"":
+  - a one-line explanation of the situation
+  - "This browser" and "Other version" side by side: name, tab and window counts, when it changed, and which device it came from ("Deleted in this browser" / "Deleted elsewhere" / "Not downloaded yet")
+  - up to three links only in each version, with "and N more". Links are plain text, never opened.
+- **Choices** are full-width buttons with a label and one line of detail (18f labels: Keep mine, Keep the other version, Keep both; Keep mine as a new session, Delete it here too; Restore the other version, Delete it everywhere; Upload as a new session, Keep in this browser only; Drop this change).
+  - Only possible choices are shown. With none yet: "The other version hasn't downloaded yet. Sync now, then choose. Nothing is lost in the meantime." plus **Sync now**.
+  - **Decide later** closes the dialog and changes nothing. Errors read "Nothing was changed: ...".
+  - After Keep both the manager opens the new session.
+- "Server" is avoided in user copy: "the other version", "your account".
+- Verified at 390 and 1280 px and dark mode at 390 px (inspector banner, dialog, Sync card list): no horizontal overflow.
 
 ## 18d. Web session detail (2026-10-16)
 
