@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata: Metadata = { title: "Privacy policy · SessionHub" };
 
 export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-3xl px-5 py-12 text-sm leading-7">
-      <Link href="/" className="font-semibold text-brand">SessionHub home</Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/" className="font-semibold text-brand">SessionHub home</Link>
+        <ThemeToggle />
+      </div>
       <h1 className="mt-6 text-3xl font-bold">Privacy policy</h1>
       <p className="mt-2 text-fg-muted">Updated October 17, 2026. Applies to the SessionHub Chrome extension and web app.</p>
       <p className="mt-4 rounded-lg border border-line p-4">

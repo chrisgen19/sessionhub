@@ -3,8 +3,13 @@
  * Import after `@import "tailwindcss";` to get utilities such as
  * bg-canvas, bg-surface, text-fg, text-fg-muted, border-line, bg-brand, text-danger.
  */
+/*
+ * Light by default. Dark when <html data-theme="dark">, which @sessionhub/core/theme sets before
+ * the first paint from the user's choice (Light, Dark or System). Not from the media query here:
+ * the default is light even on a dark system.
+ */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --sh-bg: #f7f8f5;
   --sh-surface: #ffffff;
   --sh-surface-muted: #f0f3ef;
@@ -22,24 +27,23 @@
   --sh-focus: #2f9e78;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --sh-bg: #111815;
-    --sh-surface: #18221d;
-    --sh-surface-muted: #233027;
-    --sh-text-primary: #ecf5ef;
-    --sh-text-secondary: #abb9b0;
-    --sh-border: #34473b;
-    --sh-brand: #5dd6a7;
-    --sh-brand-hover: #8be5bd;
-    --sh-brand-soft: #1d3b2e;
-    --sh-on-brand: #0b1f16;
-    --sh-danger: #ff8d97;
-    --sh-danger-soft: #3a1d21;
-    --sh-warning: #f3c16c;
-    --sh-warning-soft: #3a2f1a;
-    --sh-focus: #8be5bd;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sh-bg: #111815;
+  --sh-surface: #18221d;
+  --sh-surface-muted: #233027;
+  --sh-text-primary: #ecf5ef;
+  --sh-text-secondary: #abb9b0;
+  --sh-border: #34473b;
+  --sh-brand: #5dd6a7;
+  --sh-brand-hover: #8be5bd;
+  --sh-brand-soft: #1d3b2e;
+  --sh-on-brand: #0b1f16;
+  --sh-danger: #ff8d97;
+  --sh-danger-soft: #3a1d21;
+  --sh-warning: #f3c16c;
+  --sh-warning-soft: #3a2f1a;
+  --sh-focus: #8be5bd;
 }
 
 @theme inline {

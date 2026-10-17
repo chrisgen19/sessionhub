@@ -1,5 +1,6 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { THEME_INIT_SCRIPT } from "@sessionhub/core/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,16 +8,14 @@ export const metadata: Metadata = {
   description: "Save, search and safely restore your browser windows. Local-first, with opt-in sync.",
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f8f5" },
-    { media: "(prefers-color-scheme: dark)", color: "#111815" },
-  ],
-};
-
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // The init script sets data-theme from the stored choice before the first paint, so the
+    // attribute can differ from this render (docs/UI_UX_DESIGN.md 4.1).
+    <html lang="en" data-theme="light" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-canvas text-fg antialiased">{children}</body>
     </html>
   );

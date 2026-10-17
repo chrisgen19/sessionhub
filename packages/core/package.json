@@ -15,6 +15,7 @@
     "./session-import": "./src/session-import.ts",
     "./session-structure": "./src/session-structure.ts",
     "./session-summary": "./src/session-summary.ts",
+    "./theme": "./src/theme.ts",
     "./url-classification": "./src/url-classification.ts"
   },
   "scripts": {

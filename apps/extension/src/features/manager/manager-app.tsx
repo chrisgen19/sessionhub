@@ -2,6 +2,7 @@ import { AppWindow, CircleUser, History, Layers } from "lucide-react";
 import type { ReactNode } from "react";
 import { BrandMark } from "../../components/brand";
 import { SyncNote, SyncStatusChip } from "../../components/sync-status-chip";
+import { ThemeToggle } from "../../components/theme-toggle";
 import { routeHref, useManagerRoute, type ManagerRoute } from "../../hooks/use-manager-route";
 import { AccountView } from "../account/account-view";
 import { RecoveryView } from "../recovery/recovery-view";
@@ -48,9 +49,10 @@ export function ManagerApp() {
             Account
           </NavLink>
         </nav>
-        <div className="lg:mt-auto lg:space-y-2 lg:border-t lg:border-line lg:px-2 lg:pt-4">
+        <div className="flex items-center gap-2 lg:mt-auto lg:block lg:space-y-2 lg:border-t lg:border-line lg:px-2 lg:pt-4">
           <SyncStatusChip />
           <SyncNote />
+          <ThemeToggle />
         </div>
       </aside>
 

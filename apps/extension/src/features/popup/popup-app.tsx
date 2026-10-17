@@ -4,6 +4,7 @@ import { browser } from "wxt/browser";
 import { filterSessions } from "@sessionhub/core/search";
 import { BrandMark } from "../../components/brand";
 import { SyncStatusChip } from "../../components/sync-status-chip";
+import { ThemeToggle } from "../../components/theme-toggle";
 import { useSessions } from "../../hooks/use-sessions";
 import { SavePanel } from "../save/save-panel";
 import { RecentSessions } from "./recent-sessions";
@@ -34,7 +35,10 @@ export function PopupApp() {
           <BrandMark size="sm" />
           <h1 className="text-[15px] font-bold tracking-tight">SessionHub</h1>
         </div>
-        <SyncStatusChip />
+        <div className="flex items-center gap-2">
+          <SyncStatusChip />
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="space-y-4 px-4 py-4">

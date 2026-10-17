@@ -1,6 +1,7 @@
 import { CheckCircle2, Clock3, HardDrive, Info, Layers, RotateCcw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const FEATURES = [
   {
@@ -54,7 +55,7 @@ function StatusList({ title, icon, items }: { title: string; icon: ReactNode; it
 export default function HomePage() {
   return (
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 sm:px-8">
-      <header className="flex items-center justify-between py-6">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 py-6">
         <div className="flex items-center gap-2.5">
           <span aria-hidden="true" className="grid size-8 place-items-center rounded-[9px] bg-brand font-extrabold text-on-brand">
             S
@@ -66,10 +67,11 @@ export default function HomePage() {
             <HardDrive aria-hidden="true" className="size-3.5" />
             Early preview
           </span>
-          <Link href="/login" className="rounded-lg px-3 py-2 text-[13px] font-semibold hover:bg-surface-muted">
+          <ThemeToggle />
+          <Link href="/login" className="rounded-lg px-3 py-2 text-[13px] font-semibold whitespace-nowrap hover:bg-surface-muted">
             Sign in
           </Link>
-          <Link href="/signup" className="rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-on-brand hover:bg-brand-hover">
+          <Link href="/signup" className="rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold whitespace-nowrap text-on-brand hover:bg-brand-hover">
             Create account
           </Link>
         </nav>
