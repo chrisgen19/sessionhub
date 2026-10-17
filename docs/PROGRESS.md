@@ -16,11 +16,29 @@
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`, PR #1). `check` job **passes** on PR #1 (after `3ec6bfc`). New `docker` job (`pnpm test:docker`) added on `feature/m3-web-docker`, **not yet run on GitHub** |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. `feature/m1-monorepo-local-slice` (PR #1 into `main`) ends at `3ec6bfc` (CI env fix) after `d79126a` rate limit. `feature/m3-web-docker` branches from `3ec6bfc`; the Docker slice is **not committed yet** |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. `feature/m1-monorepo-local-slice` (PR #1 into `main`) ends with the checkpoint eviction fix. `feature/m3-web-docker` (PR #2) is stacked on it: the Docker slice and the compose auth URL fix are committed there |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-17 (PR #2 review fixes: compose auth URL, progress log) / Claude Code (Opus 5.5) / `feature/m3-web-docker` (macOS laptop)
+
+**Goal:** address the two Codex findings on PR #2 (review 5547191782).
+
+**Implemented:**
+
+- `infra/docker/compose.yaml`: `BETTER_AUTH_URL` defaulted to a fixed `http://localhost:3030` while the published port follows `WEB_PORT`. Changing only `WEB_PORT` made the API's same-origin check (`http.ts` `assertSameOrigin`) answer 403 to every write and Better Auth refuse cookie-authenticated POSTs. The default is now `http://localhost:${WEB_PORT:-3030}` (nested Compose interpolation); `infra/docker/.env.example` leaves `BETTER_AUTH_URL` empty, with a comment to set the public HTTPS origin behind a proxy.
+- `apps/web/e2e-docker/web-container.spec.ts`: new test resolves the stack with `docker compose config` (both unset -> `:3030`, `WEB_PORT=8080` -> `:8080`, an explicit URL wins); the secrets test shares the new `isolatedConfig` helper.
+- This file said the Docker slice was not committed and told the next agent to commit it: the Git row and the next step are corrected.
+
+**Validated commands and results:**
+
+- `apps/web`: `pnpm lint`, `pnpm typecheck`: **pass**; `playwright test --config playwright.docker.config.ts --list` lists the 6 docker tests.
+- Docker tests: **Not run locally** (Docker Compose isn't installed on this laptop); they run in CI's `docker` job.
+
+**Known gaps:** none new.
+
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
@@ -405,7 +423,7 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit the Docker slice on `feature/m3-web-docker` (needs the user's go-ahead), push, open a PR (base `feature/m1-monorepo-local-slice` until PR #1 merges) and confirm the new `docker` CI job passes.
+1. Review PR #2 (base `feature/m1-monorepo-local-slice` until PR #1 merges) and confirm the `docker` CI job passes, including the new `BETTER_AUTH_URL` config test (not run locally).
 2. Finish M3: email delivery for verification and password reset (choose a provider with the user first). Optional: readiness check (PostgreSQL) in `/api/health`.
 3. Then M4 (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
 
