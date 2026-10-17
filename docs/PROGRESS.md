@@ -24,6 +24,21 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (blank space below the manager's panes) / Claude Code (Opus 5.5) / `bugfix/manager-scroll-overflow` (macOS laptop, worktree `../sessionhub-scroll-fix`, branched from `main` at `a2598cc`)
+
+**Bug (user report):** on Open tabs, scrolling to the bottom showed blank space.
+
+**Cause:** at >=1280 px the manager's panes scroll on their own (`overflow-y-auto`), but they weren't positioned. A browser page's row has `sr-only` text ("Won't reopen: ..." / "Won't open: ..."), which is `position: absolute`; with no positioned ancestor inside the pane, it took its place far down the list but outside the pane's scrolling, and stretched the page itself. Measured at 1440 x 900 with browser pages at the end of long windows: the page scrolled **987 px** (Open tabs) and **1085 px** (Saved sessions inspector) into blank space. Recovery shares the same panes. The Saved sessions case was a regression from #43, which dropped the inspector's `sticky` (positioned) class; #44 copied the pattern. The popup had the same bug and fix in PR #35.
+
+**Fix:** `relative` on every pane that scrolls: `components/master-detail.tsx` (list rail and inspector: Saved sessions and Recovery) and `features/save/open-tabs-view.tsx` (list column, and the panel's `xl:static` is now `xl:relative`). The other scroll lists (restore summary, upload preview, close confirmation) have no `sr-only` text.
+
+**Verified:**
+- New `e2e/manager-layout.spec.ts` (1440 x 800, a 32-tab window ending in two browser pages): the page scrolls 0 px and the pane does scroll, in Open tabs and in the Saved sessions inspector. Against the build without the fix it **fails** (`pageOverflow: 622`); with it, it passes.
+- Re-measured at 1440: 0 px of page overflow in both views. At 1180 px (one column, the page scrolls by design) unchanged.
+- `pnpm --filter @sessionhub/extension lint`, `typecheck`: pass. `test`: 40 files, 300 tests. `build` then `test:e2e`: 21 passed.
+
+**Next step:** open the PR, merge, then `build:unpacked`.
+
 ### 2026-10-17 (Open tabs view; repo made public) / Claude Code (Opus 5.5) / `feature/open-tabs-view` (macOS laptop, worktree `../sessionhub-open-tabs`, branched from `main` at `0551c02`)
 
 **Repo made public (the user's request, confirmed after a check):**

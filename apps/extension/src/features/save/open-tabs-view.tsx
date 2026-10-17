@@ -50,7 +50,8 @@ export function OpenTabsView() {
 
   return (
     <main aria-label="Open tabs" className="min-w-0 xl:grid xl:h-screen xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]">
-      <div className="min-w-0 xl:overflow-y-auto">
+      {/* Both panes are `relative` so sr-only text deep in them can't escape and stretch the page (see MasterDetail). */}
+      <div className="relative min-w-0 xl:overflow-y-auto">
         <header className="space-y-3 border-b border-line bg-surface px-4 py-5 lg:px-6">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="text-2xl font-bold tracking-tight">Open tabs</h1>
@@ -81,7 +82,7 @@ export function OpenTabsView() {
 
       <aside
         aria-label="Selected tabs"
-        className="sticky bottom-0 z-10 space-y-3 border-t border-line bg-surface px-4 py-3 lg:px-6 xl:static xl:overflow-y-auto xl:border-t-0 xl:border-l xl:p-5"
+        className="sticky bottom-0 z-10 space-y-3 border-t border-line bg-surface px-4 py-3 lg:px-6 xl:relative xl:overflow-y-auto xl:border-t-0 xl:border-l xl:p-5"
       >
         <SaveBar
           summary={picker.summary}
