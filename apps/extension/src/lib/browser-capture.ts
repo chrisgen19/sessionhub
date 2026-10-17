@@ -1,6 +1,7 @@
 import { browser, type Browser } from "wxt/browser";
 import type { CaptureWindowInput } from "@sessionhub/core/capture";
 import { BrowserError, type HandlerDeps } from "./command-handlers";
+import { selectTabs } from "./tab-selection";
 
 const TAB_GROUP_ID_NONE = -1;
 
@@ -39,6 +40,7 @@ export const readBrowserWindows: HandlerDeps["readWindows"] = async (scope) => {
     if (window.type !== "normal") throw new BrowserError("Only normal browser windows can be saved");
     return [await toCaptureWindow(window)];
   }
-  const windows = await browser.windows.getAll({ populate: true, windowTypes: ["normal"] });
-  return Promise.all(windows.filter((window) => !window.incognito).map(toCaptureWindow));
+  const windows = (await browser.windows.getAll({ populate: true, windowTypes: ["normal"] })).filter((window) => !window.incognito);
+  // Only what the user ticked, read from Chrome now: a tab moved meanwhile is saved where it is.
+  return Promise.all((scope.kind === "tabs" ? selectTabs(windows, scope.tabIds) : windows).map(toCaptureWindow));
 };

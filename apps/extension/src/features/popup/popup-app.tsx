@@ -5,14 +5,14 @@ import { filterSessions } from "@sessionhub/core/search";
 import { BrandMark } from "../../components/brand";
 import { SyncStatusChip } from "../../components/sync-status-chip";
 import { useSessions } from "../../hooks/use-sessions";
-import { QuickSaveActions } from "./quick-save-actions";
+import { SavePanel } from "../save/save-panel";
 import { RecentSessions } from "./recent-sessions";
 
 const RECENT_LIMIT = 5;
 const SEARCH_LIMIT = 20;
 
-const openManager = async (sessionId?: string) => {
-  const hash = sessionId ? `#session=${sessionId}` : "";
+/** Opens the manager in a tab: on a session, on a view (`#view=open-tabs`), or its start page. */
+const openManager = async (hash = "") => {
   await browser.tabs.create({ url: `${browser.runtime.getURL("/manager.html")}${hash}` });
   window.close();
 };
@@ -50,7 +50,17 @@ export function PopupApp() {
           />
         </label>
 
-        <QuickSaveActions />
+        <section aria-labelledby="save-heading">
+          <div className="mb-1.5 flex items-center justify-between">
+            <h2 id="save-heading" className="text-[13px] font-semibold">
+              Save tabs
+            </h2>
+            <button type="button" onClick={() => void openManager("#view=open-tabs")} className="text-xs font-semibold text-brand hover:underline">
+              Open full view
+            </button>
+          </div>
+          <SavePanel variant="popup" />
+        </section>
 
         <section aria-labelledby="recent-heading">
           <div className="mb-1.5 flex items-center justify-between">
@@ -61,7 +71,7 @@ export function PopupApp() {
               View all
             </button>
           </div>
-          <RecentSessions state={state} sessions={visible} searching={searching} onOpen={(id) => void openManager(id)} onRetry={retry} />
+          <RecentSessions state={state} sessions={visible} searching={searching} onOpen={(id) => void openManager(`#session=${id}`)} onRetry={retry} />
         </section>
       </main>
 

@@ -1,11 +1,19 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "../lib/db";
 import { putSession } from "../lib/session-repository";
 import { sampleSession } from "../lib/test-fixtures";
 import { ManagerApp } from "./manager/manager-app";
 import { PopupApp } from "./popup/popup-app";
+
+// The save picker's open windows (WXT's fake browser has no tab events to read them live).
+vi.mock("../hooks/use-open-windows", async () => {
+  const { sampleOpenWindows } = await import("../lib/test-fixtures");
+  // One stable value, as the real hook keeps until Chrome reports a change.
+  const state = { status: "ready", windows: sampleOpenWindows(), currentWindowId: 1 };
+  return { useOpenWindows: () => state };
+});
 
 beforeEach(async () => {
   await Promise.all(getDb().tables.map((table) => table.clear()));
@@ -13,10 +21,13 @@ beforeEach(async () => {
 });
 
 describe("PopupApp", () => {
-  it("shows the local-only state, save actions and an empty state", async () => {
+  it("shows the local-only state, the save picker with this window ticked, and an empty state", async () => {
     render(<PopupApp />);
     expect(await screen.findByText("Local only")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /save window/i })).toBeTruthy();
+    expect((screen.getByRole("checkbox", { name: /Window 1/ }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("button", { name: "Save 2 tabs" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open full view" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save window|save all/i })).toBeNull();
     expect(await screen.findByText(/no saved sessions yet/i)).toBeTruthy();
   });
 

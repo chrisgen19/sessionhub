@@ -1,10 +1,11 @@
-import { CircleUser, History, Layers } from "lucide-react";
+import { AppWindow, CircleUser, History, Layers } from "lucide-react";
 import type { ReactNode } from "react";
 import { BrandMark } from "../../components/brand";
 import { SyncNote, SyncStatusChip } from "../../components/sync-status-chip";
 import { routeHref, useManagerRoute, type ManagerRoute } from "../../hooks/use-manager-route";
 import { AccountView } from "../account/account-view";
 import { RecoveryView } from "../recovery/recovery-view";
+import { OpenTabsView } from "../save/open-tabs-view";
 import { SessionsView } from "./sessions-view";
 
 function NavLink({ route, current, icon, children }: { route: ManagerRoute; current: boolean; icon: ReactNode; children: ReactNode }) {
@@ -33,9 +34,12 @@ export function ManagerApp() {
           <BrandMark />
           <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
         </div>
-        <nav aria-label="Manager" className="order-last flex w-full gap-1 lg:order-none lg:flex-col">
+        <nav aria-label="Manager" className="order-last flex w-full flex-wrap gap-1 lg:order-none lg:flex-col lg:flex-nowrap">
           <NavLink route={{ view: "sessions", sessionId: null, workspace: null }} current={route.view === "sessions"} icon={<Layers aria-hidden="true" className="size-4" />}>
             Saved sessions
+          </NavLink>
+          <NavLink route={{ view: "open-tabs" }} current={route.view === "open-tabs"} icon={<AppWindow aria-hidden="true" className="size-4" />}>
+            Open tabs
           </NavLink>
           <NavLink route={{ view: "recovery", snapshotId: null }} current={route.view === "recovery"} icon={<History aria-hidden="true" className="size-4" />}>
             Recovery
@@ -52,6 +56,8 @@ export function ManagerApp() {
 
       {route.view === "account" ? (
         <AccountView />
+      ) : route.view === "open-tabs" ? (
+        <OpenTabsView />
       ) : route.view === "recovery" ? (
         <RecoveryView snapshotId={route.snapshotId} onSelect={(snapshotId) => navigate({ view: "recovery", snapshotId })} />
       ) : (

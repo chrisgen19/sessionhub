@@ -7,15 +7,17 @@ export type ManagerRoute =
   /** `workspace`: a workspace id, NO_WORKSPACE, or null for all sessions. */
   | { view: "sessions"; sessionId: string | null; workspace: string | null }
   | { view: "recovery"; snapshotId: string | null }
+  | { view: "open-tabs" }
   | { view: "account" };
 
 /**
  * `#session=<id>` (popup deep link), `#workspace=<id|none>&session=<id>`, `#view=recovery`,
- * `#view=recovery&snapshot=<id>`, `#view=account`.
+ * `#view=recovery&snapshot=<id>`, `#view=open-tabs` (the save picker), `#view=account`.
  */
 const parse = (): ManagerRoute => {
   const params = new URLSearchParams(window.location.hash.slice(1));
   if (params.get("view") === "account") return { view: "account" };
+  if (params.get("view") === "open-tabs") return { view: "open-tabs" };
   return params.get("view") === "recovery"
     ? { view: "recovery", snapshotId: params.get("snapshot") }
     : { view: "sessions", sessionId: params.get("session"), workspace: params.get("workspace") };
@@ -23,6 +25,7 @@ const parse = (): ManagerRoute => {
 
 export const routeHref = (route: ManagerRoute): string => {
   if (route.view === "account") return "#view=account";
+  if (route.view === "open-tabs") return "#view=open-tabs";
   if (route.view === "recovery") {
     return `#view=recovery${route.snapshotId ? `&snapshot=${encodeURIComponent(route.snapshotId)}` : ""}`;
   }
