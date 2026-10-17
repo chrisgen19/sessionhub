@@ -77,6 +77,25 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps (decision needed):** if an attacker wins the single retry, the real extension gets `INVALID_TOKEN`, disconnects as "expired" (`withAccessToken`) and never presents its refresh token, so the server doesn't revoke; the attacker's pair lives until the user pairs again. Revoking when a rotated, never-used pair is presented would close this but changes the documented `INVALID_TOKEN` response.
 
+### 2026-10-17 (PR #7 review fixes: uploader round cap) / Claude Code (Opus 5.5) / `bugfix/sync-uploader-review-fixes` (worktree `sessionhub-pr7-fix`, based on `feature/m4-sync-push`)
+
+**Goal:** assess the two Codex findings on PR #7 (review 5555201179, both P2, `apps/extension/src/lib/sync-uploader.ts`).
+
+**Finding 1 (valid, fixed):** when the 10-round cap ended a run with sendable work left, `run` cleared `nextAttemptAt`, returned `done` with `remaining > 0` and armed no alarm. The only other triggers here are worker start and `session.rename` / `session.delete`, so the rest waited for one of those. Likely when sync is first turned on with more than 250 sessions, or fewer large ones (1.5 MB per push). `feature/m6-hardening` adds a 10-minute `sync-periodic` alarm, which limits the delay there, but doesn't continue the run right away.
+
+- `sync-uploader.ts`: after a successful run, if `selectPushBatch` still finds something sendable, call `scheduleRetry(now)` (the `sync-retry` alarm continues the upload). Work held back behind a `conflict` / `rejected` operation doesn't count, so a held session can't re-arm the alarm forever. `nextAttemptAt` stays null.
+- `sync-uploader.test.ts`: 251 queued sessions -> 10 pushes, `remaining: 1`, alarm armed, next run sends the last one and arms nothing; 250 sendable plus one session held behind a conflict -> `remaining: 1`, no alarm.
+- `SYNC_PROTOCOL.md` 13e uploader step 5 updated.
+
+**Finding 2 (not valid, no change):** the claim is that re-pairing gives the browser a new device id, so a retried `sending` operation misses its receipt and turns into a false conflict. Re-pairing doesn't change the device id. `disconnect` and revocation keep the local installation id (`account-service.ts`, only the `connection` / `notice` / `pairing` keys are deleted), the server upserts the device on `(userId, installationId)` and clears the revocation (`devices/pairing.ts` `upsertDevice`), and nothing deletes device rows (receipts cascade only on device delete). Covered by `e2e/pairing.spec.ts` ("Pair again: same device row", one device after revoke and re-pair). A new device id only comes with a reinstall or wiped extension data, which also removes the outbox.
+
+**Validated commands and results:**
+
+- New round-cap test against the unfixed uploader: **fail** as expected (`scheduleRetry` never called after `done` with `remaining: 1`); the held-work test passed before and after.
+- `apps/extension`: `vitest run src/lib/sync-uploader.test.ts` **13/13**. `pnpm check`: **pass** (14 tasks; extension 134/134).
+- E2E: Not run (uploader-only change, unit-tested; no E2E reaches the round cap).
+
+**Next step:** after PR #7 takes this fix, carry it up the stack (#8 to #11). `sync-uploader.ts` is restructured there (`sync-gate` `recordSuccess`), so expect a small conflict in `run`.
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
