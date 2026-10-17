@@ -610,3 +610,7 @@ See also [`USER_FLOWS.md`](USER_FLOWS.md) and [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN
 The landing page links a public, unsigned `/privacy` page describing actual capture, automatic local checkpoints, upload consent, full URL exposure, cached data, tombstones/versions/receipts, account deletion limitations and Limited Use. It marks deployment-specific operator/contact/provider/retention details as pre-launch requirements. Landing/metadata now describe implemented opt-in sync rather than planned sync.
 
 Restore results track successful URL opens. Pinning and group styling are best effort; a failed pin after opening the first tab does not report the whole window failed or offer those opened URLs for retry. No cosmetic-warning UI is added; the known limitation is documented in RELEASE.md. Synthetic 1280x800 store screenshots show the actual manager, preview and result.
+
+## Local-only conflict resolution recovery (2026-10-17)
+
+Choosing **Keep in this browser only** keeps the edited contents in an independent local session and selects that copy in the manager. A held account version appears immediately as a separate synced session. If the account version has not downloaded (or the previous cursor already passed its unchanged version), next sync refreshes the account cache so both can appear. The local copy is never uploaded automatically; sync consent stays unchanged. If offline or sync is off, the local copy is usable immediately and the account version returns once normal sync can resume. No live browser tabs/windows change.

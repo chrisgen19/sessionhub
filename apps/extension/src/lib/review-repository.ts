@@ -162,17 +162,19 @@ const acceptServerDelete: Handler = async (r) => {
   return r.sessionId;
 };
 
-/** Stops syncing this browser's version; it moves to new ids when an account session holds the id. */
+/** Keeps an independent local copy, leaving the account's id available to downloads. */
 const backToThisBrowser: Handler = async (r) => {
   if (!r.item.local) throw unavailable();
-  if (!r.item.server) {
-    await r.db.sessions.put({ ...r.item.local, scope: "local" });
-    await r.db.serverCopies.delete(r.sessionId);
-    return r.sessionId;
-  }
   const mine = copyAsNewSession(r.item.local, r.context);
   await releaseId(r);
   await r.db.sessions.add({ ...mine, scope: "local" });
+  // A rejected edit can leave no held copy: pull ignores the unchanged server version.
+  // Its cursor may already have passed it, so freeing the id alone isn't enough. Reuse
+  // the durable bootstrap path without changing consent, backoff or unrelated outbox work.
+  const accountMayHaveSession = (r.record?.sync?.serverVersion ?? null) !== null || r.item.kind === "id-in-use";
+  if (!r.item.server && !r.item.serverDeleted && accountMayHaveSession) {
+    await r.db.syncState.update(r.scope, { cursor: null, bootstrap: null });
+  }
   return mine.id;
 };
 
@@ -206,7 +208,7 @@ const unavailable = () => new ReviewGoneError("That choice isn't available for t
  * (a new id when this browser's version became a separate session).
  */
 export const resolveReview = (db: SessionHubDb, sessionId: string, choice: ReviewChoice, context: OutboxContext): Promise<{ sessionId: string }> =>
-  db.transaction("rw", [db.account, db.sessions, db.outbox, db.serverCopies, db.sessionTombstones], async () => {
+  db.transaction("rw", [db.account, db.sessions, db.outbox, db.serverCopies, db.sessionTombstones, db.syncState], async () => {
     const scope = activeAccountScope(await db.account.get("connection"));
     if (!scope) throw new SyncUnavailableError("Connect this browser to your account first.");
     const held = (await heldOperations(db, scope)).find((operation) => operation.entityId === sessionId);
