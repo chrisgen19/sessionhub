@@ -3,11 +3,10 @@ import type { ApiSessionDetail, CreateSessionRequest, UpdateSessionRequest } fro
 import type { SavedWindow } from "@sessionhub/contracts/session";
 import { buildCanonicalStructure } from "@sessionhub/core/session-structure";
 import type { Prisma, PrismaClient } from "@sessionhub/database/client";
+import { RollbackWith, ServiceError } from "../service-errors";
+import { nextSequence, runMutation, type Tx } from "../sync/transaction";
 import { contentChecksum } from "./checksum";
 import { structureInclude, toDbEligibility, toDetail, toSummary, toWindows } from "./dto";
-import { RollbackWith, SessionServiceError } from "./errors";
-
-type Tx = Prisma.TransactionClient;
 
 /** Provenance for a write. Web edits have no device; sync pushes (M4) pass the device. */
 export interface WriteSource {
@@ -22,38 +21,10 @@ export interface WriteResult {
   sequence: string | null;
 }
 
-/**
- * Runs one mutation in one transaction (docs/SYNC_PROTOCOL.md section 8). Throwing
- * RollbackWith returns a value while rolling back, so replays consume no sequence number.
- */
-const runMutation = async <T>(prisma: PrismaClient, fn: (tx: Tx) => Promise<T>): Promise<T> => {
-  try {
-    return await prisma.$transaction(fn, { timeout: 20_000, maxWait: 10_000 });
-  } catch (error) {
-    if (error instanceof RollbackWith) return error.value as T;
-    throw error;
-  }
-};
-
-/**
- * Locks the user's sync clock row (creating it on first use) and returns the next sequence.
- * Taken FIRST in every mutation, so one user's writes are serialized in commit order: pulls
- * can't skip a change, version checks can't race, and the fixed lock order can't deadlock.
- */
-const nextSequence = async (tx: Tx, userId: string): Promise<bigint> => {
-  const rows = await tx.$queryRaw<{ last_sequence: bigint }[]>`
-    INSERT INTO "user_sync_clocks" ("user_id", "last_sequence") VALUES (${userId}, 1)
-    ON CONFLICT ("user_id") DO UPDATE SET "last_sequence" = "user_sync_clocks"."last_sequence" + 1
-    RETURNING "last_sequence"`;
-  const sequence = rows[0]?.last_sequence;
-  if (sequence === undefined) throw new Error("Sync clock update returned no row");
-  return BigInt(sequence);
-};
-
 const assertWorkspace = async (tx: Tx, userId: string, workspaceId: string | null | undefined) => {
   if (!workspaceId) return;
   const workspace = await tx.workspace.findFirst({ where: { id: workspaceId, userId, deletedAt: null }, select: { id: true } });
-  if (!workspace) throw new SessionServiceError("INVALID_WORKSPACE", "That workspace doesn't exist in your account.");
+  if (!workspace) throw new ServiceError("INVALID_WORKSPACE", "That workspace doesn't exist in your account.");
 };
 
 const insertStructure = async (tx: Tx, sessionId: string, windows: readonly SavedWindow[]) => {
@@ -80,13 +51,13 @@ const recordUpsert = async (tx: Tx, userId: string, sequence: bigint, detail: Ap
 };
 
 const conflict = (current: Prisma.SavedSessionGetPayload<{ include: typeof structureInclude }>, expectedVersion: number) =>
-  new SessionServiceError("VERSION_CONFLICT", "This session changed since you loaded it. Reload and reapply your change.", {
+  new ServiceError("VERSION_CONFLICT", "This session changed since you loaded it. Reload and reapply your change.", {
     expectedVersion,
     serverVersion: current.version,
     serverState: current.deletedAt ? null : toDetail(current),
   });
 
-const notFound = () => new SessionServiceError("NOT_FOUND", "Session not found.");
+const notFound = () => new ServiceError("NOT_FOUND", "Session not found.");
 
 /**
  * Defense in depth: the UPDATE also matches on the expected version and "not deleted", so a
@@ -96,7 +67,7 @@ const notFound = () => new SessionServiceError("NOT_FOUND", "Session not found."
 const guarded = <T>(update: Promise<T>): Promise<T> =>
   update.catch((error: unknown) => {
     if ((error as { code?: unknown }).code === "P2025") {
-      throw new SessionServiceError("VERSION_CONFLICT", "This session changed since you loaded it. Reload and reapply your change.");
+      throw new ServiceError("VERSION_CONFLICT", "This session changed since you loaded it. Reload and reapply your change.");
     }
     throw error;
   });
@@ -114,7 +85,7 @@ export const createSession = (prisma: PrismaClient, userId: string, input: Creat
         ? await tx.sessionVersion.findUnique({ where: { sessionId_version: { sessionId: id, version: 1 } }, select: { checksum: true } })
         : null;
       if (first?.checksum === contentChecksum(content)) throw new RollbackWith<WriteResult>({ detail: toDetail(existing), sequence: null });
-      throw new SessionServiceError("ID_IN_USE", "A different session already uses that id. Retry without an id or with a new one.");
+      throw new ServiceError("ID_IN_USE", "A different session already uses that id. Retry without an id or with a new one.");
     }
     await assertWorkspace(tx, userId, input.workspaceId);
     const row = await tx.savedSession.create({

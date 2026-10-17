@@ -8,12 +8,13 @@ import { fieldErrors, type FieldErrors } from "@/lib/auth-validation";
 
 /**
  * Shared submit flow: validate with the shared Zod schema, call a Better Auth client
- * method, then navigate to `next` (already sanitised server-side) and refresh server data.
+ * method, then either navigate to a path (already sanitised server-side) and refresh
+ * server data, or run `onSuccess` with the submitted form.
  */
 export function useAuthForm<T extends z.ZodType>(
   schema: T,
   submit: (input: z.infer<T>) => Promise<{ error: AuthErrorLike | null }>,
-  next: string,
+  onSuccess: string | ((form: HTMLFormElement) => void),
 ) {
   const router = useRouter();
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -21,7 +22,8 @@ export function useAuthForm<T extends z.ZodType>(
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const parsed = schema.safeParse(Object.fromEntries(new FormData(event.currentTarget)));
+    const form = event.currentTarget;
+    const parsed = schema.safeParse(Object.fromEntries(new FormData(form)));
     if (!parsed.success) {
       setErrors(fieldErrors(parsed.error));
       return;
@@ -40,7 +42,12 @@ export function useAuthForm<T extends z.ZodType>(
       setPending(false);
       return;
     }
-    router.replace(next);
+    if (typeof onSuccess === "function") {
+      setPending(false);
+      onSuccess(form);
+      return;
+    }
+    router.replace(onSuccess);
     router.refresh();
   };
 

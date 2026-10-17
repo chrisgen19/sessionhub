@@ -2,7 +2,7 @@ import { API_LIMITS, type ApiErrorCode, type ApiErrorResponse } from "@sessionhu
 import { z } from "zod";
 import { getAuth } from "@/server/auth";
 import { getServerEnv } from "@/server/env";
-import { SessionServiceError } from "@/server/sessions/errors";
+import { ServiceError } from "@/server/service-errors";
 import { getWriteLimiter } from "./rate-limit";
 
 /** Error the HTTP layer turns into an `{ error }` JSON response. */
@@ -29,6 +29,8 @@ const SERVICE_STATUS: Partial<Record<ApiErrorCode, number>> = {
   ID_IN_USE: 409,
   INVALID_WORKSPACE: 422,
   INVALID_CURSOR: 400,
+  WORKSPACE_NOT_EMPTY: 409,
+  LIMIT_REACHED: 422,
 };
 
 const toResponse = (error: unknown): Response => {
@@ -36,8 +38,8 @@ const toResponse = (error: unknown): Response => {
     const retryAfter = error.extra.retryAfterSeconds;
     return json({ error: { code: error.code, message: error.message, ...error.extra } }, error.status, retryAfter ? { "retry-after": String(retryAfter) } : {});
   }
-  if (error instanceof SessionServiceError) {
-    return json({ error: { code: error.code, message: error.message, ...error.conflict } }, SERVICE_STATUS[error.code] ?? 400);
+  if (error instanceof ServiceError) {
+    return json({ error: { code: error.code, message: error.message, ...error.details } }, SERVICE_STATUS[error.code] ?? 400);
   }
   // Class name only: never log request bodies, URLs or user data.
   console.error(`[api] unexpected ${error instanceof Error ? error.name : typeof error}`);
@@ -114,8 +116,10 @@ export const parseOrThrow = <T extends z.ZodType>(schema: T, data: unknown): z.i
   throw new HttpError(400, "VALIDATION_ERROR", "Some fields are invalid.", { issues });
 };
 
-/** Route ids that aren't UUIDs can't exist: answer 404 like any other missing session. */
-export const sessionIdOrNotFound = (id: string): string => {
-  if (!z.uuid().safeParse(id).success) throw new HttpError(404, "NOT_FOUND", "Session not found.");
+/** Route ids that aren't UUIDs can't exist: answer 404 like any other missing record. */
+export const idOrNotFound = (id: string, label = "Session"): string => {
+  if (!z.uuid().safeParse(id).success) throw new HttpError(404, "NOT_FOUND", `${label} not found.`);
   return id;
 };
+
+export const sessionIdOrNotFound = (id: string): string => idOrNotFound(id);

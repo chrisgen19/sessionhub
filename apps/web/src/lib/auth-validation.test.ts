@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fieldErrors, safeNextPath, signInSchema, signUpSchema } from "./auth-validation";
+import { changePasswordSchema, fieldErrors, forgotPasswordSchema, resetPasswordSchema, safeNextPath, signInSchema, signUpSchema } from "./auth-validation";
 
 describe("safeNextPath", () => {
   it.each([
@@ -48,5 +48,26 @@ describe("auth schemas", () => {
   it("rejects overlong passwords and empty sign-in passwords", () => {
     expect(signUpSchema.safeParse({ name: "a", email: "a@b.test", password: "x".repeat(129) }).success).toBe(false);
     expect(signInSchema.safeParse({ email: "a@b.test", password: "" }).success).toBe(false);
+  });
+});
+
+describe("password reset and change schemas", () => {
+  it("validates the email for a reset request", () => {
+    expect(forgotPasswordSchema.safeParse({ email: "c@example.test" }).success).toBe(true);
+    const bad = forgotPasswordSchema.safeParse({ email: "nope" });
+    expect(bad.success || fieldErrors(bad.error)).toEqual({ email: "Enter a valid email address" });
+  });
+
+  it("requires matching, long-enough new passwords", () => {
+    expect(resetPasswordSchema.safeParse({ password: "correct horse 2", confirmPassword: "correct horse 2" }).success).toBe(true);
+    const mismatch = resetPasswordSchema.safeParse({ password: "correct horse 2", confirmPassword: "correct horse 3" });
+    expect(mismatch.success || fieldErrors(mismatch.error)).toEqual({ confirmPassword: "The passwords don't match" });
+    const short = resetPasswordSchema.safeParse({ password: "short", confirmPassword: "short" });
+    expect(short.success || fieldErrors(short.error)).toEqual({ password: "Use at least 10 characters" });
+  });
+
+  it("needs the current password to change it", () => {
+    const missing = changePasswordSchema.safeParse({ currentPassword: "", password: "correct horse 2", confirmPassword: "correct horse 2" });
+    expect(missing.success || fieldErrors(missing.error)).toEqual({ currentPassword: "Enter your current password" });
   });
 });

@@ -31,6 +31,10 @@ export default defineConfig({
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
       BETTER_AUTH_URL: BASE_URL,
       BETTER_AUTH_SECRET: "e2e-only-secret-not-used-anywhere-else-0123456789",
+      // Real email delivery into Mailpit (pnpm db:up); tests read the messages back over its API.
+      MAIL_TRANSPORT: "mailpit",
+      MAIL_FROM: "SessionHub <no-reply@sessionhub.test>",
+      MAILPIT_URL: process.env.TEST_MAILPIT_URL ?? "http://127.0.0.1:58025",
     },
   },
 });

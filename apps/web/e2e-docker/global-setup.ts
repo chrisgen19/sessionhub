@@ -10,6 +10,8 @@ export default function globalSetup(): void {
   process.env.BETTER_AUTH_SECRET = randomBytes(32).toString("hex");
   process.env.BETTER_AUTH_URL = BASE_URL;
   process.env.WEB_PORT = String(WEB_PORT);
+  // Explicit, so a MAIL_* value in the developer's shell can't leak into the stack.
+  process.env.MAIL_TRANSPORT = "disabled";
   compose(["down", "-v", "--remove-orphans"]);
   compose(["up", "-d", "--build", "--wait", "--wait-timeout", "180"], { stdio: ["ignore", "ignore", "inherit"], timeout: 900_000 });
 }

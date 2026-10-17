@@ -47,6 +47,12 @@ test("health endpoint and a full sign-up -> API -> dashboard round trip work in 
   expect(page.status()).toBe(200);
   expect(await page.text()).toContain("From the container");
   expect(psql(`select count(*) from sync_changes where entity_id = '${session.id}'`)).toBe("1");
+
+  // Email is off by default: the app says so instead of pretending to send.
+  expect(page.headers()["content-type"]).toContain("text/html");
+  const forgot = await (await api.get("/forgot-password")).text();
+  expect(forgot).toContain("isn&#x27;t set up to send email");
+  expect(await (await api.get("/app")).text()).not.toContain("Confirm your email");
 });
 
 test("re-running the migration job is a safe no-op", () => {

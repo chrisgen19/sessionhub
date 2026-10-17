@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SessionServiceError } from "./errors";
+import { ServiceError } from "../service-errors";
 
 const cursorSchema = z.tuple([z.iso.datetime(), z.uuid()]);
 
@@ -12,6 +12,6 @@ export const decodeCursor = (cursor: string): { updatedAt: Date; id: string } =>
     const [updatedAt, id] = cursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
     return { updatedAt: new Date(updatedAt), id };
   } catch {
-    throw new SessionServiceError("INVALID_CURSOR", "That page cursor isn't valid. Start again from the first page.");
+    throw new ServiceError("INVALID_CURSOR", "That page cursor isn't valid. Start again from the first page.");
   }
 };

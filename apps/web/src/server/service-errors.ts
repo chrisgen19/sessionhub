@@ -1,12 +1,13 @@
-import type { ApiErrorCode, ApiSessionDetail } from "@sessionhub/contracts/api-sessions";
+import type { ApiErrorCode, ApiErrorResponse } from "@sessionhub/contracts/api-sessions";
 
 /** Domain failure with an API error code; the HTTP layer maps it to a status. */
-export class SessionServiceError extends Error {
-  override name = "SessionServiceError";
+export class ServiceError extends Error {
+  override name = "ServiceError";
   constructor(
     readonly code: ApiErrorCode,
     message: string,
-    readonly conflict?: { expectedVersion: number; serverVersion: number; serverState: ApiSessionDetail | null },
+    /** Extra error fields, e.g. a version conflict's server state. */
+    readonly details: Omit<ApiErrorResponse["error"], "code" | "message"> = {},
   ) {
     super(message);
   }

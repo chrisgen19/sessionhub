@@ -260,7 +260,36 @@ All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-C
 5. Insert an immutable `session_versions` row (payload = detail DTO, checksum = SHA-256 of id-independent content) and a `sync_changes` row with the sequence.
 6. Replays (exact create retry, repeated delete) and conflicts roll back, so they consume **no** sequence: the change log stays gap-free.
 
-**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. **Not yet:** `sync_operation_receipts` (needs device credentials, M4), read rate limits and shared (multi-instance) limiter storage, workspace and device endpoints, `/versions` history.
+**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. **Not yet:** `sync_operation_receipts` (needs device credentials, M4), read rate limits and shared (multi-instance) limiter storage, `/versions` history.
+
+## 13b. Implemented: workspace REST API (2026-10-16)
+
+Contracts: `packages/contracts/src/api-workspaces.ts`. Service: `apps/web/src/server/workspaces/`. Same authentication, origin, body, rate-limit and transaction rules as 13a (clock lock first, version check, guarded UPDATE, one `sync_changes` row with `entity_type = workspace`, replays and conflicts roll back without using a sequence).
+
+| Method and path | Success | Errors |
+|---|---|---|
+| `GET /api/v1/workspaces` | 200 `{ items: (ApiWorkspace & { sessionCount })[] }`: every live workspace (max 100 per account) by `position`, then creation | 401 |
+| `POST /api/v1/workspaces` `{ id?, name, description?, icon?, color?, position? }` | 201 `ApiWorkspace` + `Location`; **200** for an exact retry of the same `id` and content | 400, 409 `ID_IN_USE`, 422 `LIMIT_REACHED` (100 live workspaces) |
+| `PATCH /api/v1/workspaces/:id` `{ expectedVersion, ...fields }` (at least one field) | 200 (version + 1) | 404, 409 `VERSION_CONFLICT` with `serverState` (the workspace) |
+| `DELETE /api/v1/workspaces/:id?expectedVersion=N` | 200 `{ id, version, deletedAt }`; repeating it returns the same tombstone | 404, 409 `VERSION_CONFLICT`, 409 `WORKSPACE_NOT_EMPTY` with `sessionCount` |
+
+Fields: `name` trimmed 1 to 120 chars; `description` up to 1,000; `icon` a short key matching `^[a-z0-9-]{1,40}$` (never markup or a URL); `color` one of the tab-group colors or null; `position` 0 to 10,000. `sessionCount` counts live sessions (archived included) and is not part of the versioned payload.
+
+**Delete policy:** a workspace with live sessions can't be deleted. Moving sessions out is a versioned edit of each session, so the user does it explicitly; a delete never rewrites sessions as a side effect. Because every write takes the user's clock lock first, a delete and a concurrent "create session in this workspace" are serialized: one of them sees the other's result (verified: a session can't be created in a deleted workspace, 422 `INVALID_WORKSPACE`).
+
+## 13c. Implemented: device REST API (2026-10-16)
+
+Contracts: `packages/contracts/src/api-devices.ts`. Service: `apps/web/src/server/devices/service.ts`. Devices are account metadata, not synced entities: no versions and no `sync_changes`.
+
+| Method and path | Success | Errors |
+|---|---|---|
+| `GET /api/v1/devices` | 200 `{ items: ApiDevice[] }`: active devices by `lastSeenAt` (newest first), then revoked ones (max 200) | 401 |
+| `PATCH /api/v1/devices/:id` `{ displayName }` | 200 `ApiDevice` (name trimmed, 1 to 120 chars) | 400, 404 |
+| `POST /api/v1/devices/:id/revoke` (no body) | 200 `ApiDevice` with `revokedAt`; sets `revoked_at` once and increments `auth_credential_version` once, repeating it changes nothing | 404 |
+
+`ApiDevice` is `{ id, displayName, browser, platform, createdAt, lastSeenAt, revokedAt }`; the installation id is never returned. Writes use the same origin check and per-user write budget as 13a. Another user's device id is a 404 and nothing changes.
+
+**Deferred to M4:** `POST /api/v1/devices` (registration) is part of extension pairing, which issues the device credential that revocation invalidates. Until then devices exist only as seeded test rows.
 
 ## 14. References
 

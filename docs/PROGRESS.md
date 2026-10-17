@@ -1,8 +1,8 @@
 # SessionHub — Persistent Implementation Handoff
 
 > **This is the first file a returning coding agent should read.**  
-> **Last updated:** 2026-10-16
-> **Current milestone:** M3 (backend, web account) in progress: database package, email/password auth, dashboard shell, saved-session API (rate-limited writes), session detail page and production Docker image + compose stack done. Email delivery pending. M2 complete.
+> **Last updated:** 2026-10-17
+> **Current milestone:** M3 (backend, web account) **complete**: database package, email/password auth with password reset and email confirmation, dashboard shell, session/workspace/device APIs (rate-limited writes), session detail page and production Docker image + compose stack. Next: M4 (cross-device sync). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -11,12 +11,12 @@
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
 | Chrome extension | **Working local slice.** Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
-| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL; **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** CRUD with versions, tombstones and change log; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker). Not yet used by the web app |
+| Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
+| Database | **Schema + initial migration + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces and devices |
 | Sync | Not implemented (`packages/sync` intentionally not created yet) |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
-| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`, PR #1). `check` job **passes** on PR #1 (after `3ec6bfc`). New `docker` job (`pnpm test:docker`) added on `feature/m3-web-docker`, **not yet run on GitHub** |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. `feature/m1-monorepo-local-slice` (PR #1 into `main`) ends with the checkpoint eviction fix. `feature/m3-web-docker` (PR #2) is stacked on it: the Docker slice and the compose auth URL fix are committed there |
+| CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). `check` job **passed** on PR #1 (after `3ec6bfc`). The `docker` job (PR #2) and the Mailpit service in `check` (PR #3) are verified locally; their GitHub runs are listed in the latest session entry |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked branches: `feature/m1-monorepo-local-slice` (PR #1 into `main`, ends at `3ec6bfc`), `feature/m3-web-docker` (PR #2, `4dc907e`), `feature/m3-email-auth` (email `4083b69` + workspace/device API) |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -39,6 +39,26 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** none new.
 
+### 2026-10-17 (PR #3 review fix: email confirmation page status) / Claude Code (Opus 5.5) / `bugfix/email-verified-page` (worktree `sessionhub-pr3-fix`, based on `feature/m3-email-auth`)
+
+**Goal:** address the Codex review finding on PR #3 (P2, `apps/web/src/app/(auth)/email-verified/page.tsx`). Without `?error`, the page said "Email confirmed" to anyone, including a signed-in user with an unconfirmed email who opened `/email-verified` directly.
+
+**Checked in Better Auth 1.7.9** (`dist/api/routes/email-verification.mjs`): `verify-email` redirects to the callback with `?error=<code>` on failure, and with no query both on success and when the address was already confirmed. The URL can't prove a confirmation, so the page now asks the session instead. `session.cookieCache` isn't enabled, so `getSession` reads `emailVerified` from the database on every request.
+
+**Implemented:**
+
+- `email-verified/page.tsx`: a signed-in visitor whose email isn't confirmed sees "Your email isn't confirmed yet" with their address and a Settings link (the resend hint only when mail is enabled). Signed-out visitors without `?error` still see "Email confirmed": that is the usual result of opening the link on another device (no auto sign-in), and there is no account state to check. The error view is unchanged.
+- `e2e/email.spec.ts`: the sign-up test opens `/email-verified` before following the link and expects the unconfirmed view. The reset test now waits for the "Reset your password" heading after clicking "Forgot password?". Before, `fill` could land in the sign-in form's Email field while the client-side navigation was still running, so an empty form was submitted (failed 3/3 on this laptop before any change here).
+
+**Validated commands and results:**
+
+- New assertion against the unfixed page: **fail** as expected (rendered "Email confirmed" for an unconfirmed, signed-in user).
+- Reset test on the unmodified PR code: **fail** 3/3 (`--repeat-each 3`), empty Email field submitted; **pass** 3/3 with the heading wait.
+- `pnpm --filter @sessionhub/web lint`, `typecheck`: **pass**. `pnpm check`: **pass** (14 tasks).
+- `e2e/email.spec.ts --repeat-each 3`: **18/18** (the 375px test now renders the unconfirmed view with a long address). Full web E2E (`playwright test` in `apps/web`): **32/32**.
+- This laptop runs Colima without the `docker compose` plugin, so `pnpm db:up` fails ("unknown shorthand flag: 'f'"). E2E ran against `postgres:18-alpine` and `axllent/mailpit:v1.31.3` started with `docker run --rm` on the same ports, env and init script as `compose.dev.yaml`.
+
+**Next step:** after PR #3 takes this fix, carry it up the stack (PRs #4, #6 to #11): the page and both tests are unchanged up to `feature/m6-hardening`.
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
@@ -59,6 +79,46 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-16 (M3 workspace and device API slice) / Claude Code (Opus 5.5) / `feature/m3-email-auth`
+
+**Goal:** finish M3's API item: workspace and device list/read/write with ownership checks.
+
+**Implemented:**
+
+- `packages/contracts`: `api-workspaces.ts` (create/update/delete schemas, `ApiWorkspace`, list with `sessionCount`, limits), `api-devices.ts` (`ApiDevice` without installation id, rename schema); error codes `WORKSPACE_NOT_EMPTY` and `LIMIT_REACHED`; conflict `serverState` can be a workspace.
+- `apps/web/src/server/service-errors.ts` (`ServiceError` with `details`, `RollbackWith`) and `src/server/sync/transaction.ts` (`runMutation`, lock-first `nextSequence`), moved out of the sessions service unchanged; `sessions/errors.ts` removed.
+- `src/server/workspaces/` (service + DTO) and `src/server/devices/service.ts`. Routes: `GET/POST /api/v1/workspaces`, `PATCH/DELETE /api/v1/workspaces/:id`, `GET /api/v1/devices`, `PATCH /api/v1/devices/:id`, `POST /api/v1/devices/:id/revoke`. Documented in `SYNC_PROTOCOL.md` 13b and 13c.
+
+**Validated commands and results:**
+
+- `pnpm --filter @sessionhub/web test:db`: **27/27** (+9: workspace create/list order and live counts, idempotent retry and `ID_IN_USE` across users, versioned update and conflict state, not-empty refusal then idempotent tombstone, no edits or new sessions into a tombstone, account isolation and the 100 cap, concurrent same-version edits (exactly one wins, gap-free sequence); device order without installation id, rename, revoke once with one credential bump, other users untouched). One existing session test updated for the renamed `details` property.
+- `e2e/api-workspaces-devices.spec.ts`: **12/12** over `--repeat-each 3` (401/403, full HTTP lifecycle with 201/200/409/422 and `Location`, validation 400s, cross-user 404s, device rename/revoke idempotency and cross-site 403).
+- Contracts unit tests **30/30** (+8). `pnpm check` **pass** (14 tasks); `pnpm test:e2e` **pass** (4 tasks).
+
+**Known gaps:** no workspace or device management UI yet (M5); device registration and credentials (M4).
+
+### 2026-10-16 (M3 email slice) / Claude Code (Opus 5.5) / `feature/m3-email-auth`
+
+**Goal:** email delivery (user's choice: provider-agnostic, Resend for production, Mailpit locally) with password reset and email confirmation, plus change password.
+
+**Implemented:**
+
+- `apps/web/src/server/mail/`: `types.ts` (`MailTransport`, `parseAddress`), `resend.ts` (POST `https://api.resend.com/emails` via fetch, 10 s timeout, errors carry the HTTP status only), `mailpit.ts` (POST `/api/v1/send`), `templates.ts` (text + escaped HTML: confirm email, reset password, password changed), `deliver.ts` (`queueMail` with Next.js `after()`, failures logged without recipient or link; `isMailEnabled`).
+- `src/server/env.ts`: `getMailConfig()` validates `MAIL_TRANSPORT` (default `disabled`), `MAIL_FROM`, `RESEND_API_KEY`, `MAILPIT_URL`.
+- `src/server/auth.ts`: `sendResetPassword` (1 h, `revokeSessionsOnPasswordReset`), `onPasswordReset` notice, `emailVerification` (on sign-up, 24 h, no auto sign-in), `withCallback()` forces emailed links to `/email-verified` and `/reset-password`. Sign-in is still allowed with an unconfirmed email (decision in SYSTEM_DESIGN.md 14).
+- Pages: `/forgot-password` (says when email isn't set up), `/reset-password` (`no-referrer`, `no-store`), `/email-verified`; "Forgot password?" on sign-in; `/login?reset=1` notice. Dashboard: "Confirm your email" banner with resend on every `/app` page (only when mail is enabled); Settings shows email status, resend, and a change-password form (signs out other browsers).
+- `infra/docker/compose.dev.yaml`: Mailpit `axllent/mailpit:v1.31.3` (newest release older than two weeks) on `127.0.0.1:58025`. CI `check` job has a Mailpit service and `TEST_MAILPIT_URL`; `turbo.json` passes it through. Production compose passes `MAIL_TRANSPORT`/`MAIL_FROM`/`RESEND_API_KEY` (default disabled).
+
+**Validated commands and results:**
+
+- `pnpm --filter @sessionhub/web test`: **60/60** (+23: addresses, Resend request shape and secret-free errors, Mailpit request shape, template escaping and expiry text, `queueMail` failure logging and disabled no-op, mail env validation, reset/change schemas, `withCallback`).
+- `e2e/email.spec.ts` (real emails through Mailpit): **18/18** over `--repeat-each 3`. Covers confirmation link and banner removal, tampered link refused + resend, reset with identical answers for unknown emails (and no email sent to them), mismatch error, all sessions revoked, "password changed" notice, link reuse refused, old password rejected, forged token rejected, change password (wrong current password, other browser signed out, this one kept), 375 px overflow on the new pages.
+- Full web E2E **28/28**; `pnpm check` **pass** (14 tasks); `pnpm test:e2e` **pass** (4 tasks); web `test:db` **18/18**; `pnpm test:docker` **5/5** (now also checks that with email disabled `/forgot-password` says so and no banner appears).
+- Visual check at 390 and 1280 px (banner, Settings, reset page): no overflow, readable.
+- Failures found and fixed: Better Auth used `/` as the confirmation callback when the sign-up request had none (fixed server-side with `withCallback`); a revoked session on `/app/settings` is redirected by the `/app` layout to `/login?next=%2Fapp` (deep link lost; pre-existing, test loosened, noted below).
+
+**Known gaps:** Resend not tested against the live service (needs a key and verified domain); a revoked session loses the deep link (layout redirect); `apps/web/.env.local` has no `MAIL_*` lines, so local dev defaults to email disabled until they are added (see `.env.example`).
 
 ### 2026-10-16 (M3 web Docker slice) / Claude Code (Opus 5.5) / `feature/m3-web-docker`
 
@@ -423,9 +483,9 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Review PR #2 (base `feature/m1-monorepo-local-slice` until PR #1 merges) and confirm the `docker` CI job passes, including the new `BETTER_AUTH_URL` config test (not run locally).
-2. Finish M3: email delivery for verification and password reset (choose a provider with the user first). Optional: readiness check (PostgreSQL) in `/api/health`.
-3. Then M4 (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
+1. Review and merge the stacked PRs: #1 (M2 + M3 base) -> #2 (Docker) -> #3 (email, workspaces, devices); confirm CI (`check` with Mailpit, `docker`) passes on each.
+2. Production email: create a Resend API key and verify the sending domain, then set `MAIL_TRANSPORT=resend`, `MAIL_FROM`, `RESEND_API_KEY` and send one real reset email (not yet tested against the live service).
+3. M4, starting with the pairing design (needs a recorded decision before code, per CLAUDE.md): device registration + credential issuance, revocation checks via `auth_credential_version`, confirmed email required (device pairing, `sync/push` with receipts reusing the session mutation service, `sync/pull`).
 
 ## Open questions / architecture validations
 

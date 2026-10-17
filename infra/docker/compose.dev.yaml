@@ -1,5 +1,6 @@
-# Local development database only. Not for production (see docs/SYSTEM_DESIGN.md section 6).
+# Local development services only (PostgreSQL + Mailpit). Not for production (see docs/SYSTEM_DESIGN.md section 6).
 # Start: pnpm db:up   Stop: pnpm db:down   Wipe data: pnpm db:down -v
+# Mailpit catches every email the web app sends in development and E2E: http://127.0.0.1:58025
 name: sessionhub-dev
 
 services:
@@ -23,6 +24,19 @@ services:
       timeout: 3s
       retries: 30
       start_period: 5s
+
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    environment:
+      MP_MAX_MESSAGES: 2000
+    ports:
+      # Web UI and HTTP API (the app sends through POST /api/v1/send). Localhost only.
+      - "127.0.0.1:58025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
 volumes:
   sessionhub-postgres:
