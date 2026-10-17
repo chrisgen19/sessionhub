@@ -6,7 +6,7 @@ import { authenticateAccessToken, type DevicePrincipal } from "@/server/devices/
 import { bearerToken } from "@/server/devices/tokens";
 import { getServerEnv } from "@/server/env";
 import { ServiceError } from "@/server/service-errors";
-import { getIpLimiter, getWriteLimiter } from "./rate-limit";
+import { API_READ_LIMIT, API_WRITE_LIMIT, DEVICE_TOKEN_LIMIT, PAIRING_START_LIMIT, takeTokens, type RateLimitPolicy } from "./rate-limit";
 
 /** Error the HTTP layer turns into an `{ error }` JSON response. */
 export class HttpError extends Error {
@@ -101,26 +101,38 @@ export const authenticateDevice = async (request: Request): Promise<DevicePrinci
 /** First client address from X-Forwarded-For (the proxy must overwrite it; see SECURITY_PRIVACY.md). */
 export const clientIp = (request: Request): string => request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
-const rateLimited = (retryAfterSeconds: number) =>
-  new HttpError(429, "RATE_LIMITED", `Too many requests in a short time. Try again in ${retryAfterSeconds} seconds.`, { retryAfterSeconds });
+/** Takes from a shared bucket (all web instances, see rate-limit.ts) or throws 429 with Retry-After. */
+const charge = async (key: string, policy: RateLimitPolicy, cost: number, message: string): Promise<void> => {
+  const decision = await takeTokens(getPrisma(), key, policy, { cost });
+  if (!decision.allowed) {
+    throw new HttpError(429, "RATE_LIMITED", `${message} Try again in ${decision.retryAfterSeconds} seconds.`, { retryAfterSeconds: decision.retryAfterSeconds });
+  }
+};
+
+const IP_POLICIES = { "pairing-start": PAIRING_START_LIMIT, "device-token": DEVICE_TOKEN_LIMIT } as const;
 
 /** Per-IP limit for unauthenticated device endpoints (pairing start, token poll, refresh). */
-export const limitByIp = (request: Request, name: "pairing-start" | "device-token"): void => {
-  const decision = getIpLimiter(name).take(clientIp(request));
-  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
-};
+export const limitByIp = (request: Request, name: keyof typeof IP_POLICIES): Promise<void> =>
+  charge(`ip:${name}:${clientIp(request)}`, IP_POLICIES[name], 1, "Too many requests in a short time.");
+
+/** Takes `count` writes from the account's shared budget (web and devices alike), or throws 429 without taking any. */
+export const chargeWrites = (userId: string, count: number): Promise<void> => charge(`write:${userId}`, API_WRITE_LIMIT, count, "Too many changes in a short time.");
+
+/** Takes one read from the account's read budget (web and devices alike). */
+export const chargeRead = (userId: string): Promise<void> => charge(`read:${userId}`, API_READ_LIMIT, 1, "Too many requests in a short time.");
 
 /** Device writes share the account's write budget with the web app. */
 export const authorizeDeviceWrite = async (request: Request): Promise<DevicePrincipal> => {
   const principal = await authenticateDevice(request);
-  chargeWrites(principal.userId, 1);
+  await chargeWrites(principal.userId, 1);
   return principal;
 };
 
-/** Takes `count` writes from the account's shared budget, or throws 429 without taking any. */
-export const chargeWrites = (userId: string, count: number): void => {
-  const decision = getWriteLimiter().take(userId, count);
-  if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
+/** Device reads: Bearer authentication, then the account's read budget. */
+export const authorizeDeviceRead = async (request: Request): Promise<DevicePrincipal> => {
+  const principal = await authenticateDevice(request);
+  await chargeRead(principal.userId);
+  return principal;
 };
 
 /**
@@ -141,12 +153,14 @@ export const assertSameOrigin = (request: Request): void => {
 export const authorizeWrite = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
   assertSameOrigin(request);
   const user = await authenticate(request);
-  const decision = getWriteLimiter().take(user.userId);
-  if (!decision.allowed) {
-    throw new HttpError(429, "RATE_LIMITED", `Too many changes in a short time. Try again in ${decision.retryAfterSeconds} seconds.`, {
-      retryAfterSeconds: decision.retryAfterSeconds,
-    });
-  }
+  await chargeWrites(user.userId, 1);
+  return user;
+};
+
+/** Gate for every cookie-authenticated /api/v1 read: authentication, then the per-user read limit. */
+export const authorizeRead = async (request: Request): Promise<{ userId: string; emailVerified: boolean }> => {
+  const user = await authenticate(request);
+  await chargeRead(user.userId);
   return user;
 };
 

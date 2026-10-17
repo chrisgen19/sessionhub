@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. Next: M5 or M6 (user's priority). M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 hardening started: rate limits for reads and shared (multi-instance) limiter storage done. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -12,12 +12,12 @@
 | Chrome extension | **Working local slice** plus **account scope and outbox** (storage only, nothing uploads yet). Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
 | Side panel, workspaces, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema, 2 migrations (`init`, `device_pairing_and_credentials`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
+| Database | **Schema, 3 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (`236b64a`, CI green), #8 **`feature/m4-sync-pull`** (`13b468b`, CI green), #9 **`feature/m4-sync-ui`** (`e887bf9`, CI green). **`feature/m4-conflict-review`** (off #9, uncommitted at the end of the 2026-10-16 conflict review session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order (#1 to #6): #1 `feature/m1-monorepo-local-slice` -> `main` (ends `3ec6bfc`), #2 `feature/m3-web-docker` (`4dc907e`), #3 `feature/m3-email-auth` (`4083b69`, `7e4f11d`), #4 `feature/m4-device-pairing` (`61067d0` + status update). #6 **`feature/m4-local-outbox`** (base `feature/m4-device-pairing`, `b877c1d` + status update; CI green). #7 **`feature/m4-sync-push`** (`236b64a`, CI green), #8 **`feature/m4-sync-pull`** (`13b468b`, CI green), #9 **`feature/m4-sync-ui`** (`e887bf9`, CI green), #10 **`feature/m4-conflict-review`** (`6b444f5`, CI green). **`feature/m6-hardening`** (off #10, uncommitted at the end of the 2026-10-17 rate-limit session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -161,6 +161,40 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
 
+
+### 2026-10-17 (M6 rate limits slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
+
+**Goal:** M6 read rate limits and shared (multi-instance) limiter storage (user's scope). Decisions in SYSTEM_DESIGN.md 14 and SYNC_PROTOCOL.md 13a.
+
+**Implemented:**
+
+- Database: migration `20261016160300_rate_limit_buckets` (additive: table `rate_limit_buckets` + `updated_at` index), applied to the dev database with `prisma migrate deploy`.
+- `apps/web/src/server/api/rate-limit.ts` rewritten:
+  - `takeTokens` is a PostgreSQL token bucket: one atomic upsert per check, on the database clock, with `cost`, and a ~1% sweep of buckets idle over an hour.
+  - Policies: writes 30/1 s, **reads 120/2 s (new)**, pairing start, device tokens.
+  - `authRateLimitStorage` for Better Auth.
+  - The in-memory `TokenBucketLimiter` and its unit tests were removed.
+- `http.ts`:
+  - async `limitByIp` and `chargeWrites`
+  - new `chargeRead`, `authorizeRead` and `authorizeDeviceRead`
+  - every `/api/v1` GET is now charged to the read budget (sessions list/detail, workspaces, devices, devices/me, sync pull/bootstrap)
+- `auth.ts`: `rateLimit.customStorage`.
+- Tests: `rate-limit.db.test.ts` (7) and a read-limit E2E in `api-sessions.spec.ts`.
+- Docs: SYNC_PROTOCOL 13a (limits table) and 13g, SECURITY_PRIVACY, DATA_MODEL, SYSTEM_DESIGN 14 (three rows), ROADMAP.
+
+**Validated commands and results (macOS, temporary `docker run` PostgreSQL + Mailpit):**
+
+- `pnpm check --force`: **pass** (17 tasks). Web unit tests **55** (the 6 in-memory limiter tests were removed with the class).
+- `pnpm --filter @sessionhub/web test:db`: **54/54** (+7). Covered: burst then Retry-After; refill capped, and denied attempts don't extend the wait; multi-token cost all or nothing; independent keys; **60 concurrent requests from two separate Prisma clients let exactly 30 through**; idle sweep removes only idle buckets; the Better Auth adapter.
+- API, auth, pairing and push E2E: **17/17**, including the new read limit (130 parallel GETs: at least 120 pass, the rest 429 with Retry-After; writes and other users unaffected) and Better Auth's existing wrong-password limit through the new storage (its `auth:` buckets confirmed in `sessionhub_test`).
+- Full web E2E **39/40**: only the pre-existing macOS password-reset failure.
+- Not run:
+  - extension suites: no extension changes in this slice
+  - `pnpm test:docker` and the database package `test:db` (no Compose here; the latter resets `sessionhub_test`, which Prisma blocks for agents)
+
+**Production note:** deploying this runs the new migration (additive) through the `migrate` job; afterwards every limited request does one extra small upsert.
+
+**Known gaps:** per-IP limits still trust `X-Forwarded-For` (the proxy must overwrite it); no observability (URL-redacted logs/metrics) or resource limits yet.
 
 ### 2026-10-16 (M4 conflict review slice) / Claude Code (Opus 5.5) / `feature/m4-conflict-review` (macOS laptop)
 
@@ -724,12 +758,13 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push `feature/m4-conflict-review`, open its PR on top of #9. Then merge the whole stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
-2. M4 is complete. Choose next with the user:
-   - **M5:** side panel, workspaces in the extension (and syncing them), tags/filters, version timeline, device management UX.
-   - **M6:** permissions review, privacy policy, abuse/race testing, observability, Coolify deployment, read rate limits and shared limiter storage, release process.
-3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures (password reset, mid-restore retry).
-4. Production email (Resend) is still untested against the live service.
+1. Commit and push `feature/m6-hardening`, open its PR on top of #10, then merge the stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> this one (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+2. Next M6 items:
+   - observability with URL redaction (structured logs, request ids, no URLs or tokens) and resource limits (body sizes are bounded; add timeouts, page and connection limits where missing)
+   - trusted proxy / `X-Forwarded-For` overwrite and TLS (Coolify deployment checklist)
+   - CI builds of the production extension ZIP
+   - permissions review and privacy policy
+3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures.
 
 ## Open questions / architecture validations
 

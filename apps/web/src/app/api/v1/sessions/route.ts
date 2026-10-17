@@ -1,12 +1,12 @@
 import { createSessionRequestSchema, listSessionsQuerySchema } from "@sessionhub/contracts/api-sessions";
 import { getPrisma } from "@sessionhub/database/client";
-import { authenticate, authorizeWrite, handle, json, parseOrThrow, readJson } from "@/server/api/http";
+import { authorizeRead, authorizeWrite, handle, json, parseOrThrow, readJson } from "@/server/api/http";
 import { createSession } from "@/server/sessions/mutations";
 import { listSessionsPage } from "@/server/sessions/queries";
 
 /** GET /api/v1/sessions?limit=&cursor=: the caller's live sessions, newest first. */
 export const GET = handle(async (request: Request) => {
-  const { userId } = await authenticate(request);
+  const { userId } = await authorizeRead(request);
   const query = parseOrThrow(listSessionsQuerySchema, Object.fromEntries(new URL(request.url).searchParams));
   return json(await listSessionsPage(getPrisma(), userId, query));
 });

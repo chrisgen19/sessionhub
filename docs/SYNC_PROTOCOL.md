@@ -249,7 +249,19 @@ The web dashboard's API and the shared mutation service that `sync/push` will re
 
 All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-Control: no-store`; errors are `{ error: { code, message, issues?, expectedVersion?, serverVersion?, serverState? } }`. Writes also require `Origin` equal to the app origin (403 `FORBIDDEN_ORIGIN`), `Content-Type: application/json` (415) and a body of at most 2 MB checked before parsing (413); unknown fields are rejected (400 with field `issues`). Limits: 200 windows, 2,000 tabs per window, 5,000 tabs per session.
 
-**Rate limit (writes):** POST, PATCH and DELETE share one per-user token bucket: **30 back to back, then 1 per second (60 per minute sustained)**. Over the limit: `429 RATE_LIMITED`, `Retry-After: <seconds>` and `retryAfterSeconds` in the body; nothing is changed. The check runs after the same-origin check and authentication (anonymous or cross-site requests never use a user's budget) and before the body is read. Reads are not limited yet. Buckets live in process memory (one web instance; at most 10,000 tracked users, fully refilled buckets dropped first).
+**Rate limits (shared across web instances since 2026-10-16):** token buckets in PostgreSQL (`rate_limit_buckets`, `apps/web/src/server/api/rate-limit.ts`). Each check is one atomic `INSERT ... ON CONFLICT DO UPDATE` that refills by the time elapsed on the database clock and takes the tokens only if they are all there. Over a limit: `429 RATE_LIMITED`, `Retry-After: <seconds>` and `retryAfterSeconds` in the body; nothing is changed.
+
+| Budget | Key | Limit | Charged by |
+|---|---|---|---|
+| Writes | per user | **30 at once, then 1/s** | every POST, PATCH and DELETE (web and device), one per sync-push operation |
+| Reads | per user | **120 at once, then 2/s** | every `/api/v1` GET (web and device, incl. `sync/pull` and `sync/bootstrap`) |
+| Pairing start | per client IP | 5 at once, then 1/min | `POST /api/v1/pairing` |
+| Device tokens | per client IP | 30 at once, then 1 every 2 s | pairing polls, token refresh |
+| Better Auth | per IP and path (its own rules) | its `max` per `window`, as a bucket of `max` refilled `max`/`window` | sign-in, sign-up, reset and the other `/api/auth/*` routes (`rateLimit.customStorage`) |
+
+- Checks run after the same-origin check and authentication, so anonymous or cross-site requests never use a user's budget. For writes the check runs before the body is read; for sync push, after (its cost is the operation count).
+- Idle buckets (over an hour) are swept on about 1% of checks; a full bucket and a missing one behave the same.
+- Verified: 60 concurrent requests from two separate connection pools let exactly 30 through a 30-token bucket (DB test); HTTP E2E for the write and read budgets and Better Auth's sign-in limit.
 
 **Transaction rules (one PostgreSQL transaction per write):**
 
@@ -260,7 +272,7 @@ All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-C
 5. Insert an immutable `session_versions` row (payload = detail DTO, checksum = SHA-256 of id-independent content) and a `sync_changes` row with the sequence.
 6. Replays (exact create retry, repeated delete) and conflicts roll back, so they consume **no** sequence: the change log stays gap-free.
 
-**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. Receipts (`sync_operation_receipts`) exist for device pushes only (13f). **Not yet:** read rate limits and shared (multi-instance) limiter storage, `/versions` history.
+**Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. Receipts (`sync_operation_receipts`) exist for device pushes only (13f). **Not yet:** `/versions` history.
 
 ## 13b. Implemented: workspace REST API (2026-10-16)
 
@@ -363,7 +375,7 @@ Then 200 `{ protocolVersion: 1, results }`, one result per operation in request 
 
 Contracts: `packages/contracts/src/api-sync.ts`. Server: `apps/web/src/server/sync/pull.ts`, `cursor.ts`, `device-reader.ts`; routes `api/v1/sync/pull`, `api/v1/sync/bootstrap`. Rules: `packages/sync/src/reconcile.ts`. Extension: `sync-downloader.ts`, `sync-apply.ts`, `sync-runner.ts`.
 
-Both endpoints: `Authorization: Bearer` device token only, confirmed email when this server sends email (403 `EMAIL_NOT_CONFIRMED`), `Cache-Control: no-store`. Reads are not rate-limited yet (M6 item).
+Both endpoints: `Authorization: Bearer` device token only, confirmed email when this server sends email (403 `EMAIL_NOT_CONFIRMED`), `Cache-Control: no-store`. They use the account's read budget (13a).
 
 | Method and path | Success | Errors |
 |---|---|---|

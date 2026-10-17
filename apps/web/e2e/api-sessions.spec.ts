@@ -168,3 +168,25 @@ test("writes are rate-limited per user with 429 and Retry-After; reads and other
   await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000 + 200));
   expect((await alice.post("/api/v1/sessions", { data: sessionBody() })).status()).toBe(201);
 });
+
+test("reads are rate-limited per user too, separately from writes and from other users", async ({ playwright }) => {
+  const alice = await newApiUser(playwright.request);
+  const bob = await newApiUser(playwright.request);
+  const anonymous = await playwright.request.newContext({ baseURL: BASE_URL });
+  for (let i = 0; i < 5; i += 1) expect((await anonymous.get("/api/v1/sessions")).status()).toBe(401);
+
+  // 130 reads at once: the 120 burst passes (a few more may refill at 2/s while in flight), the rest get 429.
+  const responses = await Promise.all(Array.from({ length: 130 }, () => alice.get("/api/v1/sessions?limit=1")));
+  const statuses = responses.map((response) => response.status());
+  const allowed = statuses.filter((status) => status === 200).length;
+  expect(allowed).toBeGreaterThanOrEqual(120);
+  expect(allowed).toBeLessThan(130);
+  expect(statuses.filter((status) => status === 429).length).toBe(130 - allowed);
+  const limited = responses.find((response) => response.status() === 429)!;
+  expect(Number(limited.headers()["retry-after"])).toBeGreaterThanOrEqual(1);
+  expect(await limited.json()).toMatchObject({ error: { code: "RATE_LIMITED" } });
+
+  // Writes have their own budget, and Bob his.
+  expect((await alice.post("/api/v1/sessions", { data: sessionBody() })).status()).toBe(201);
+  expect((await bob.get("/api/v1/sessions")).status()).toBe(200);
+});

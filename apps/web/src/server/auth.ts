@@ -4,6 +4,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { getPrisma } from "@sessionhub/database/client";
 import { PASSWORD_LIMITS } from "@/lib/auth-validation";
+import { authRateLimitStorage } from "./api/rate-limit";
 import { getServerEnv } from "./env";
 import { queueMail } from "./mail/deliver";
 import { passwordChangedEmail, passwordResetEmail, verificationEmail } from "./mail/templates";
@@ -37,6 +38,8 @@ const createAuth = () => {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     database: prismaAdapter(getPrisma(), { provider: "postgresql", transaction: true }),
+    // Better Auth's own limits (sign-in, reset, ...) in the shared buckets, so they hold across instances.
+    rateLimit: { customStorage: authRateLimitStorage(getPrisma) },
     emailAndPassword: {
       enabled: true,
       minPasswordLength: PASSWORD_LIMITS.min,

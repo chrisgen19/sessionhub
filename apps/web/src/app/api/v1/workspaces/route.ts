@@ -1,11 +1,11 @@
 import { createWorkspaceRequestSchema } from "@sessionhub/contracts/api-workspaces";
 import { getPrisma } from "@sessionhub/database/client";
-import { authenticate, authorizeWrite, handle, json, readJson } from "@/server/api/http";
+import { authorizeRead, authorizeWrite, handle, json, readJson } from "@/server/api/http";
 import { createWorkspace, listWorkspaces } from "@/server/workspaces/service";
 
 /** GET /api/v1/workspaces: every live workspace (at most 100) in display order, with session counts. */
 export const GET = handle(async (request: Request) => {
-  const { userId } = await authenticate(request);
+  const { userId } = await authorizeRead(request);
   return json(await listWorkspaces(getPrisma(), userId));
 });
 
