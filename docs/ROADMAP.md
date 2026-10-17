@@ -100,7 +100,7 @@ flowchart LR
 - [x] Add rate limiting, observability with URL redaction, resource limits. (2026-10-16/17: shared PostgreSQL rate limits incl. reads and Better Auth; structured redacted JSON logs with request ids; bounded body reads, database timeouts, 5,000 sessions per account; SECURITY_PRIVACY.md 8a)
 - [ ] Production Dockerfile and Coolify deployment checklist. (Dockerfile: done, `infra/docker/web.Dockerfile`; checklist: `docs/DEPLOYMENT.md` with proxy/client IP, TLS, environment and deploy order, 2026-10-17; backups section pending.)
 - [ ] Verify TLS, trusted proxy, DB migration and off-host backup restore. (App side done 2026-10-17: trusted-proxy client IP, https required in production, HSTS, `Secure` cookies; verifying on a real deployment, `DEPLOYMENT.md` checks, is pending.)
-- [ ] CI production extension ZIP and web build.
+- [x] CI production extension ZIP and web build. (2026-10-17: `extension-zip` job, built twice and checked by `check-release-zip.ts`; the web production image is built by the `docker` job on every PR. `DEPLOYMENT.md` section 6)
 - [ ] Document release/rollback process and known limitations.
 
 **Done when:** Release candidate meets `TEST_PLAN.md`, operational deployment has been verified and user-facing security claims are accurate.

@@ -1,2 +1,4 @@
 @import "tailwindcss";
 @import "@sessionhub/ui/tokens.css";
+/* Release tooling isn't UI: words in it must not turn into classes in the shipped CSS. */
+@source not "../../scripts";

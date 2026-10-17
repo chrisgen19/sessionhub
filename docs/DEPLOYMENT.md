@@ -94,3 +94,26 @@ No secrets in `NEXT_PUBLIC_*` or `WXT_*` variables.
 - [ ] Run the `migrate` image before `web`. The compose stack does this: `web` waits for `migrate` to finish successfully.
 - [ ] Health check: `GET /api/health`. It returns 200 when the configuration is valid and 503 otherwise. It doesn't check PostgreSQL.
 - [ ] After deploying, the logs show one JSON line per API request (`http_request`), without URLs, emails, tokens or client addresses (`SECURITY_PRIVACY.md` 8a).
+
+## 6. Extension release ZIP
+
+The `extension-zip` CI job builds the Chrome Web Store ZIP on every PR and every push to `main`. It builds it twice and checks it with `apps/extension/scripts/check-release-zip.ts`.
+
+**What fails the job:**
+- The two builds of the same commit differ: the ZIP must be reproducible. (It also doesn't depend on the build directory, and its file timestamps are normalised.)
+- The manifest isn't MV3, or its version doesn't match `apps/extension/package.json`.
+- The permissions aren't exactly the documented set (`SECURITY_PRIVACY.md` section 6).
+- `host_permissions` is anything other than the configured https origin.
+- The manifest has content scripts, `externally_connectable`, `web_accessible_resources` or optional permissions.
+- The ZIP contains source maps, or the HTML loads remote scripts.
+- The service worker doesn't contain the configured origin, or the bundle still contains the development server `localhost:3000`.
+
+**What only warns:** missing icons (the store needs a 128x128 icon), and a build for the placeholder origin.
+
+- [ ] Set the repository variable `EXTENSION_API_BASE_URL` (GitHub: Settings, Secrets and variables, Actions, Variables) to the production origin, the same value as `BETTER_AUTH_URL`.
+  - Without it, CI builds for `https://sessionhub.invalid` (a reserved name that never resolves) and uploads nothing.
+  - With it, every run uploads `sessionhub-extension-<commit>` (`sessionhub-<version>-chrome.zip`, kept 30 days).
+- [ ] Before the first store submission, add icons (at least 128x128) and the store listing items (`SECURITY_PRIVACY.md` section 10).
+- [ ] Raise `version` in `apps/extension/package.json` for every store upload: the store refuses a version it already has.
+- Local equivalent: `WXT_API_BASE_URL=https://<domain> pnpm --filter @sessionhub/extension zip:release`. It writes to `apps/extension/.output`; delete older ZIPs there first, because the check expects exactly one.
+

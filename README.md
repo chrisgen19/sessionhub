@@ -49,6 +49,8 @@ First-time E2E setup on a new machine: `pnpm --filter @sessionhub/extension exec
 
 **Which server the extension talks to** is fixed at build time: `WXT_API_BASE_URL=https://sessionhub.example.com pnpm --filter @sessionhub/extension build` (default `http://localhost:3000`; non-localhost origins must be https). The manifest gets a host permission for exactly that origin. Connect a browser from the manager's **Account** view; approve it on the website at `/app/pair`.
 
+**Release ZIP:** `WXT_API_BASE_URL=https://<domain> pnpm --filter @sessionhub/extension zip:release` builds `apps/extension/.output/sessionhub-<version>-chrome.zip` twice and checks it (CI does the same, `docs/DEPLOYMENT.md` section 6).
+
 **Load the extension in Chrome:** run `pnpm build`, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `apps/extension/.output/chrome-mv3`.
 
 | Workspace | Purpose |
