@@ -96,6 +96,23 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - E2E: Not run (uploader-only change, unit-tested; no E2E reaches the round cap).
 
 **Next step:** after PR #7 takes this fix, carry it up the stack (#8 to #11). `sync-uploader.ts` is restructured there (`sync-gate` `recordSuccess`), so expect a small conflict in `run`.
+### 2026-10-17 (PR #8 review fixes: sync account binding and backoff) / Claude Code (Opus 5.5) / `feature/m4-sync-pull` (macOS laptop)
+
+**Goal:** address the two Codex findings on PR #8 (review 5547685945).
+
+**Implemented:**
+
+- P1 (cross-account cache): a run fixed its scope at the gate, but every request re-read the connection. After a mid-run switch to another account, the server refused the old cursor (`INVALID_CURSOR`), the client rebuilt from bootstrap with the new account's token, and that account's sessions were committed into the old scope. `sync-gate.ts` `withRunToken` checks each request's connection is still the run's account (otherwise the run ends as disconnected, touching neither account's state), and `commitPage` re-checks inside its transaction and drops the page. Pushes use the same binding (the server already refused them with `DEVICE_MISMATCH`). `withAccessToken` now also passes the connection to its callback.
+- P2 (backoff): a successful push cleared the shared failure count before the pull, so a failing pull retried every ~5 s forever. Only the pull's success, the run's last step, clears it now.
+- Tests: account switch mid-pull, account switch mid-push, backoff growing 5/10/20 s across runs until a whole run succeeds; two uploader tests updated for the run-level reset. `SYNC_PROTOCOL.md` (extension download) documents both rules.
+
+**Validated commands and results:**
+
+- New tests against the unfixed code: **3 fail** (retry stuck at +5 s; pull returned `done` with the other account's session in the scope; the second push went out with the other account's token).
+- After the fix: `apps/extension` `pnpm lint`, `pnpm typecheck`: **pass**, `pnpm test` **147/147**; `pnpm check`: **pass** (17 tasks). E2E: Not run.
+
+**Known gaps:** `refreshConnection` writes the refreshed connection unconditionally, so a pairing that completes while the previous account's refresh is in flight could be overwritten (found by reading, not reproduced; PR #4 code).
+
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
