@@ -44,6 +44,12 @@ import {
   VersionConflictError,
 } from "./session-repository";
 
+/** `into`: an open window to append to (else a new window). `lazy`: unload background tabs once they start loading. */
+export interface RestoreWindowOptions {
+  into?: number;
+  lazy?: boolean;
+}
+
 /** Browser side effects, injected so handlers can be tested without Chrome. */
 export interface HandlerDeps {
   db: SessionHubDb;
@@ -56,7 +62,7 @@ export interface HandlerDeps {
   restoreWindow: (
     window: RestorePlan["windows"][number],
     record: (outcome: RestoreTabOutcome) => Promise<void>,
-    options?: { into?: number },
+    options?: RestoreWindowOptions,
   ) => Promise<RestoreTabOutcome[]>;
   /**
    * URLs open in a normal, non-private window, for restoring into it; throws `BrowserError` when it
@@ -159,7 +165,7 @@ const importSession = async (command: Extract<Command, { type: "session.import" 
  * loses at most the tab it was opening (a retry reopens any opened tab it lost). Outcomes
  * it returned without reporting are written when the window is done.
  */
-const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["windows"][number], deps: HandlerDeps, into?: number) => {
+const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["windows"][number], deps: HandlerDeps, options: RestoreWindowOptions) => {
   const recorded = new Set<string>();
   const outcomes = await deps.restoreWindow(
     window,
@@ -167,7 +173,7 @@ const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["window
       await appendRestoreOutcomes(deps.db, jobId, [outcome], deps.now());
       recorded.add(outcome.sourceTabId);
     },
-    { into },
+    options,
   );
   const unrecorded = outcomes.filter((outcome) => !recorded.has(outcome.sourceTabId));
   if (unrecorded.length > 0) await appendRestoreOutcomes(deps.db, jobId, unrecorded, deps.now());
@@ -178,10 +184,10 @@ const restoreAndRecordWindow = async (jobId: string, window: RestorePlan["window
  * from recorded outcomes, even if a step throws, so a job never stays "running" and
  * blocks retry. (A worker killed mid-run can't settle it; the next worker start does.)
  */
-const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps, into?: number) => {
+const runRestoreJob = async (jobId: string, plan: RestorePlan, deps: HandlerDeps, options: RestoreWindowOptions = {}) => {
   let failure: unknown = null;
   try {
-    for (const window of plan.windows) await restoreAndRecordWindow(jobId, window, deps, into);
+    for (const window of plan.windows) await restoreAndRecordWindow(jobId, window, deps, options);
   } catch (error) {
     // Once a tab has been opened, a full disk means its outcome couldn't be recorded:
     // stop opening more tabs and say so, rather than claiming nothing happened.
@@ -201,7 +207,7 @@ type RestoreCommand = Extract<Command, { type: "restore.start" | "recovery.resto
  * Plans the chosen tabs for the chosen target and opens them. For the current window, the window
  * is checked (and its URLs read) before the job exists, so a closed window opens nothing.
  */
-const restoreFrom = async (session: SavedSession, { tabIds, target = { kind: "new-windows" } }: RestoreCommand, deps: HandlerDeps) => {
+const restoreFrom = async (session: SavedSession, { tabIds, target = { kind: "new-windows" }, lazy = false }: RestoreCommand, deps: HandlerDeps) => {
   let plan = planRestore(session, {
     ...(tabIds ? { tabIds: new Set(tabIds) } : {}),
     layout: target.kind === "new-windows" ? "original" : "single",
@@ -213,8 +219,8 @@ const restoreFrom = async (session: SavedSession, { tabIds, target = { kind: "ne
     if (target.skipOpen) plan = withoutOpenTabs(plan, new Set(openUrls));
     into = target.windowId;
   }
-  const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now(), target: target.kind });
-  return { job: await runRestoreJob(job.id, plan, deps, into) };
+  const job = await createRestoreJob(deps.db, { id: deps.createId(), plan, now: deps.now(), target: target.kind, lazy });
+  return { job: await runRestoreJob(job.id, plan, deps, { into, lazy }) };
 };
 
 const restore = async (command: Extract<Command, { type: "restore.start" }>, deps: HandlerDeps) => {
@@ -233,7 +239,7 @@ const restoreCheckpoint = async (command: Extract<Command, { type: "recovery.res
 /** Re-runs only tabs that never opened, in new windows. Works from the stored plan, not the session. */
 const retry = async (command: Extract<Command, { type: "restore.retry" }>, deps: HandlerDeps) => {
   const job = await claimRestoreJobForRetry(deps.db, command.jobId, deps.now());
-  return { job: await runRestoreJob(job.id, planRetry(job.plan, openedTabIds(job)), deps) };
+  return { job: await runRestoreJob(job.id, planRetry(job.plan, openedTabIds(job)), deps, { lazy: job.lazy === true }) };
 };
 
 const accountDeps = (deps: HandlerDeps): AccountDeps => {

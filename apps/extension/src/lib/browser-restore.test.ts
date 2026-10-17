@@ -1,7 +1,7 @@
 import { browser, type Browser } from "wxt/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlannedWindow } from "@sessionhub/core/restore-plan";
-import { inspectBrowserWindow, restoreBrowserWindow } from "./browser-restore";
+import { inspectBrowserWindow, restoreBrowserWindow, UNLOAD_WAIT_MS } from "./browser-restore";
 import { BrowserError } from "./command-handlers";
 import type { RestoreTabOutcome } from "./db";
 
@@ -156,5 +156,72 @@ describe("inspectBrowserWindow", () => {
     await expect(inspectBrowserWindow(42)).rejects.toThrow("SessionHub doesn't open tabs in private windows");
     windowWith({ type: "popup" });
     await expect(inspectBrowserWindow(42)).rejects.toThrow("Tabs can only be opened in a normal browser window");
+  });
+});
+
+describe("lazy opens", () => {
+  /** Tabs report a committed URL unless listed in `uncommitted`; `activeId` is the selected tab (a new window's first). */
+  const mockTabState = (events: string[], uncommitted: number[] = [], activeId: number | null = 100) => {
+    vi.spyOn(browser.tabs, "get").mockImplementation(async (tabId: number) =>
+      ({ id: tabId, active: tabId === activeId, url: uncommitted.includes(tabId) ? "" : `https://t${tabId}.test/` }) as Browser.tabs.Tab,
+    );
+    return vi.spyOn(browser.tabs, "discard").mockImplementation(async (tabId?: number) => {
+      events.push(`discard ${tabId}`);
+      return { id: (tabId ?? 0) + 1000 } as Browser.tabs.Tab;
+    });
+  };
+
+  it("unloads background tabs once they have committed, after grouping, and never the active tab", async () => {
+    const events: string[] = [];
+    mockBrowser([]);
+    mockTabState(events);
+    vi.spyOn(browser.tabs, "group").mockImplementation(async () => {
+      events.push("group");
+      return 7;
+    });
+    vi.spyOn(browser.tabGroups, "update").mockImplementation(async () => ({}) as Browser.tabGroups.TabGroup);
+    const window = plannedWindow(3);
+    window.tabs[1]!.groupId = "g1";
+    window.tabs[2]!.groupId = "g1";
+    window.groups = [{ sourceGroupId: "g1", title: "Docs", color: "blue", collapsed: false }];
+
+    const outcomes = await restoreBrowserWindow(window, vi.fn(async () => {}), { lazy: true });
+
+    // Grouping uses the runtime ids, which a discard changes, so it must come first.
+    expect(events).toEqual(["group", "discard 101", "discard 102"]);
+    expect(outcomes.map(({ status }) => status)).toEqual(["opened", "opened", "opened"]);
+  });
+
+  it("unloads every tab it appended to an open window, and nothing without lazy", async () => {
+    const events: string[] = [];
+    mockBrowser([]);
+    // Appended tabs open in background; the window's own selected tab isn't one of them.
+    mockTabState(events, [], null);
+    await restoreBrowserWindow(plannedWindow(2), vi.fn(async () => {}), { into: 42, lazy: true });
+    expect(events).toEqual(["discard 100", "discard 101"]);
+
+    events.length = 0;
+    await restoreBrowserWindow(plannedWindow(2), vi.fn(async () => {}), { into: 42 });
+    expect(events).toEqual([]);
+  });
+
+  it("leaves a tab loaded when it doesn't commit in time or can't be unloaded; the tabs still count as opened", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: string[] = [];
+      mockBrowser([]);
+      const discard = mockTabState(events, [102]);
+      discard.mockImplementationOnce(async () => Promise.reject(new Error("Cannot discard tab")));
+
+      const restoring = restoreBrowserWindow(plannedWindow(4), vi.fn(async () => {}), { lazy: true });
+      await vi.advanceTimersByTimeAsync(UNLOAD_WAIT_MS);
+      const outcomes = await restoring;
+
+      expect(discard.mock.calls.map(([tabId]) => tabId)).toEqual([101, 103]);
+      expect(events).toEqual(["discard 103"]);
+      expect(outcomes.map(({ status }) => status)).toEqual(["opened", "opened", "opened", "opened"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

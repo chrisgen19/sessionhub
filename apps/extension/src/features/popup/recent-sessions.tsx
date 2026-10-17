@@ -10,12 +10,13 @@ interface RecentSessionsProps {
   destination: RestoreDestination;
   onDestination: (destination: RestoreDestination) => void;
   skipOpen: boolean;
+  lazy: boolean;
   onShow: (sessionId: string) => void;
   onDetails: (sessionId: string) => void;
   onRetry: () => void;
 }
 
-export function RecentSessions({ state, sessions, searching, destination, onDestination, skipOpen, onShow, onDetails, onRetry }: RecentSessionsProps) {
+export function RecentSessions({ state, sessions, searching, destination, onDestination, skipOpen, lazy, onShow, onDetails, onRetry }: RecentSessionsProps) {
   if (state.status === "loading") {
     return (
       <div aria-busy="true" aria-label="Loading sessions" className="space-y-2">
@@ -52,6 +53,7 @@ export function RecentSessions({ state, sessions, searching, destination, onDest
           destination={destination}
           onDestination={onDestination}
           skipOpen={skipOpen}
+          lazy={lazy}
           onShow={() => onShow(session.id)}
           onDetails={() => onDetails(session.id)}
         />

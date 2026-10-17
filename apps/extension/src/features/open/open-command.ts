@@ -24,15 +24,17 @@ export const sendOpen = async (input: {
   kind: "session" | "snapshot";
   destination: RestoreDestination;
   skipOpen: boolean;
+  /** Unload background tabs once they start loading (best effort). */
+  lazy: boolean;
   tabIds?: string[];
 }): Promise<OpenOutcome> => {
   try {
     const target = await targetFor(input.destination, input.skipOpen);
-    const tabIds = input.tabIds ? { tabIds: input.tabIds } : {};
+    const extra = { ...(input.tabIds ? { tabIds: input.tabIds } : {}), ...(input.lazy ? { lazy: true } : {}) };
     const response = await sendCommand(
       input.kind === "snapshot"
-        ? { type: "recovery.restore", snapshotId: input.session.id, ...tabIds, target }
-        : { type: "restore.start", sessionId: input.session.id, ...tabIds, target },
+        ? { type: "recovery.restore", snapshotId: input.session.id, ...extra, target }
+        : { type: "restore.start", sessionId: input.session.id, ...extra, target },
     );
     return response.ok ? { ok: true, job: response.data.job } : { ok: false, message: response.error.message };
   } catch (error) {

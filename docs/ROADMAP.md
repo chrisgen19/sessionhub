@@ -84,7 +84,7 @@ flowchart LR
 - [ ] Side panel with live tab tree, search, focus/move/group.
 - [x] Workspace switcher and saved-session assignment. (2026-10-17: server and sync side: sync push takes workspace operations and a session's `workspaceId`, bootstrap carries workspaces, SYNC_PROTOCOL.md 13f/13g. Extension: Dexie v6 workspaces, per-field merge, switcher, Workspaces dialog and inspector assignment, SYNC_PROTOCOL.md 13j, UI_UX_DESIGN.md 18g; verified across two real extension profiles. Web dashboard: workspace filter on Saved sessions and assignment on the session page, UI_UX_DESIGN.md 18h. Not yet: workspaces in the popup and side panel, and creating or editing workspaces on the web.)
 - [x] Selective opening, Session Buddy style (2026-10-17, PRs #37, #38 and `feature/popup-open-save-tabs`): tick windows and tabs, open in new windows, one new window or this window, skip tabs already open, confirm above 50 tabs, from the manager, Recovery and the popup (Open and Save tabs, within 600 px). UI_UX_DESIGN.md 18j, 18k.
-- [ ] Lazy loading for large opens (tabs load when clicked): spike first (`feature/lazy-open`).
+- [x] Keep opened tabs unloaded until clicked (2026-10-17, `feature/lazy-open`): best effort after a spike; Chrome can't create a tab unloaded, so each page starts loading and is then discarded (SYSTEM_DESIGN decisions log, UI_UX_DESIGN.md 18j).
 - [ ] Restore window size and position: capture bounds and state when saving (contracts, sync and server fields) and apply them, clamped on screen, when opening in new windows (user's choice: after the open picker).
 - [ ] Advanced session inspector, tags/filters/sort/bulk select.
 - [ ] Versions and recovery timeline with useful preview.

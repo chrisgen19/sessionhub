@@ -11,6 +11,8 @@ export const DESTINATIONS: SplitButtonOption<RestoreDestination>[] = [
 ];
 
 const linkClass = "text-xs font-semibold text-brand hover:underline disabled:opacity-60 disabled:no-underline";
+const checkLabelClass = "flex items-center gap-2 text-xs select-none";
+const checkboxClass = "size-4 accent-[var(--sh-brand)]";
 
 /** Without counts, for a hint: "in new windows", "in one new window", "in this window". */
 export const DESTINATION_PHRASE: Record<RestoreDestination, string> = {
@@ -33,6 +35,8 @@ interface OpenBarProps {
   onDestination: (destination: RestoreDestination) => void;
   skipOpen: boolean;
   onSkipOpen: (skip: boolean) => void;
+  lazy: boolean;
+  onLazy: (lazy: boolean) => void;
   /** Tabs matching the search; null without a search. */
   matches: number | null;
   onSelectAll: () => void;
@@ -45,7 +49,7 @@ interface OpenBarProps {
 }
 
 /** What is ticked, where it opens (remembered), and the Open action, with a confirm step for large opens. */
-export function OpenBar({ ticked, total, planned, destination, onDestination, skipOpen, onSkipOpen, matches, phase, ...actions }: OpenBarProps) {
+export function OpenBar({ ticked, total, planned, destination, onDestination, skipOpen, onSkipOpen, lazy, onLazy, matches, phase, ...actions }: OpenBarProps) {
   const busy = phase === "running";
   const where = destinationText(destination, planned.windows);
   return (
@@ -81,12 +85,18 @@ export function OpenBar({ ticked, total, planned, destination, onDestination, sk
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-          {destination === "this-window" && (
-            <label className="mr-auto flex items-center gap-2 text-xs select-none">
-              <input type="checkbox" checked={skipOpen} disabled={busy} onChange={(event) => onSkipOpen(event.target.checked)} className="size-4 accent-[var(--sh-brand)]" />
-              Skip tabs already open here
+          <div className="mr-auto flex flex-col gap-1">
+            {destination === "this-window" && (
+              <label className={checkLabelClass}>
+                <input type="checkbox" checked={skipOpen} disabled={busy} onChange={(event) => onSkipOpen(event.target.checked)} className={checkboxClass} />
+                Skip tabs already open here
+              </label>
+            )}
+            <label className={checkLabelClass} title="Each page starts loading, then is unloaded to save memory. It loads again when you click its tab.">
+              <input type="checkbox" checked={lazy} disabled={busy} onChange={(event) => onLazy(event.target.checked)} className={checkboxClass} />
+              Keep tabs unloaded until clicked
             </label>
-          )}
+          </div>
           <SplitButton
             label={
               busy ? (
