@@ -14,7 +14,12 @@ const nextConfig: NextConfig = {
   // from, and the reset page's URL carries a one-time token.
   async headers() {
     const noReferrer = [{ key: "Referrer-Policy", value: "no-referrer" }];
+    // HTTPS only from the first visit on, for a year. Browsers ignore it over plain http (RFC 6797
+    // section 8.1), so local production runs are unaffected. No includeSubDomains or preload: they
+    // would bind every other host on the domain. Not sent by `next dev`.
+    const hsts = process.env.NODE_ENV === "production" ? [{ source: "/:path*", headers: [{ key: "Strict-Transport-Security", value: "max-age=31536000" }] }] : [];
     return [
+      ...hsts,
       { source: "/app/:path*", headers: noReferrer },
       { source: "/reset-password", headers: [...noReferrer, { key: "Cache-Control", value: "no-store" }] },
     ];

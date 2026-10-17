@@ -261,6 +261,7 @@ All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-C
 
 - Checks run after the same-origin check and authentication, so anonymous or cross-site requests never use a user's budget. For writes the check runs before the body is read; for sync push, after (its cost is the operation count).
 - Idle buckets (over an hour) are swept on about 1% of checks; a full bucket and a missing one behave the same.
+- "Client IP" is the `X-Forwarded-For` entry `TRUSTED_PROXY_COUNT` places from the right (the address the trusted proxy recorded; IPv6 by /64), never the client-written part of the header. Better Auth is handed the same single address (SECURITY_PRIVACY.md 8b, DEPLOYMENT.md 2).
 - Verified: 60 concurrent requests from two separate connection pools let exactly 30 through a 30-token bucket (DB test); HTTP E2E for the write and read budgets and Better Auth's sign-in limit.
 
 **Transaction rules (one PostgreSQL transaction per write):**

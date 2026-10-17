@@ -2,6 +2,7 @@ import { API_LIMITS, type ApiErrorCode, type ApiErrorResponse } from "@sessionhu
 import { z } from "zod";
 import { getPrisma } from "@sessionhub/database/client";
 import { getAuth } from "@/server/auth";
+import { clientAddress, rateLimitSubject } from "@/server/client-ip";
 import { authenticateAccessToken, type DevicePrincipal } from "@/server/devices/credentials";
 import { bearerToken } from "@/server/devices/tokens";
 import { getServerEnv } from "@/server/env";
@@ -102,8 +103,6 @@ export const authenticateDevice = async (request: Request): Promise<DevicePrinci
   return authenticateAccessToken(getPrisma(), token);
 };
 
-/** First client address from X-Forwarded-For (the proxy must overwrite it; see SECURITY_PRIVACY.md). */
-export const clientIp = (request: Request): string => request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
 /** Takes from a shared bucket (all web instances, see rate-limit.ts) or throws 429 with Retry-After. */
 const charge = async (key: string, policy: RateLimitPolicy, cost: number, message: string): Promise<void> => {
@@ -117,7 +116,7 @@ const IP_POLICIES = { "pairing-start": PAIRING_START_LIMIT, "device-token": DEVI
 
 /** Per-IP limit for unauthenticated device endpoints (pairing start, token poll, refresh). */
 export const limitByIp = (request: Request, name: keyof typeof IP_POLICIES): Promise<void> =>
-  charge(`ip:${name}:${clientIp(request)}`, IP_POLICIES[name], 1, "Too many requests in a short time.");
+  charge(`ip:${name}:${rateLimitSubject(clientAddress(request.headers))}`, IP_POLICIES[name], 1, "Too many requests in a short time.");
 
 /** Takes `count` writes from the account's shared budget (web and devices alike), or throws 429 without taking any. */
 export const chargeWrites = (userId: string, count: number): Promise<void> => charge(`write:${userId}`, API_WRITE_LIMIT, count, "Too many changes in a short time.");

@@ -2,7 +2,7 @@
 
 > **This is the first file a returning coding agent should read.**  
 > **Last updated:** 2026-10-17
-> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 hardening started: rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
+> **Current milestone:** M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 hardening started: rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done; trusted-proxy client IP, HTTPS requirements and the Coolify checklist (`docs/DEPLOYMENT.md`) done, not yet deployed. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-16)
 
@@ -17,7 +17,7 @@
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces aren't synced into the extension yet |
 | Deployment | **Production image + compose stack.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. Not yet deployed anywhere |
 | CI | Runs on GitHub (private repo `chrisgen19/sessionhub`). **All four open PRs pass**: #1 `check`; #2, #3 and #4 `check` (with PostgreSQL + Mailpit services, incl. the real-extension pairing E2E on #4) and `docker`. GitGuardian fails on #1 (dev placeholder password `sessionhub_dev`, false positive; user's call) **and on #2** (2 findings in `4dc907e`, not identified from the API; likely test-only values, check the dashboard) |
-| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (each based on the previous; the whole stack was rebased on 2026-10-17 onto the PR #1 checkpoint eviction fix, so these are the current tips): #1 `feature/m1-monorepo-local-slice` -> `main` (`c4bbc1f`), #2 `feature/m3-web-docker` (`d40d946`), #3 `feature/m3-email-auth` (`9239287`), #4 `feature/m4-device-pairing` (`99045de`), #6 `feature/m4-local-outbox` (`4074da5`), #7 `feature/m4-sync-push` (`3da2461`), #8 `feature/m4-sync-pull` (`e4ead3e`), #9 `feature/m4-sync-ui` (`82dd1ea`), #10 `feature/m4-conflict-review` (`d554eea`), #11 **`feature/m6-hardening`** (rate limits `4f85a1b`, then observability and resource limits). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
+| Git | Remote `origin` = https://github.com/chrisgen19/sessionhub (private). `main` = `e491fc9`. Stacked PRs, merge in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (each based on the previous; the whole stack was rebased on 2026-10-17 onto the PR #1 checkpoint eviction fix, so these are the current tips): #1 `feature/m1-monorepo-local-slice` -> `main` (`c4bbc1f`), #2 `feature/m3-web-docker` (`d40d946`), #3 `feature/m3-email-auth` (`9239287`), #4 `feature/m4-device-pairing` (`99045de`), #6 `feature/m4-local-outbox` (`4074da5`), #7 `feature/m4-sync-push` (`3da2461`), #8 `feature/m4-sync-pull` (`e4ead3e`), #9 `feature/m4-sync-ui` (`82dd1ea`), #10 `feature/m4-conflict-review` (`d554eea`), #11 **`feature/m6-hardening`** (rate limits `4f85a1b`, observability and resource limits `ccc3ff7`, CI green; the trusted proxy and TLS slice is uncommitted at the end of its 2026-10-17 session). Uncommitted on the WSL machine only: a one-line `packages/eslint-config/base.js` change (`e2e-docker` lint exemption) that the user hasn't decided on; not needed by any code |
 
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
@@ -141,6 +141,71 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 **Known gaps:** the stale-connection window narrows to the moment between the gate check and `withAccessToken` reading the connection; passing the expected account into `withAccessToken` would close it fully. Pull pages still move `lastSyncAt` per page, so a later page failing leaves the time of the last page that arrived.
 
 **Next step:** after PR #9 takes this fix, carry it up the stack (#10, #11). `sync-uploader.ts` `run` also changes in the PR #7 fix (`51b0582`, round-cap continuation), so the rebase of #8 and #9 onto the new #7 meets this code too.
+### 2026-10-17 (M6 trusted proxy and TLS slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
+
+**Goal:** trusted proxy / `X-Forwarded-For` handling and TLS for the Coolify deployment checklist (user's scope). Same branch as PR #11. Behavior in SECURITY_PRIVACY.md 8b, operator steps in the new `docs/DEPLOYMENT.md`, decisions in SYSTEM_DESIGN.md 14 (three rows).
+
+**Found:** `clientIp` took the **leftmost** `X-Forwarded-For` entry (client-controlled whenever the proxy appends, which Traefik does by default), so per-IP limits on pairing start and device tokens could be bypassed by rotating the header. Better Auth 1.7.9 refuses multi-entry headers without `trustedProxies` and fell back to one shared bucket for all such requests. Both are confirmed by the new E2E failing against the old code.
+
+**Implemented:**
+
+- `apps/web/src/server/client-ip.ts` (new):
+  - `clientAddressFrom` takes the entry `TRUSTED_PROXY_COUNT` places from the right, validates it and unwraps IPv4-mapped addresses
+  - `rateLimitSubject` uses IPv6 /64 and `unknown` for no address
+  - `http.ts` per-IP limits use them (the old `clientIp` was removed)
+- `/api/auth/[...all]`: Better Auth gets a fresh `Request` whose `X-Forwarded-For` is only the resolved address (GET and POST). `new Request(request, ...)` fails Next's private-field check, which the full E2E caught.
+- `env.ts`:
+  - `TRUSTED_PROXY_COUNT` (1 to 5, default 1)
+  - `BETTER_AUTH_URL` must be https in production unless loopback
+  - `configurationProblem()`
+- `/api/health` returns 503 `misconfigured` while the configuration is invalid and logs one `config_invalid` line naming the variable.
+- `next.config.ts`: `Strict-Transport-Security: max-age=31536000` on every route in production builds.
+- `infra/docker/compose.yaml` and `.env.example`: `TRUSTED_PROXY_COUNT` passthrough (default 1).
+- Tests:
+  - `client-ip.test.ts` (4)
+  - `env.test.ts` (+3)
+  - `health/route.test.ts` (+1)
+  - `e2e/trusted-proxy.spec.ts` (3): spoofed prefixes don't escape the pairing limit, Better Auth's limit uses the same address, HSTS
+- Docs:
+  - `docs/DEPLOYMENT.md` (new; README links it)
+  - SECURITY_PRIVACY 5a/8b/10
+  - SYNC_PROTOCOL 13a
+  - SYSTEM_DESIGN 6 and 14
+  - ROADMAP M6 notes
+
+**Verified against sources, not memory:**
+- Next.js 16.4.1 fills `X-Forwarded-For` from the socket only when absent (`next/dist/server/base-server.js:567`).
+- Better Auth 1.7.9:
+  - IP parsing in `@better-auth/core/dist/utils/ip.mjs:174`
+  - `Secure`/`__Secure-` exactly when `baseURL` starts with `https://` (`better-auth/dist/cookies/index.mjs:23`)
+  - `getSessionCookie` reads both names (`:266`)
+- Traefik appends by default (`notAppendXForwardedFor` defaults to false, Traefik entrypoints reference).
+- Coolify's generated Traefik config sets no `forwardedHeaders` options (`bootstrap/helpers/proxy.php`).
+
+**Validated commands and results:** macOS, temporary `docker run` PostgreSQL and Mailpit on **54339/58035**, because another session's `pr3-postgres`/`pr3-mailpit` were on the usual ports (left untouched).
+
+- `pnpm check --force`: **pass** (17 tasks). Web unit tests **72** (+8).
+- `pnpm --filter @sessionhub/web test:db`: **56/56**.
+- `e2e/trusted-proxy.spec.ts`: 3/3. Against the old `http.ts` and auth route, 2 of them fail as expected: the 6th spoofed pairing start got 201, and another address got 429 from Better Auth's shared bucket.
+- Full web E2E **43/44**: only the pre-existing macOS password-reset failure.
+- Standalone build with `BETTER_AUTH_URL=https://sessionhub.example`: sign-up sets `__Secure-better-auth.session_token ...; HttpOnly; Secure; SameSite=Lax`, HSTS present.
+- With `http://sessionhub.example`: health 503, auth/API 500, one `config_invalid` log line.
+- Not run:
+  - extension suites (no extension changes)
+  - `pnpm test:docker` (no Compose here; CI's `docker` job covers it)
+  - anything on a real Coolify host (nothing deployed yet)
+
+**Production note:** no migration. After deploying:
+- a production `BETTER_AUTH_URL` that isn't https makes the deploy unhealthy (intended)
+- browsers that visit over https remember HTTPS-only for a year
+- per-IP limits change from the leftmost to the rightmost `X-Forwarded-For` entry (the same single value behind Traefik when clients send none)
+
+**Known gaps:**
+- no framing protection yet: `/app/pair` could be framed for clickjacking (next M6 item)
+- the CDN case relies on the operator setting the count, Traefik `trustedIPs` and a firewall (DEPLOYMENT.md 2)
+- health doesn't check PostgreSQL
+- every DEPLOYMENT.md check still has to run on a real deployment
+
 ### 2026-10-17 (M6 observability and resource limits slice) / Claude Code (Opus 5.5) / `feature/m6-hardening` (macOS laptop)
 
 **Goal:** observability with URL redaction (structured logs, request ids, no URLs or tokens) and resource limits (user's scope). Same branch as PR #11. Decisions in SYSTEM_DESIGN.md 14 (five rows); behavior in SECURITY_PRIVACY.md 8a.
@@ -799,9 +864,10 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Immediate next executable task
 
-1. Commit and push the observability slice to `feature/m6-hardening` (PR #11), check CI, then merge the stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
+1. Commit and push the trusted proxy and TLS slice to `feature/m6-hardening` (PR #11), check CI, then merge the stack in order #1 -> #2 -> #3 -> #4 -> #6 -> #7 -> #8 -> #9 -> #10 -> #11 (merge or rebase-merge, not squash). GitGuardian on #1 and #2: mark the findings as false positives or move the placeholders to CI variables.
 2. Next M6 items:
-   - trusted proxy / `X-Forwarded-For` overwrite and TLS (Coolify deployment checklist)
+   - framing protection (`frame-ancestors 'none'` / `X-Frame-Options: DENY`), at least for `/app/pair` (clickjacking of the approval button)
+   - first Coolify deployment, running every check in `docs/DEPLOYMENT.md`; then the backups section
    - CI builds of the production extension ZIP
    - permissions review and privacy policy
 3. Laptop: install Docker Compose so `pnpm db:up` / `pnpm test:docker` work; investigate the two macOS-only E2E failures.
