@@ -21,6 +21,26 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
+
+**Goal:** address the Codex review finding on PR #1 (P2, review 5547205273). After a checkpoint hits the storage quota, `freeCheckpointSpace` evicts older checkpoints in its own committed transaction; if the retry also hits the quota, the error claimed "Earlier checkpoints are kept" although up to half had been removed.
+
+**Implemented:**
+
+- `apps/extension/src/lib/recovery-checkpoint.ts`: `CheckpointStorageFullError` takes how many checkpoints were already removed. A failed retry after eviction now reads "Storage for SessionHub is full, so this checkpoint wasn't saved, even after removing N older checkpoints to make room. Delete or export sessions you no longer need." "Earlier checkpoints are kept" is shown only when nothing was removed. Recovery behavior (evict to half with protections, retry once) is unchanged.
+- `apps/extension/src/lib/quota.test.ts`: the retry-fails test now asserts the count in the message, no "kept" claim, the exact surviving checkpoints and the persisted `lastError`; the nothing-to-evict test asserts the "kept" message.
+- `docs/UI_UX_DESIGN.md`: storage-full message list updated.
+
+**Validated commands and results:**
+
+- New test against the unfixed code: **fail** as expected (received "...Earlier checkpoints are kept..." while 3 of 6 checkpoints had been deleted), confirming the finding.
+- `apps/extension`: `pnpm lint`, `pnpm typecheck`: **pass**; `pnpm test`: **84/84** (12 files).
+- `pnpm check`: **pass** (14 tasks).
+- Manual verification in Chrome: Not run (message text only, no layout change).
+
+**Known gaps:** after an error the dirty flag stays set, so under persistent quota pressure every periodic alarm (30 min) evicts to half again and retries; history shrinks to the protected newest and largest checkpoints while each retry fails. This matches the documented quota decision in `SYSTEM_DESIGN.md` (automatic history may be thinned) and is now reported honestly; whether to stop repeated eviction after a failed retry is an open recovery-behavior decision. A non-quota error on the retry still does not mention the removal.
+
+
 ### 2026-10-16 (M3 rate-limit slice) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice`
 
 **Goal:** per-user rate limiting for `/api/v1` writes (in memory, 429 with Retry-After, documented limits) with tests.
