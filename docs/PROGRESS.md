@@ -60,6 +60,23 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - This laptop runs Colima without the `docker compose` plugin, so `pnpm db:up` fails ("unknown shorthand flag: 'f'"). E2E ran against `postgres:18-alpine` and `axllent/mailpit:v1.31.3` started with `docker run --rm` on the same ports, env and init script as `compose.dev.yaml`.
 
 **Next step:** after PR #3 takes this fix, carry it up the stack (PRs #4, #6 to #11): the page and both tests are unchanged up to `feature/m6-hardening`.
+### 2026-10-17 (PR #4 review fixes: refresh rotation) / Claude Code (Opus 5.5) / `feature/m4-device-pairing` (macOS laptop)
+
+**Goal:** address the two Codex findings on PR #4 (review 5547217268) in `apps/web/src/server/devices/credentials.ts`.
+
+**Implemented:**
+
+- P1: a lost-response retry checked "successor never used" with a read and then rotated it unconditionally, and the access token's first use was recorded unconditionally, so overlapping requests could both succeed. The retry now claims the unused successor with one conditional update (`usedAt` and `rotatedAt` still null), and the first use is recorded only if the pair wasn't rotated meanwhile. A retry racing the successor's first use is reuse (device revoked); a first use racing a retry gets `INVALID_TOKEN`.
+- P2: each retry re-pointed `replacedById` at the new pair, so the old token could be retried again and again. It now keeps pointing at the dead successor, so a second retry is reuse, matching `SECURITY_PRIVACY.md` item 5 ("retried once"). The claim happens before issuing, so a refused retry leaves no orphan credential.
+- `pairing.db.test.ts`: 3 tests (single retry; retry while the successor's first use is uncommitted; first use while a retry's rotation is uncommitted). `SECURITY_PRIVACY.md` item 5 notes the atomic single retry.
+
+**Validated commands and results:**
+
+- New tests against the unfixed code: **3 fail** (two returned success instead of `DEVICE_REVOKED`, one instead of `INVALID_TOKEN`).
+- After the fix, against a throwaway `postgres:18-alpine` on `127.0.0.1:54349`: `pairing.db.test.ts` **11/11**, the 3 new tests **5 runs in a row**, web `test:db` **38/38**; `pnpm check`: **pass** (14 tasks). E2E: Not run.
+
+**Known gaps (decision needed):** if an attacker wins the single retry, the real extension gets `INVALID_TOKEN`, disconnects as "expired" (`withAccessToken`) and never presents its refresh token, so the server doesn't revoke; the attacker's pair lives until the user pairs again. Revoking when a rotated, never-used pair is presented would close this but changes the documented `INVALID_TOKEN` response.
+
 
 ### 2026-10-17 (PR #1 review fix: checkpoint eviction reporting) / Claude Code (Opus 5.5) / `feature/m1-monorepo-local-slice` (macOS laptop)
 
