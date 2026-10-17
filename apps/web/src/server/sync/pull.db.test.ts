@@ -108,7 +108,7 @@ describe("sync bootstrap", () => {
     expect((await pullPage(prisma, pusher.userId, first.cursor, 100)).changes.map((change) => [change.entityId, change.version])).toEqual([[ids[0], 2]]);
   });
 
-  it("carries every workspace on the first page, tombstones as deletes, ahead of the sessions that reference them", async () => {
+  it("carries the complete set of live workspaces on the first page, ahead of the sessions that reference them, and no tombstones", async () => {
     const [pusher, other] = [await newPusher(), await newPusher()];
     const [live, gone] = [randomUUID(), randomUUID()].sort() as [string, string];
     const session = randomUUID();
@@ -125,13 +125,14 @@ describe("sync bootstrap", () => {
     await createWorkspace(prisma, other.userId, createWorkspaceRequestSchema.parse({ name: "Someone else's" }));
 
     const first = await bootstrapPage(prisma, pusher.userId, undefined, 1);
+    // The deleted workspace isn't listed: a client treats it as gone (SYNC_PROTOCOL.md 13g).
     expect(first.items.map(({ entityType, entityId, action, version }) => [entityType, entityId, action, version])).toEqual([
       ["workspace", live, "upsert", 1],
-      ["workspace", gone, "delete", 2],
       ["savedSession", session, "upsert", 1],
     ]);
+    expect(first.items.some((item) => item.entityId === gone)).toBe(false);
     expect(first.items[0]!.payload).toMatchObject({ id: live, name: `Space ${live.slice(0, 4)}`, version: 1 });
-    expect(first.items[2]!.payload).toMatchObject({ id: session, workspaceId: live });
+    expect(first.items[1]!.payload).toMatchObject({ id: session, workspaceId: live });
     expect(first).toMatchObject({ hasMore: false, nextAfter: null });
   });
 

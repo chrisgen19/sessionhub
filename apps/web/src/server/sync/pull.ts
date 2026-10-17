@@ -57,16 +57,19 @@ export const pullPage = async (prisma: PrismaClient, userId: string, cursor: str
  * afterwards; rows newer than the cursor are fine because clients apply by version.
  */
 /**
- * Every workspace of the account, tombstones included as deletes. Bounded by
- * WORKSPACE_LIMITS.perUserMax live ones plus their tombstones, so they ride on the first page,
- * ahead of the sessions that may reference them, instead of paging.
+ * The complete set of the account's live workspaces: at most WORKSPACE_LIMITS.perUserMax (about
+ * 150 KB at the largest field sizes), so they ride on the first page, ahead of the sessions that
+ * may reference them, instead of paging. Tombstones are left out because they only ever grow: a
+ * client treats a workspace missing from this set as deleted (docs/SYNC_PROTOCOL.md 13g).
  */
 const workspaceItems = async (prisma: PrismaClient, userId: string): Promise<BootstrapItem[]> =>
-  (await prisma.workspace.findMany({ where: { userId }, orderBy: { id: "asc" } })).map((row) =>
-    row.deletedAt
-      ? { entityType: "workspace", entityId: row.id, action: "delete", version: row.version, payload: null }
-      : { entityType: "workspace", entityId: row.id, action: "upsert", version: row.version, payload: toWorkspace(row) },
-  );
+  (await prisma.workspace.findMany({ where: { userId, deletedAt: null }, orderBy: { id: "asc" } })).map((row) => ({
+    entityType: "workspace",
+    entityId: row.id,
+    action: "upsert",
+    version: row.version,
+    payload: toWorkspace(row),
+  }));
 
 export const bootstrapPage = async (prisma: PrismaClient, userId: string, after: string | undefined, limit: number): Promise<BootstrapResponse> => {
   const cursor = encodeSyncCursor(userId, await lastSequence(prisma, userId));

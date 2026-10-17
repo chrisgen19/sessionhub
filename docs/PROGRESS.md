@@ -46,11 +46,12 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - `apps/web/src/server/sync/push.ts`:
   - `applySession` (passes `workspaceId` through) and `applyWorkspace`
   - one `acceptedOrRepeat` wrapper for the services' idempotent repeats
-- `apps/web/src/server/sync/pull.ts`: the first bootstrap page carries every workspace (tombstones as deletes) ahead of the sessions; `nextAfter` still pages sessions only, so current extensions keep working.
+- `apps/web/src/server/sync/pull.ts`: the first bootstrap page carries the complete set of live workspaces ahead of the sessions; `nextAfter` still pages sessions only, so current extensions keep working.
+  - After PR #15's review (Codex P2), tombstones aren't sent: they only grow, and would bypass the 4 MB page budget for an account that keeps creating and deleting workspaces (about 35,000 to pass it). A client drops account workspaces missing from the set after a bootstrap.
 - Tests:
   - `packages/contracts/src/api-sync.test.ts` (3, new)
   - `push.db.test.ts` (+4): workspace create, edit and delete with receipts; absent fields keep the web's; repeat and conflict; assign, keep and unassign in one push; not-empty and other-account refusals
-  - `pull.db.test.ts` (+2): bootstrap order and first page only
+  - `pull.db.test.ts` (+2): bootstrap order, live set only, and first page only
   - `e2e/sync-push.spec.ts` (+1): the full round trip between device and web over HTTP
 - Docs: SYNC_PROTOCOL 13f and 13g, SYSTEM_DESIGN 14, ROADMAP M5 note.
 
@@ -63,7 +64,7 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Known gaps (for the extension PR):**
 - Workspace edit conflicts need a policy.
-- A workspace's tombstones are sent on every first bootstrap page (small, but unbounded over time).
+- The extension must drop account workspaces missing from a bootstrap's live set, unless they have pending local changes.
 
 ### 2026-10-17 (M6 CI release ZIP) / Claude Code (Opus 5.5) / `feature/m6-extension-zip-ci` (macOS laptop)
 
