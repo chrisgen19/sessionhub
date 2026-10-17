@@ -457,7 +457,7 @@ Mobile web is primarily **read/manage/export**. Session restoration into Chrome 
 
 | Screen | Empty state | Error state |
 |---|---|---|
-| Popup recent | `No saved sessions yet` + Save window | `Couldn't load saved items` + Retry (local data remains) |
+| Popup recent | `No saved sessions yet. Choose tabs above and save them to get started.` (the save picker is above it; manager: `Choose tabs to save in Open tabs or from the SessionHub toolbar icon, or import a SessionHub export.`) | `Couldn't load saved items` + Retry (local data remains) |
 | Saved Sessions | `Save your first session using the extension` | `Sessions couldn't sync. Showing local cache.` when applicable |
 | Devices | `Install and sign in on another computer` | `Devices unavailable` with last cached view |
 | Workspaces | `Create a workspace to organize projects` | `Couldn't save workspace` + retry |

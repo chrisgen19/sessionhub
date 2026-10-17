@@ -36,7 +36,7 @@ export function RecentSessions({ state, sessions, searching, onOpen, onRetry }: 
   if (sessions.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-fg-muted">
-        {searching ? "No sessions match your search." : "No saved sessions yet. Save this window to get started."}
+        {searching ? "No sessions match your search." : "No saved sessions yet. Choose tabs above and save them to get started."}
       </p>
     );
   }
