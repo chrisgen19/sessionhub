@@ -18,8 +18,20 @@ const nextConfig: NextConfig = {
     // section 8.1), so local production runs are unaffected. No includeSubDomains or preload: they
     // would bind every other host on the domain. Not sent by `next dev`.
     const hsts = process.env.NODE_ENV === "production" ? [{ source: "/:path*", headers: [{ key: "Strict-Transport-Security", value: "max-age=31536000" }] }] : [];
+    // Nothing embeds this app, so no page may be framed, not even by this site: a framed page could
+    // trick a signed-in user into clicking "Connect this browser" on /app/pair (clickjacking).
+    // CSP frame-ancestors for current browsers, X-Frame-Options for older ones. A full CSP added
+    // later must keep `frame-ancestors 'none'`.
+    const noFraming = {
+      source: "/:path*",
+      headers: [
+        { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        { key: "X-Frame-Options", value: "DENY" },
+      ],
+    };
     return [
       ...hsts,
+      noFraming,
       { source: "/app/:path*", headers: noReferrer },
       { source: "/reset-password", headers: [...noReferrer, { key: "Cache-Control", value: "no-store" }] },
     ];

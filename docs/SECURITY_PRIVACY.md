@@ -162,7 +162,11 @@ Operator steps and checks are in `DEPLOYMENT.md`.
   - With an https URL, Better Auth's cookies are `__Secure-` prefixed and `Secure` (verified against the standalone build).
   - The production build sends `Strict-Transport-Security: max-age=31536000`: this host only, no preload.
   - The extension build already refuses non-localhost http API origins.
-- **Not covered:** framing protection (`frame-ancestors` / `X-Frame-Options`) is not set yet, so `/app/pair` could be framed by another site (clickjacking of the approval button). This is an open M6 item.
+- **Framing (clickjacking), since 2026-10-17:**
+  - Every response, pages and API alike, carries `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`, in every environment (`apps/web/next.config.ts`).
+  - Nothing embeds this app, so no frame is allowed, not even from this site. Otherwise a framed `/app/pair` could trick a signed-in user into clicking "Connect this browser" for an attacker's pending device.
+  - The session cookie is `SameSite=Lax`, so a frame on another site never had the session and would only have shown the login page. The real gaps were framing from the same site (another subdomain, or a page on this origin) and visual tricks on the login page; both are closed now.
+  - Verified in E2E (`e2e/framing.spec.ts`): the headers are on pages and API responses. Framed by a page on the same origin, with the session cookie sent, `/app/pair` ends on Chrome's error page instead of the approve page. Before the change it rendered.
 
 ### 8a. Implemented observability and resource limits (2026-10-17)
 
