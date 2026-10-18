@@ -13,6 +13,8 @@ export const SESSION_LIMITS = {
   windowsMax: 200,
   tabsPerWindowMax: 2000,
   groupsPerWindowMax: 500,
+  /** Screen coordinates and sizes in pixels; generous for multi-monitor setups. */
+  windowCoordinateMax: 100_000,
 } as const;
 
 /**
@@ -63,12 +65,30 @@ export const savedGroupSchema = z.object({
 });
 export type SavedGroup = z.infer<typeof savedGroupSchema>;
 
+/**
+ * How a window was shown when saved (docs/DATA_MODEL.md, SavedSessionWindow). A window saved
+ * minimized is stored as `normal`: reopening into minimized windows would look like nothing opened.
+ */
+export const windowStateSchema = z.enum(["normal", "maximized", "fullscreen"]);
+export type WindowState = z.infer<typeof windowStateSchema>;
+
+const coordinate = z.int().min(-SESSION_LIMITS.windowCoordinateMax).max(SESSION_LIMITS.windowCoordinateMax);
+const length = z.int().positive().max(SESSION_LIMITS.windowCoordinateMax);
+
+/** A normal window's position and size on screen, in pixels. Only applied on the computer that saved it. */
+export const windowBoundsSchema = z.strictObject({ left: coordinate, top: coordinate, width: length, height: length });
+export type WindowBounds = z.infer<typeof windowBoundsSchema>;
+
 export const savedWindowSchema = z
   .object({
     id: z.uuid(),
     sortOrder: z.int().nonnegative(),
     groups: z.array(savedGroupSchema).max(SESSION_LIMITS.groupsPerWindowMax),
     tabs: z.array(savedTabSchema).max(SESSION_LIMITS.tabsPerWindowMax),
+    /** Absent in sessions saved before 2026-10-18, imported from older exports, or read without it. */
+    state: windowStateSchema.optional(),
+    /** Normal windows only; maximized and full-screen windows keep just their state. */
+    bounds: windowBoundsSchema.optional(),
   })
   .superRefine((window, ctx) => {
     const groupIds = new Set(window.groups.map((group) => group.id));

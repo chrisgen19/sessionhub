@@ -170,3 +170,42 @@ describe("pagination", () => {
     expect(await failure(listSessionsPage(prisma, user.id, { limit: 3, cursor: "not-a-cursor" }))).toBe("INVALID_CURSOR");
   });
 });
+
+describe("window state and bounds", () => {
+  const bounds = { left: -1280, top: 40, width: 1200, height: 800 };
+  const placed = () =>
+    body({
+      windows: [
+        { groups: [], tabs: [{ url: "https://a.test/", title: "A", pinned: false, groupId: null }], state: "normal", bounds },
+        { groups: [], tabs: [{ url: "https://b.test/", title: "B", pinned: false, groupId: null }], state: "maximized", bounds },
+        { groups: [], tabs: [{ url: "https://c.test/", title: "C", pinned: false, groupId: null }] },
+      ],
+    });
+
+  it("are stored and read back: bounds only for a normal window, nothing for a window without them", async () => {
+    const user = await newUser();
+    const { detail } = await createSession(prisma, user.id, placed());
+    expect(detail.windows[0]).toMatchObject({ state: "normal", bounds });
+    expect(detail.windows[1]).toMatchObject({ state: "maximized" });
+    expect(detail.windows[1]).not.toHaveProperty("bounds");
+    expect(detail.windows[2]).not.toHaveProperty("state");
+    expect(await getSessionDetail(prisma, user.id, detail.id)).toEqual(detail);
+    const rows = await prisma.savedSessionWindow.findMany({ where: { sessionId: detail.id }, orderBy: { sortOrder: "asc" } });
+    expect(rows.map((row) => [row.state, row.boundsLeft, row.boundsWidth])).toEqual([["normal", -1280, 1200], ["maximized", null, null], [null, null, null]]);
+  });
+
+  it("count in an exact retry, and are replaced with the windows on an update", async () => {
+    const user = await newUser();
+    const id = randomUUID();
+    const first = await createSession(prisma, user.id, { ...placed(), id });
+    expect(await createSession(prisma, user.id, { ...placed(), id })).toEqual({ detail: first.detail, sequence: null });
+    const moved = placed();
+    moved.windows[0]!.bounds = { ...bounds, left: 0 };
+    expect(await failure(createSession(prisma, user.id, { ...moved, id }))).toBe("ID_IN_USE");
+
+    const updated = await updateSession(prisma, user.id, id, { expectedVersion: 1, windows: [{ groups: [], tabs: [{ url: "https://d.test/", title: "D", pinned: false, groupId: null }], state: "fullscreen" }] });
+    expect(updated.detail.windows).toHaveLength(1);
+    expect(updated.detail.windows[0]).toMatchObject({ state: "fullscreen" });
+    expect(updated.detail.windows[0]).not.toHaveProperty("bounds");
+  });
+});

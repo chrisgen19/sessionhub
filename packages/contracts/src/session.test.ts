@@ -100,3 +100,32 @@ describe("sessionExportSchema", () => {
     expect(sessionExportSchema.safeParse(file).success).toBe(false);
   });
 });
+
+describe("window state and bounds", () => {
+  const withWindow = (extra: Record<string, unknown>) => {
+    const session = buildSession();
+    return { ...session, windows: [{ ...session.windows[0]!, ...extra }] };
+  };
+
+  it("are optional: sessions saved before them still validate", () => {
+    expect(savedSessionSchema.safeParse(buildSession()).success).toBe(true);
+  });
+
+  it("accept a state and on-screen bounds, including negative coordinates on a second monitor", () => {
+    const parsed = savedSessionSchema.parse(withWindow({ state: "normal", bounds: { left: -1920, top: 0, width: 1280, height: 800 } }));
+    expect(parsed.windows[0]).toMatchObject({ state: "normal", bounds: { left: -1920, top: 0, width: 1280, height: 800 } });
+    expect(savedSessionSchema.safeParse(withWindow({ state: "maximized" })).success).toBe(true);
+  });
+
+  it.each<[string, Record<string, unknown>]>([
+    ["minimized (stored as normal)", { state: "minimized" }],
+    ["an unknown state", { state: "docked" }],
+    ["a zero size", { bounds: { left: 0, top: 0, width: 0, height: 600 } }],
+    ["a fractional coordinate", { bounds: { left: 1.5, top: 0, width: 800, height: 600 } }],
+    ["a coordinate past the limit", { bounds: { left: SESSION_LIMITS.windowCoordinateMax + 1, top: 0, width: 800, height: 600 } }],
+    ["a missing size", { bounds: { left: 0, top: 0, width: 800 } }],
+    ["extra bounds fields", { bounds: { left: 0, top: 0, width: 800, height: 600, zoom: 2 } }],
+  ])("reject %s", (_label, extra) => {
+    expect(savedSessionSchema.safeParse(withWindow(extra)).success).toBe(false);
+  });
+});

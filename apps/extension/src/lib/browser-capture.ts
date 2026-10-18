@@ -2,6 +2,7 @@ import { browser, type Browser } from "wxt/browser";
 import type { CaptureWindowInput } from "@sessionhub/core/capture";
 import { BrowserError, type HandlerDeps } from "./command-handlers";
 import { selectTabs } from "./tab-selection";
+import { savedPlacement } from "./window-placement";
 
 const TAB_GROUP_ID_NONE = -1;
 
@@ -24,6 +25,8 @@ const toCaptureWindow = async (window: Browser.windows.Window): Promise<CaptureW
       index: tab.index,
       groupKey: tab.groupId === TAB_GROUP_ID_NONE ? null : tab.groupId,
     })),
+    // How it was shown, for reopening it the same way (disclosed on the privacy page).
+    ...savedPlacement(window),
   };
 };
 

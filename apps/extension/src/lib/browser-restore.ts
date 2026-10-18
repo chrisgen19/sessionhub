@@ -2,6 +2,22 @@ import { browser } from "wxt/browser";
 import type { PlannedTab, PlannedWindow } from "@sessionhub/core/restore-plan";
 import type { RestoreTabOutcome } from "./db";
 import { BrowserError, type HandlerDeps } from "./command-handlers";
+import { createPlacement, isOffScreenError } from "./window-placement";
+
+/**
+ * A new focused window at the planned state or position and size. Chrome refuses bounds that are
+ * less than half on a screen (a monitor unplugged since, say); then it opens where Chrome puts new
+ * windows, rather than not at all (docs/SYSTEM_DESIGN.md decisions log, 2026-10-18 spike).
+ */
+const createWindow = async (url: string, window: PlannedWindow) => {
+  const placement = createPlacement(window);
+  try {
+    return await browser.windows.create({ url, focused: true, ...placement });
+  } catch (error) {
+    if (placement.left === undefined || !isOffScreenError(error)) throw error;
+    return browser.windows.create({ url, focused: true });
+  }
+};
 
 /** User-readable failure reason; Chrome's raw messages include runtime ids. */
 const message = (error: unknown): string => {
@@ -137,7 +153,7 @@ export const restoreBrowserWindow: HandlerDeps["restoreWindow"] = async (window,
   let windowId: number;
   let firstTabId: number;
   try {
-    const created = await browser.windows.create({ url: first.url, focused: true });
+    const created = await createWindow(first.url, window);
     const returnedTabId = created?.tabs?.[0]?.id;
     if (created?.id === undefined || returnedTabId === undefined) throw new Error("Browser didn't return the new window");
     windowId = created.id;

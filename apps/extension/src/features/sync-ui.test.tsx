@@ -56,7 +56,7 @@ describe("sync opt-in and status", () => {
 
     await userEvent.click(within(section).getByRole("button", { name: "Turn on sync…" }));
     const dialog = screen.getByRole("dialog", { name: "Turn on sync" });
-    expect(within(dialog).getByText(/titles and links of their tabs are uploaded to your account on localhost:3000/)).toBeTruthy();
+    expect(within(dialog).getByText(/the titles and links of their tabs, and each window's size, position and state are uploaded to your account on localhost:3000/)).toBeTruthy();
     const boxes = within(within(dialog).getByRole("list", { name: "Sessions to upload" })).getAllByRole("checkbox");
     expect(boxes.map((box) => (box as HTMLInputElement).checked)).toEqual([true, true]);
     expect(within(dialog).getByText("2 sessions · 8 tabs selected")).toBeTruthy();

@@ -82,8 +82,8 @@ Do not use IP address or user agent string as device identity. Avoid exposing un
 ### SavedSessionWindow
 
 - `id` UUID PK, `sessionId` FK, `sortOrder`, optional `label`.
-- Capture window position/bounds only when needed and disclosed; never assume two devices share screen geometry.
-- Prefer opening to default browser bounds on another device.
+- **Implemented 2026-10-18:** optional `state` (`normal`, `maximized`, `fullscreen`) and `bounds` `{ left, top, width, height }` (integer pixels, `left`/`top` may be negative for a screen left of or above the main one, sizes positive, each at most 100,000). Bounds are kept only for a normal window (`normalizePlacement` in `packages/core/src/window-placement.ts`, used by capture, API writes and import). A minimized window is saved as `normal` at the bounds Chrome reports for it; kiosk full screen as `fullscreen`. Windows saved before have neither and reopen as before. Server columns: `state` (`window_state` enum), `bounds_left`, `bounds_top`, `bounds_width`, `bounds_height`, all nullable, all four bounds or none.
+- **Decision (user's choice, 2026-10-18):** a session's windows reopen at their saved position and size only on the computer that saved it (its `sourceDeviceId` is this browser's installation id or its device id in the connected account: `savedOnThisBrowser` in `apps/extension/src/lib/device-repository.ts`). Other computers and imports (no source) get Chrome's default placement, since screens differ. Maximized and full screen apply everywhere. Opening into one new window or this window uses no saved placement. Disclosed on the privacy page and in the sync consent text.
 
 ### SavedSessionGroup
 

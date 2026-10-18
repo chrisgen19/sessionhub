@@ -1,4 +1,4 @@
-import type { RestoreEligibility, SavedSession, TabGroupColor } from "@sessionhub/contracts/session";
+import type { RestoreEligibility, SavedSession, TabGroupColor, WindowBounds, WindowState } from "@sessionhub/contracts/session";
 import { classifyUrl } from "./url-classification";
 
 export interface PlannedTab {
@@ -22,6 +22,10 @@ export interface PlannedWindow {
   tabs: PlannedTab[];
   /** Only groups that keep at least one planned tab, in saved order. */
   groups: PlannedGroup[];
+  /** The saved window's state: maximized and full screen reopen as such on any computer. */
+  state?: WindowState;
+  /** Its saved position and size, planned only when the session was saved on this computer. */
+  bounds?: WindowBounds;
 }
 
 export interface SkippedTab {
@@ -59,6 +63,11 @@ export interface RestoreSelection {
   tabIds?: ReadonlySet<string>;
   /** `single` merges every planned window into one (for one new window or the current window). */
   layout?: "original" | "single";
+  /**
+   * Reopen windows at their saved position and size: only for a session saved on this computer,
+   * since other computers' screens differ (docs/DATA_MODEL.md). States apply either way.
+   */
+  bounds?: boolean;
 }
 
 const countTabs = (windows: PlannedWindow[]) => windows.reduce((sum, window) => sum + window.tabs.length, 0);
@@ -69,10 +78,14 @@ const withTabs = (window: PlannedWindow, tabs: PlannedTab[]): PlannedWindow => {
   return { ...window, tabs, groups: window.groups.filter((group) => usedGroups.has(group.sourceGroupId)) };
 };
 
-/** One window holding every planned tab: window order, pinned tabs first overall, every group kept. */
+/**
+ * One window holding every planned tab: window order, pinned tabs first overall, every group kept.
+ * No saved state or bounds: the merged window isn't any one saved window.
+ */
 const mergeWindows = (windows: PlannedWindow[]): PlannedWindow[] => {
   const [first] = windows;
-  if (!first || windows.length === 1) return windows;
+  if (!first) return windows;
+  if (windows.length === 1) return [{ sourceWindowId: first.sourceWindowId, tabs: first.tabs, groups: first.groups }];
   const tabs = windows.flatMap((window) => window.tabs);
   return [
     {
@@ -120,7 +133,13 @@ export const planRestore = (session: SavedSession, selection: RestoreSelection =
         color: group.color,
         collapsed: group.collapsed,
       }));
-    windows.push({ sourceWindowId: window.id, tabs: pinnedFirst, groups });
+    windows.push({
+      sourceWindowId: window.id,
+      tabs: pinnedFirst,
+      groups,
+      ...(window.state && { state: window.state }),
+      ...(selection.bounds && window.state === "normal" && window.bounds && { bounds: window.bounds }),
+    });
   }
 
   const planned = selection.layout === "single" ? mergeWindows(windows) : windows;

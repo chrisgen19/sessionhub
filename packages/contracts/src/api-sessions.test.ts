@@ -41,6 +41,21 @@ describe("createSessionRequestSchema", () => {
   });
 });
 
+describe("window state and bounds in writes", () => {
+  const bounds = { left: 10, top: 20, width: 900, height: 700 };
+  it("are optional, and null counts as absent", () => {
+    expect(createSessionRequestSchema.parse(valid).windows[0]).not.toHaveProperty("bounds");
+    const parsed = createSessionRequestSchema.parse({ ...valid, windows: [{ ...valid.windows[0], state: null, bounds: null }] });
+    expect(parsed.windows[0]).toMatchObject({ state: null, bounds: null });
+  });
+
+  it("accept a state with bounds and reject bad bounds", () => {
+    expect(createSessionRequestSchema.parse({ ...valid, windows: [{ ...valid.windows[0], state: "normal", bounds }] }).windows[0]).toMatchObject({ state: "normal", bounds });
+    expect(createSessionRequestSchema.safeParse({ ...valid, windows: [{ ...valid.windows[0], bounds: { ...bounds, width: -1 } }] }).success).toBe(false);
+    expect(createSessionRequestSchema.safeParse({ ...valid, windows: [{ ...valid.windows[0], state: "minimized" }] }).success).toBe(false);
+  });
+});
+
 describe("updateSessionRequestSchema", () => {
   it("requires an expected version and at least one change", () => {
     expect(updateSessionRequestSchema.safeParse({ name: "x" }).success).toBe(false);

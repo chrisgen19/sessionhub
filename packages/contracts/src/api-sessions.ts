@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { apiWorkspaceSchema } from "./api-workspaces";
-import { SESSION_LIMITS, savedWindowSchema, tabGroupColorSchema } from "./session";
+import { SESSION_LIMITS, savedWindowSchema, tabGroupColorSchema, windowBoundsSchema, windowStateSchema } from "./session";
 
 /**
  * /api/v1/sessions contracts (docs/SYNC_PROTOCOL.md section 4). Timestamps are ISO strings.
@@ -40,6 +40,9 @@ export const windowInputSchema = z
   .object({
     groups: z.array(groupInputSchema).max(SESSION_LIMITS.groupsPerWindowMax).default([]),
     tabs: z.array(tabInputSchema).min(1).max(SESSION_LIMITS.tabsPerWindowMax),
+    /** Optional (older clients send neither); null is treated as absent. */
+    state: windowStateSchema.nullish(),
+    bounds: windowBoundsSchema.nullish(),
   })
   .superRefine((window, ctx) => {
     const groupIds = new Set<string>();

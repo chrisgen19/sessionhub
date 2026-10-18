@@ -19,6 +19,8 @@ export default function PrivacyPage() {
           timestamps and device labels in the extension&apos;s IndexedDB. Automatic recovery checkpoints also capture normal
           browser windows as tabs change. They stay local, with a rolling limit of 50 checkpoints within seven days;
           safety rules retain the newest and largest recent checkpoint. Private/incognito windows and SessionHub&apos;s own pages are excluded.</p>
+        <p>Each window&apos;s size, position on screen and state (normal, maximized or full screen) are saved with the session, and
+          synced with it when sync is on.</p>
         <p>SessionHub does not read visited page contents, cookies, passwords, form input or Chrome browsing history.
           It does not run content scripts. Favicons use Chrome&apos;s favicon endpoint; SessionHub does not request third-party icon services.</p>
         <h2 className="mt-8 text-lg font-semibold">Optional account and sync</h2>

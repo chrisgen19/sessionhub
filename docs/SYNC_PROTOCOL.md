@@ -273,6 +273,8 @@ All: 401 `UNAUTHENTICATED` without a Better Auth session; responses are `Cache-C
 5. Insert an immutable `session_versions` row (payload = detail DTO, checksum = SHA-256 of id-independent content) and a `sync_changes` row with the sequence.
 6. Replays (exact create retry, repeated delete) and conflicts roll back, so they consume **no** sequence: the change log stays gap-free.
 
+**Window state and bounds (2026-10-18):** each input window may carry `state` (`normal`, `maximized`, `fullscreen`) and `bounds` `{ left, top, width, height }` (integers, sizes positive, each within 100,000), both nullish; the detail returns them only when present, bounds only for a normal window. They count in the content checksum only when present, so a window without them hashes exactly as before (unit test pins the old formula). Old clients omit them and old servers drop them (Zod strips unknown keys), so neither side breaks. Sync push uses the same window input.
+
 **Semantics:** only the session id is stable; window, group and tab ids are server-assigned on every write (group references are remapped), and every URL is re-classified server-side. Deletes are tombstones (`deleted_at`, version + 1, `sync_changes` delete with null payload, no `session_versions` row); a tombstone can't be edited back (404). Web writes record source "Web" with no device. Receipts (`sync_operation_receipts`) exist for device pushes only (13f). **Not yet:** `/versions` history.
 
 ## 13b. Implemented: workspace REST API (2026-10-16)

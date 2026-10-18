@@ -28,7 +28,18 @@ const assertWorkspace = async (tx: Tx, userId: string, workspaceId: string | nul
 };
 
 const insertStructure = async (tx: Tx, sessionId: string, windows: readonly SavedWindow[]) => {
-  await tx.savedSessionWindow.createMany({ data: windows.map((w) => ({ id: w.id, sessionId, sortOrder: w.sortOrder })) });
+  await tx.savedSessionWindow.createMany({
+    data: windows.map((w) => ({
+      id: w.id,
+      sessionId,
+      sortOrder: w.sortOrder,
+      state: w.state ?? null,
+      boundsLeft: w.bounds?.left ?? null,
+      boundsTop: w.bounds?.top ?? null,
+      boundsWidth: w.bounds?.width ?? null,
+      boundsHeight: w.bounds?.height ?? null,
+    })),
+  });
   await tx.savedSessionGroup.createMany({
     data: windows.flatMap((w) => w.groups.map((g) => ({ id: g.id, windowId: w.id, title: g.title, color: g.color, collapsed: g.collapsed, sortOrder: g.sortOrder }))),
   });

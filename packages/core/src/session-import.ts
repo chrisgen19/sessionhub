@@ -6,6 +6,7 @@ import {
 } from "@sessionhub/contracts/session";
 import { SESSION_EXPORT_FORMAT, sessionExportSchema, type SessionExport } from "@sessionhub/contracts/session-export";
 import { classifyUrl } from "./url-classification";
+import { normalizePlacement } from "./window-placement";
 
 /** Largest import file accepted (bytes). Bounds memory before JSON parsing. */
 export const IMPORT_MAX_BYTES = 10 * 1024 * 1024;
@@ -99,7 +100,8 @@ const reidentifyWindow = (
     return { ...tab, id: createId(), groupId: tab.groupId === null ? null : (groupIds.get(tab.groupId) ?? null), eligibility };
   });
   const groups = reorder(window.groups).map((group) => ({ ...group, id: groupIds.get(group.id) ?? createId() }));
-  return { id: createId(), sortOrder: window.sortOrder, groups, tabs };
+  // State and bounds stay with the window; bounds only ever apply on the computer that saved it.
+  return { id: createId(), sortOrder: window.sortOrder, groups, tabs, ...normalizePlacement(window) };
 };
 
 /**

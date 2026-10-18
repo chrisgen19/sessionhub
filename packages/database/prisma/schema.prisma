@@ -237,10 +237,17 @@ model SavedSession {
 }
 
 model SavedSessionWindow {
-  id        String  @id @default(uuid()) @db.Uuid
-  sessionId String  @map("session_id") @db.Uuid
-  sortOrder Int     @map("sort_order")
-  label     String? @db.VarChar(120)
+  id           String       @id @default(uuid()) @db.Uuid
+  sessionId    String       @map("session_id") @db.Uuid
+  sortOrder    Int          @map("sort_order")
+  label        String?      @db.VarChar(120)
+  /// How the window was shown when saved; null when unknown (saved before 2026-10-18).
+  state        WindowState?
+  /// A normal window's position and size in pixels, all four or none. Applied only on the saving computer.
+  boundsLeft   Int?         @map("bounds_left")
+  boundsTop    Int?         @map("bounds_top")
+  boundsWidth  Int?         @map("bounds_width")
+  boundsHeight Int?         @map("bounds_height")
 
   session SavedSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   groups  SavedSessionGroup[]
@@ -405,6 +412,15 @@ enum TabGroupColor {
   orange
 
   @@map("tab_group_color")
+}
+
+/// Same values as the contracts enum (a minimized window is saved as normal).
+enum WindowState {
+  normal
+  maximized
+  fullscreen
+
+  @@map("window_state")
 }
 
 /// Same values as the contracts enum, with "_" in place of "-".
