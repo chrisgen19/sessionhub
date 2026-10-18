@@ -42,9 +42,12 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 - Throwaway Playwright script (real Chromium, built extension): inspector before and after saving at 390 and 1440 px, 0 px horizontal page overflow at both; View session opened `#session=<new id>` with the session inspector. Dark theme not screenshotted (existing `brand-soft` / `danger-soft` tokens only).
 - Not run: `test:perf`, web suites (no web or package change outside `packages/core`).
 
-**Outstanding:** leaving and reopening a checkpoint re-enables the button, so a second save makes a second copy (like importing the same file twice). Not committed or pushed yet.
+**Outstanding:** leaving and reopening a checkpoint re-enables the button, so a second save makes a second copy (like importing the same file twice).
 
-**Next step:** commit, open the PR, merge, then `pnpm --filter @sessionhub/extension build:unpacked` and reload the extension.
+**Merged:** PR #46 as `5e2fb00` (merge commit, branch deleted), on the user's choice before `e2e-web` and the CodeRabbit review had finished; `check`, `docker`, `e2e-extension`, `extension-zip` and GitGuardian had passed. `e2e-web` passed on the PR shortly after, and Codex (`@codex review`) found no major issues in `e3f9d14`. Merging to `main` runs the production `deploy` job after main's own CI run passes.
+- `pnpm --filter @sessionhub/extension build:unpacked` (from `main` at `5e2fb00`): built SessionHub 0.1.1 against `https://sessionhub.cgdev.site` into `~/SessionHub/extension`; the user reloads it on `chrome://extensions`.
+
+**Next step:** confirm main's CI run and the deploy for `5e2fb00` passed, and read the CodeRabbit review on #46 (still in progress at merge time); fix any valid finding in a follow-up PR.
 
 ### 2026-10-17 (blank space below the manager's panes) / Claude Code (Opus 5.5) / `bugfix/manager-scroll-overflow` (macOS laptop, worktree `../sessionhub-scroll-fix`, branched from `main` at `a2598cc`)
 
