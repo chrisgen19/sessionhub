@@ -1,7 +1,7 @@
 # SessionHub — Persistent Implementation Handoff
 
 > **This is the first file a returning coding agent should read.**  
-> **Last updated:** 2026-10-17
+> **Last updated:** 2026-10-18
 > **Current milestone:** M5 started (workspaces in the extension and the web filter and assignment merged, PRs #18 and #19); M6 release preparation; M4 (cross-device sync) **done**: pairing, outbox, push, pull, opt-in with upload preview, sync status UI and conflict review all work, verified across two real extension profiles. M6 repository release preparation implemented (6/8 checklist items; production privacy/operator details and real-host/off-host recovery still pending): rate limits for reads and shared (multi-instance) limiter storage done; structured redacted logs with request ids and resource limits done; trusted-proxy client IP, HTTPS requirements and the Coolify checklist (`docs/DEPLOYMENT.md`) done, not yet deployed. Public privacy page, store copy/icons/screenshots, encrypted backup/restore scripts and release/rollback docs are now implemented. M3 complete (database, auth with reset and confirmation, dashboard, session/workspace/device APIs, Docker). M2 complete.
 
 ## Current truth (verified 2026-10-17)
@@ -9,7 +9,7 @@
 | Area | State |
 |---|---|
 | Monorepo | **Working.** pnpm 11 workspaces + Turborepo 2.11; `pnpm check`, `pnpm build`, `pnpm test:e2e` pass |
-| Chrome extension | **Working local slice** plus opted-in account sync and durable outbox. Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view |
+| Chrome extension | **Working local slice** plus opted-in account sync and durable outbox. Save current/all windows (tabs, pinned, groups) to IndexedDB; popup recent list + search; manager list/search/inspector; rename (version-checked); delete (confirmed); export JSON; **import JSON with preview**; restore preview -> new windows -> per-tab summary -> **retry failed tabs** (also from a reopened "Last restore" summary; cut-off restores settled on the next worker start); **automatic recovery checkpoints** with a Recovery view (**Save as session** keeps one) |
 | Workspaces | **Working (M5, 2026-10-17, PR #18 and PR #19 merged).** Synced both ways between the web and the extension (account only, per-field merge, deletes win, deleting moves sessions out). Manager: switcher filter, Workspaces dialog (create, rename, recolor, delete), inspector assignment. Verified across two real extension profiles. Web: filter and assignment on Saved sessions. Not in the popup or side panel yet; no workspace management on the web |
 | Side panel, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
@@ -24,7 +24,7 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
-### 2026-10-18 (web dashboard redesign) / Claude Code (Opus 5.5) / `feature/web-redesign` (macOS laptop, worktree `../sessionhub-web-redesign`, branched from `main` at `335cb44`)
+### 2026-10-18 (web dashboard redesign) / Claude Code (Opus 5.5) / `feature/web-redesign` (macOS laptop, worktree `../sessionhub-web-redesign`, branched from `main` at `335cb44`, then merged `main` at `e7d7398` (#46, #47))
 
 **Why:** the user asked for the website app to get the extension manager's structure and UX (#43 to #45). Their choices: the dashboard first (landing and sign-in pages next), list rail + detail for Saved sessions, an Overview of things to act on, no top bar; colors and type kept. Spec: `docs/UI_UX_DESIGN.md` 18n (section 8 superseded, section 9 implemented).
 
@@ -43,6 +43,31 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 **Not done:** the landing and sign-in pages (next PR, as agreed). Bulk selection and sort in the list (spec section 9). The local `apps/web/AGENTS.md` that `next dev` generates is not committed.
 
 **Next step:** review and merge this PR (it deploys the web app), then redesign the landing and sign-in pages.
+
+### 2026-10-18 (Save a checkpoint as a session) / Claude Code (Opus 5.5) / `feature/save-checkpoint-as-session` (macOS laptop, branched from `main` at `335cb44`)
+
+**Goal (user request):** keep a recovery checkpoint permanently without the Export JSON + Import round trip.
+
+**Changed:**
+- `packages/core/src/session-import.ts`: `copyAsNewSession` copies a stored session under fresh ids (the import's re-identification, so group links survive and URLs are re-classified), keeps name and source device, version 1, saved now. `reidentifyWindow` takes only the report fields it writes.
+- `apps/extension/src/lib/messages.ts`, `command-handlers.ts`: `recovery.saveAsSession { snapshotId }` -> `{ sessionId, syncing }`. Reads the checkpoint, copies it, `saveNewSession` (into the account and outbox when sync is on, exactly like a capture or import). Removed checkpoint: `not-found`. Storage full: "...so the checkpoint wasn't saved as a session."
+- `apps/extension/src/entrypoints/background.ts`: the command is in `SYNC_AFTER`, so an account copy uploads soon.
+- `features/recovery/checkpoint-inspector.tsx`: **Save as session** next to Export JSON (spinner while saving, then "Saved as session", disabled). Like the save picker, the note states the destination before saving (`DESTINATION`, now exported from `features/save/save-bar.tsx`) and the button waits until it is known: checkpoints are "never uploaded", so a copy that will upload must say so first. The note then turns into "Saved locally as a session." / "Saved as a session. It will sync to your account." with a **View session** link, or "Not saved: ..." (only that result is in the live region). `recovery-view.tsx` keys the inspector by checkpoint so the result never carries over.
+- Tests: core `session-import.test.ts` +2 (fresh ids, kept shape/provenance; two copies share no ids); `recovery.test.ts` +2 (two saves = two sessions, checkpoint kept; not-found); `sync-consent.test.ts` +1 (sync on: account scope, one queued create, checkpoint not queued); `recovery-ui.test.tsx` +2 (local: destination first, save, disabled button, link href; sync on: account destination first, only the copy queued).
+- Docs: `SYSTEM_DESIGN.md` decisions log (2026-10-18), `UI_UX_DESIGN.md` Recovery view.
+
+**Verified:**
+- `pnpm turbo run lint typecheck test --filter=@sessionhub/extension --filter=@sessionhub/core`: pass (core 98 tests, extension 40 files / 305 tests).
+- `pnpm --filter @sessionhub/extension build`, then `test:e2e`: **21 passed**.
+- Throwaway Playwright script (real Chromium, built extension): inspector before and after saving at 390 and 1440 px, 0 px horizontal page overflow at both; View session opened `#session=<new id>` with the session inspector. Dark theme not screenshotted (existing `brand-soft` / `danger-soft` tokens only).
+- Not run: `test:perf`, web suites (no web or package change outside `packages/core`).
+
+**Outstanding:** leaving and reopening a checkpoint re-enables the button, so a second save makes a second copy (like importing the same file twice).
+
+**Merged:** PR #46 as `5e2fb00` (merge commit, branch deleted), on the user's choice before `e2e-web` and the CodeRabbit review had finished; `check`, `docker`, `e2e-extension`, `extension-zip` and GitGuardian had passed. `e2e-web` passed on the PR shortly after, and Codex (`@codex review`) found no major issues in `e3f9d14`. Merging to `main` runs the production `deploy` job after main's own CI run passes.
+- `pnpm --filter @sessionhub/extension build:unpacked` (from `main` at `5e2fb00`): built SessionHub 0.1.1 against `https://sessionhub.cgdev.site` into `~/SessionHub/extension`; the user reloads it on `chrome://extensions`.
+
+**Next step:** confirm main's CI run and the deploy for `5e2fb00` passed, and read the CodeRabbit review on #46 (still in progress at merge time); fix any valid finding in a follow-up PR.
 
 ### 2026-10-17 (blank space below the manager's panes) / Claude Code (Opus 5.5) / `bugfix/manager-scroll-overflow` (macOS laptop, worktree `../sessionhub-scroll-fix`, branched from `main` at `a2598cc`)
 

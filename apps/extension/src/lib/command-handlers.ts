@@ -2,7 +2,7 @@ import { buildSavedSession, CaptureLimitError, type CaptureWindowInput } from "@
 import { defaultSessionName, selectionSessionName } from "@sessionhub/core/naming";
 import { planRestore, planRetry, withoutOpenTabs, type RestorePlan } from "@sessionhub/core/restore-plan";
 import { InvalidSessionNameError, normalizeSessionName, renameSession } from "@sessionhub/core/session-edit";
-import { parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
+import { copyAsNewSession, parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { AccountApiError } from "./account-api";
 import {
@@ -93,6 +93,7 @@ const NOT_DONE: Record<Command["type"], string> = {
   "restore.retry": "the retry couldn't start and nothing was opened",
   "recovery.restore": "the restore couldn't start and nothing was opened",
   "recovery.checkpointNow": "the checkpoint wasn't saved",
+  "recovery.saveAsSession": "the checkpoint wasn't saved as a session",
   "account.status": "the account status couldn't be read",
   "account.connect": "the connection wasn't started",
   "account.poll": "the connection wasn't saved",
@@ -236,6 +237,19 @@ const restoreCheckpoint = async (command: Extract<Command, { type: "recovery.res
   return restoreFrom(snapshot.session, command, deps);
 };
 
+/**
+ * Keeps a checkpoint as a new saved session, the same as exporting and importing it: fresh ids,
+ * saved like any other session (into the account when sync is on). The checkpoint stays as it is.
+ */
+const saveCheckpointAsSession = async (command: Extract<Command, { type: "recovery.saveAsSession" }>, deps: HandlerDeps) => {
+  const snapshot = await getSnapshot(deps.db, command.snapshotId);
+  if (!snapshot) throw new SessionNotFoundError("This checkpoint was removed by retention");
+  const context = { now: deps.now(), createId: deps.createId };
+  const session = copyAsNewSession(snapshot.session, context);
+  const scope = await saveNewSession(deps.db, session, context);
+  return { sessionId: session.id, syncing: scope !== "local" };
+};
+
 /** Re-runs only tabs that never opened, in new windows. Works from the stored plan, not the session. */
 const retry = async (command: Extract<Command, { type: "restore.retry" }>, deps: HandlerDeps) => {
   const job = await claimRestoreJobForRetry(deps.db, command.jobId, deps.now());
@@ -312,6 +326,8 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
         if (result.status === "clean") return { ok: true, data: { status: "clean", snapshotId: null, freedForSpace: 0 } };
         return { ok: true, data: { status: result.status, snapshotId: result.snapshotId, freedForSpace: result.freedForSpace } };
       }
+      case "recovery.saveAsSession":
+        return { ok: true, data: await saveCheckpointAsSession(command, deps) };
       case "sync.now":
         return { ok: true, data: await syncNow(toSyncDeps(deps), { force: true }) };
       case "sync.enable":

@@ -95,4 +95,19 @@ describe("where new saves go", () => {
     expect(await handleCommand({ type: "sync.disable" }, deps)).toEqual({ ok: true, data: {} });
     expect((await capture()).syncing).toBe(false);
   });
+
+  it("keeps a checkpoint as an account session while sync is on, queued like any save", async () => {
+    const db = freshDb();
+    await connectAs(db, ALICE);
+    const deps: HandlerDeps = { db, readWindows: async () => sampleWindows(), restoreWindow: async () => [], now: () => T1, createId: ids };
+    await handleCommand({ type: "sync.enable", sessionIds: [] }, deps);
+    const checkpoint = await handleCommand({ type: "recovery.checkpointNow" }, deps);
+    const snapshotId = checkpoint.ok ? (checkpoint.data as { snapshotId: string }).snapshotId : "";
+
+    const saved = await handleCommand({ type: "recovery.saveAsSession", snapshotId }, deps);
+    expect(saved).toMatchObject({ ok: true, data: { syncing: true } });
+    const sessionId = saved.ok ? (saved.data as { sessionId: string }).sessionId : "";
+    expect(await db.sessions.get(sessionId)).toMatchObject({ scope: SCOPE, sync: { serverVersion: null, state: "pending" } });
+    expect((await listOutbox(db, SCOPE)).map((operation) => operation.expectedVersion)).toEqual([0]);
+  });
 });

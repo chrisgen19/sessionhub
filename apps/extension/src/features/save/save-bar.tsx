@@ -24,7 +24,8 @@ interface SaveBarProps {
   selectExtras?: ReactNode;
 }
 
-const DESTINATION = {
+/** Where a new saved session goes, stated before saving (also the checkpoint inspector's Save as session). */
+export const DESTINATION = {
   local: "Saves in this browser only.",
   account: "Saves to your account: it uploads at the next sync.",
 } as const;

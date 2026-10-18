@@ -2,7 +2,7 @@ import { savedSessionSchema } from "@sessionhub/contracts/session";
 import { describe, expect, it } from "vitest";
 import { buildSavedSession } from "./capture";
 import { createSessionExport } from "./session-export";
-import { IMPORT_MAX_BYTES, parseSessionExport, prepareImportedSession, SessionImportError } from "./session-import";
+import { copyAsNewSession, IMPORT_MAX_BYTES, parseSessionExport, prepareImportedSession, SessionImportError } from "./session-import";
 import { options, sequentialIds, tab } from "./test-helpers";
 
 const original = () =>
@@ -142,5 +142,36 @@ describe("prepareImportedSession", () => {
     const { session } = prepare(JSON.stringify(createSessionExport(source, new Date())));
     const shape = (s: typeof source) => s.windows.map((w) => w.tabs.map((t) => [t.url, t.title, t.pinned, t.eligibility]));
     expect(shape(session)).toEqual(shape(source));
+  });
+});
+
+describe("copyAsNewSession", () => {
+  const ids = (s: ReturnType<typeof original>) => [s.id, ...s.windows.flatMap((w) => [w.id, ...w.groups.map((g) => g.id), ...w.tabs.map((t) => t.id)])];
+  const copy = (source: ReturnType<typeof original>) => copyAsNewSession(source, { now: new Date("2026-10-18T00:00:00.000Z"), createId: importIds() });
+
+  it("keeps the tabs, groups and provenance under fresh ids, as version 1 saved now", () => {
+    const source = { ...original(), version: 3 };
+    const session = copy(source);
+    const oldIds = new Set(ids(source));
+    expect(ids(session).filter((id) => oldIds.has(id))).toEqual([]);
+    const shape = (s: typeof source) => s.windows.map((w) => w.tabs.map((t) => [t.url, t.title, t.pinned, t.eligibility, w.groups.find((g) => g.id === t.groupId)?.title ?? null]));
+    expect(shape(session)).toEqual(shape(source));
+    expect(session).toMatchObject({
+      name: "Client Alpha",
+      sourceDeviceId: source.sourceDeviceId,
+      sourceDeviceName: "This device",
+      version: 1,
+      createdAt: "2026-10-18T00:00:00.000Z",
+      updatedAt: "2026-10-18T00:00:00.000Z",
+    });
+    expect(savedSessionSchema.safeParse(session).success).toBe(true);
+  });
+
+  it("gives every copy its own ids", () => {
+    const source = original();
+    const first = copyAsNewSession(source, { now: new Date(), createId: () => crypto.randomUUID() });
+    const second = copyAsNewSession(source, { now: new Date(), createId: () => crypto.randomUUID() });
+    const firstIds = new Set(ids(first));
+    expect(ids(second).filter((id) => firstIds.has(id))).toEqual([]);
   });
 });

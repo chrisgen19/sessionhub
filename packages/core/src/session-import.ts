@@ -86,7 +86,11 @@ const reorder = <T extends { sortOrder: number }>(items: readonly T[]): T[] =>
     .sort((a, b) => a.item.sortOrder - b.item.sortOrder || a.position - b.position)
     .map(({ item }, sortOrder) => ({ ...item, sortOrder }));
 
-const reidentifyWindow = (window: SavedWindow, createId: () => string, report: ImportReport): SavedWindow => {
+const reidentifyWindow = (
+  window: SavedWindow,
+  createId: () => string,
+  report: Pick<ImportReport, "notRestorable" | "reclassifiedCount">,
+): SavedWindow => {
   const groupIds = new Map(window.groups.map((group) => [group.id, createId()]));
   const tabs = reorder(window.tabs).map((tab) => {
     const { eligibility } = classifyUrl(tab.url);
@@ -134,4 +138,24 @@ export const prepareImportedSession = (
     windows,
   };
   return { session, report };
+};
+
+/**
+ * Copies a stored session (a recovery checkpoint) as a brand-new saved session. Every id
+ * is fresh, as for an import, so the copy can never replace the original or an earlier
+ * copy. Name and source device are kept; the copy is version 1, saved at `now`.
+ */
+export const copyAsNewSession = (session: SavedSession, options: PrepareImportOptions): SavedSession => {
+  const timestamp = options.now.toISOString();
+  const report = { notRestorable: {}, reclassifiedCount: 0 };
+  return {
+    ...session,
+    id: options.createId(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    version: 1,
+    windows: reorder(session.windows.filter((window) => window.tabs.length > 0)).map((window) =>
+      reidentifyWindow(window, options.createId, report),
+    ),
+  };
 };
