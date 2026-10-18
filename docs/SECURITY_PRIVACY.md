@@ -20,7 +20,7 @@ A session can include private document URLs, unguessable share links, access tok
 
 ### Suggested onboarding disclosure copy
 
-> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, titles, URLs, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync. Site exclusions and query stripping are not available in this preview; inspect selected sessions for sensitive URLs before uploading.
+> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, titles, URLs, each window's size, position and state, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync. Site exclusions and query stripping are not available in this preview; inspect selected sessions for sensitive URLs before uploading.
 
 Do not make the privacy disclosure conditional on reading a lengthy policy. Users must understand the substance in the UI.
 
@@ -119,7 +119,9 @@ Permissions must be justified by features that are **actually shipped**. Propose
 
 **Shipped as of 2026-10-16** (`apps/extension/wxt.config.ts`): `tabs`, `tabGroups`, `favicon`, `alarms` (debounced recovery checkpoints), plus **one host permission** for the configured SessionHub server (`WXT_API_BASE_URL`, https required except localhost; used for pairing and opt-in sync). No other host permissions, no `storage`, `sidePanel`, `identity`, content scripts or `externally_connectable`. `favicon` lets pages show Chrome's cached favicon via `chrome-extension://<id>/_favicon/` so no third-party icon URL is requested. Add the others only together with the feature that needs them. Since 2026-10-17, CI fails the release ZIP if its permissions differ from this list, if `host_permissions` is anything but the configured https origin, or if content scripts, `externally_connectable`, `web_accessible_resources` or optional permissions appear (`apps/extension/scripts/check-release-zip.ts`, `DEPLOYMENT.md` section 6).
 
-Recovery checkpoints contain only tab URLs, titles, pinned state and groups of normal windows; they stay in local IndexedDB and are never uploaded. Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
+Recovery checkpoints contain only tab URLs, titles, pinned state and groups of normal windows, plus each window's state, position and size (2026-10-18); they stay in local IndexedDB and are never uploaded. Incognito windows are filtered out on capture (`apps/extension/src/lib/browser-capture.ts`), and the manifest does not request incognito access.
+
+Window position and size (2026-10-18) need no new permission: they come from `chrome.windows`, and keeping a reopened window on screen relies on Chrome refusing bounds less than half on a screen, then opening at Chrome's default placement. `system.display` (screen sizes) would close the remaining gap, a window more than half on screen opening partly off it, but is not requested without a separate decision.
 
 `chrome.windows` is an API namespace, not necessarily an extra manifest permission. Do not request `history`, `<all_urls>` host access, `cookies`, `webRequest`, or `scripting` without a feature-specific justification and privacy review. Chrome policy requires the narrowest necessary permissions.
 

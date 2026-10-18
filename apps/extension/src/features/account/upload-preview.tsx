@@ -6,7 +6,7 @@ import { API_ORIGIN } from "../../lib/api-config";
 import { plural } from "../../lib/format";
 
 /** What turning sync on uploads (docs/SECURITY_PRIVACY.md section 2), limited to features that exist. */
-export const SYNC_DISCLOSURE = `When sync is on, the names of your saved sessions and the titles and links of their tabs are uploaded to your account on ${new URL(API_ORIGIN).host}, so you can open them on your other computers. Sessions you save from now on sync automatically. Recovery checkpoints are never uploaded. You can turn sync off at any time.`;
+export const SYNC_DISCLOSURE = `When sync is on, the names of your saved sessions, the titles and links of their tabs, and each window's size, position and state are uploaded to your account on ${new URL(API_ORIGIN).host}, so you can open them on your other computers. Sessions you save from now on sync automatically. Recovery checkpoints are never uploaded. You can turn sync off at any time.`;
 
 interface UploadPreviewProps {
   mode: "enable" | "upload";

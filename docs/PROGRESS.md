@@ -13,7 +13,7 @@
 | Workspaces | **Working (M5, 2026-10-17, PR #18 and PR #19 merged).** Synced both ways between the web and the extension (account only, per-field merge, deletes win, deleting moves sessions out). Manager: switcher filter, Workspaces dialog (create, rename, recolor, delete), inspector assignment. Verified across two real extension profiles. Web: filter and assignment on Saved sessions. Not in the popup or side panel yet; no workspace management on the web |
 | Side panel, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema, 3 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
+| Database | **Schema, 4 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`, `window_placement`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces and session assignments sync too (SYNC_PROTOCOL.md 13j) |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. **Deployed** on Coolify at `https://sessionhub.cgdev.site` (DEPLOYMENT.md section 8); since 2026-10-17 13:28 UTC the CI `deploy` job deploys `main` itself, production at `9f442b3` |
@@ -23,6 +23,33 @@
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-18 (restore window size and position) / Claude Code (Opus 5.5) / `feature/window-bounds` (macOS laptop, worktree `../sessionhub-window-bounds`, branched from `main` at `f1223f6`)
+
+**Why:** the next ROADMAP item. The user's choices: saved size and position only on the computer that saved the session (other computers use Chrome's default placement); normal, maximized and full screen (minimized reopens as normal); one line on the privacy page. This settles the ROADMAP ("clamped on screen") vs DATA_MODEL ("prefer default bounds on another device") conflict; the decision is in DATA_MODEL.md SavedSessionWindow and the SYSTEM_DESIGN decisions log.
+
+**Spike first** (Chromium 156, macOS, headed and headless with `viewport: null`): `windows.create` applies on-screen bounds exactly, raises sizes below 500x375, refuses bounds less than half on a screen ("Bounds must be at least 50% within visible screen space") and refuses maximized with bounds ("Invalid value for state"); full screen at create came back maximized on macOS; minimized windows report their normal bounds. `chrome.system.display` needs a permission, so "on screen" relies on Chrome's refusal plus a fallback instead.
+
+**Changed:**
+- Contracts: `windowStateSchema`, `windowBoundsSchema` (integers, sizes positive, each within `SESSION_LIMITS.windowCoordinateMax` 100,000); optional `state`/`bounds` on `savedWindowSchema`, nullish on `windowInputSchema` (sync push reuses it).
+- Core: new `window-placement.ts` (`normalizePlacement`: bounds only for a normal window) used by capture, `buildCanonicalStructure` and import; `planRestore` takes `bounds` (only then are bounds planned), one new window or this window gets no placement, retries keep it.
+- Database: migration `20261018030000_window_placement` (enum `window_state`; nullable `state`, `bounds_left`, `bounds_top`, `bounds_width`, `bounds_height` on `saved_session_windows`). Additive, existing rows stay NULL.
+- Web server: `mutations.ts` writes the columns, `dto.ts` reads them back through `normalizePlacement`, `checksum.ts` counts them only when present (old checksums unchanged, pinned by `checksum.test.ts`). Privacy page line.
+- Extension: new `lib/window-placement.ts` (`savedPlacement` from Chrome's window, `createPlacement` for `windows.create`); `browser-capture.ts` saves placement (checkpoints too, local only); `browser-restore.ts` opens with it and retries without bounds when Chrome refuses them; `device-repository.ts` `savedOnThisBrowser` (installation id or connected device id); `command-handlers.ts` passes it to `planRestore`; `sync-batch.ts` uploads placement; the sync consent text names it.
+- Docs: DATA_MODEL, SYNC_PROTOCOL 13a, SECURITY_PRIVACY (sections 2 and 6), SYSTEM_DESIGN decisions log, ROADMAP.
+
+**Compatibility:** old servers and old extensions parse windows with non-strict `z.object`, so they drop the new fields instead of rejecting them; windows saved before carry neither and reopen as before.
+
+**Verified** (worktree, before commit):
+- `pnpm check`: 17/17 tasks (contracts 50, core 107, web 84, extension 319 tests; sync 17 re-run live, not from cache).
+- `pnpm test:db --force`: database 12, web 69 (incl. new state/bounds round trip, exact-retry and update cases).
+- Migration applied to `sessionhub_test` only; `prisma migrate diff --from-config-datasource --to-schema --exit-code`: no difference.
+- Extension `build` then `test:e2e`: **22 passed**, incl. new `window-bounds.spec.ts` (saved bounds reopen exactly, maximized stays maximized, off-screen bounds fall back). With the fallback disabled, that test fails (checked, then restored). The sync consent text changed after this run; its unit test passes.
+- Web clean `build` then `test:e2e`: **60 passed**.
+
+**Not done:** a window more than half on screen can still open partly off it (closing that needs `system.display`, not requested). No UI shows a window's size. The privacy page at phone width was not checked by eye (one paragraph added to existing prose; `privacy.spec.ts` passes). The unpacked extension in `~/SessionHub/extension` was not rebuilt.
+
+**Next step:** commit, open the PR, review; merging runs the migration on production (additive, nullable), then check the Coolify deployment finished and `/api/health`.
 
 ### 2026-10-18 (website landing and sign-in pages) / Claude Code (Opus 5.5) / `feature/web-public-redesign` (macOS laptop, worktree `../sessionhub-public-redesign`, branched from `main` at `5ac96a5`)
 

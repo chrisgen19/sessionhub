@@ -15,7 +15,7 @@ import {
   type AccountDeps,
 } from "./account-service";
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
-import { getOrCreateDevice } from "./device-repository";
+import { getOrCreateDevice, savedOnThisBrowser } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
 import type { SyncDeps } from "./sync-gate";
 import { resolveReview, ReviewGoneError } from "./review-repository";
@@ -212,6 +212,8 @@ const restoreFrom = async (session: SavedSession, { tabIds, target = { kind: "ne
   let plan = planRestore(session, {
     ...(tabIds ? { tabIds: new Set(tabIds) } : {}),
     layout: target.kind === "new-windows" ? "original" : "single",
+    // Saved positions and sizes only fit the screens of the computer that saved them.
+    bounds: await savedOnThisBrowser(deps.db, session.sourceDeviceId),
   });
   let into: number | undefined;
   if (target.kind === "this-window") {

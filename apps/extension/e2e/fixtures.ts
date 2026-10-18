@@ -6,11 +6,16 @@ import { chromium, test as base, type BrowserContext, type Worker } from "@playw
 export const EXTENSION_PATH = path.resolve(import.meta.dirname, "../.output/chrome-mv3");
 export const SITE = "https://sessionhub.test";
 
-/** Launches Chromium with the unpacked extension and a throwaway profile directory. */
-export const launchWithExtension = async (userDataDir: string, extraArgs: string[] = []): Promise<BrowserContext> => {
+/**
+ * Launches Chromium with the unpacked extension and a throwaway profile directory. `realWindows`
+ * turns off Playwright's viewport emulation, which otherwise forces every window to one size, so
+ * window bounds behave as in a real browser (an 800x600 screen headless).
+ */
+export const launchWithExtension = async (userDataDir: string, extraArgs: string[] = [], { realWindows = false } = {}): Promise<BrowserContext> => {
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
     headless: true,
+    ...(realWindows && { viewport: null }),
     args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`, ...extraArgs],
   });
   // Serve fake pages for SITE so tests need no network access.

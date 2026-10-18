@@ -7,8 +7,11 @@ import {
   type SavedSession,
   type SavedTab,
   type SavedWindow,
+  type WindowBounds,
+  type WindowState,
 } from "@sessionhub/contracts/session";
 import { classifyUrl } from "./url-classification";
+import { normalizePlacement } from "./window-placement";
 
 /**
  * Browser-agnostic capture input. `groupKey` / `key` are runtime browser group IDs:
@@ -32,6 +35,10 @@ export interface CaptureGroupInput {
 export interface CaptureWindowInput {
   tabs: CaptureTabInput[];
   groups: CaptureGroupInput[];
+  /** How the window was shown, already mapped to a saved state (a minimized window is `normal`). */
+  state?: WindowState | null;
+  /** Its position and size; kept only for a normal window. */
+  bounds?: WindowBounds | null;
 }
 
 export interface BuildSessionOptions {
@@ -103,7 +110,7 @@ const buildWindow = (
         eligibility,
       };
     });
-  return { id: createId(), sortOrder, groups, tabs };
+  return { id: createId(), sortOrder, groups, tabs, ...normalizePlacement(input) };
 };
 
 /**
