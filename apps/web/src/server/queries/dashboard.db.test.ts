@@ -44,6 +44,18 @@ describe("dashboard queries", () => {
     expect(await getOverviewStats(prisma, user.id)).toMatchObject({ sessionCount: 1, tabCount: 2 });
   });
 
+  it("lists pinned sessions first only when asked (the sessions list, not the overview), with their tags", async () => {
+    const user = await createUser();
+    await seed(user.id, ["Oldest", "Middle", "Newest"]);
+    // Keep its date: an update would otherwise make it the newest.
+    await prisma.savedSession.updateMany({ where: { userId: user.id, name: "Oldest" }, data: { isPinned: true, tags: ["work"], updatedAt: new Date(Date.UTC(2026, 9, 10)) } });
+
+    expect((await listSessions(prisma, user.id)).map((s) => s.name)).toEqual(["Newest", "Middle", "Oldest"]);
+    const pinnedFirst = await listSessions(prisma, user.id, { pinnedFirst: true });
+    expect(pinnedFirst.map((s) => s.name)).toEqual(["Oldest", "Newest", "Middle"]);
+    expect(pinnedFirst[0]).toMatchObject({ isPinned: true, tags: ["work"] });
+  });
+
   it("caps list size and returns zeros for a new account", async () => {
     const user = await createUser();
     await seed(user.id, ["a", "b", "c"]);

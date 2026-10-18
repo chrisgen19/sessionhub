@@ -1,5 +1,6 @@
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { planRestore } from "@sessionhub/core/restore-plan";
+import { duplicateTabIds } from "@sessionhub/core/session-summary";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RestoreJobRecord } from "../../lib/db";
@@ -57,6 +58,8 @@ export function OpenPanel({ session, kind = "session", query = "", variant = "pa
   );
   const notOpenable = session.windows.reduce((sum, window) => sum + window.tabs.filter((tab) => !canOpen(tab)).length, 0);
   const matches = query.trim() ? matchingTabIds(session, query) : null;
+  // Ticked tabs whose page is already ticked earlier in the session; unticking them opens each page once.
+  const copies = useMemo(() => duplicateTabIds(session, selection), [session, selection]);
 
   const start = async () => {
     setPhase({ name: "running" });
@@ -88,6 +91,8 @@ export function OpenPanel({ session, kind = "session", query = "", variant = "pa
       onSelectAll={() => setSelection(allOpenable(session))}
       onSelectNone={() => setSelection(new Set())}
       onSelectMatches={() => setSelection(matches ?? new Set())}
+      duplicates={copies.size}
+      onUntickDuplicates={() => setSelection(new Set([...selection].filter((id) => !copies.has(id))))}
       phase={phase.name === "confirm" || phase.name === "running" ? phase.name : retrying ? "running" : "idle"}
       onOpen={() => (plan.tabCount > LARGE_OPEN_THRESHOLD ? setPhase({ name: "confirm" }) : void start())}
       onConfirm={() => void start()}

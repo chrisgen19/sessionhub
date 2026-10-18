@@ -1,7 +1,7 @@
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { planRestore, type RestoreDestination } from "@sessionhub/core/restore-plan";
 import { summarizeSession } from "@sessionhub/core/session-summary";
-import { ChevronRight, Layers, LoaderCircle } from "lucide-react";
+import { ChevronRight, Layers, LoaderCircle, Pin } from "lucide-react";
 import { useMemo, useState } from "react";
 import { buttonClass } from "../../components/modal";
 import { SplitButton } from "../../components/split-button";
@@ -78,8 +78,16 @@ export function SessionRow({ session, syncLabel, destination, onDestination, ski
             <Layers aria-hidden="true" className="size-4" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-semibold" title={session.name}>
-              {session.name}
+            <span className="flex items-center gap-1 text-[13px] font-semibold">
+              {session.isPinned && (
+                <>
+                  <Pin aria-hidden="true" className="size-3 shrink-0 text-brand" />
+                  <span className="sr-only">Pinned: </span>
+                </>
+              )}
+              <span className="truncate" title={session.name}>
+                {session.name}
+              </span>
             </span>
             <span className="block truncate text-[11px] text-fg-muted">
               {formatListDate(session.updatedAt)} · {plural(summary.tabCount, "tab")} · {sessionSourceLabel(session)} · {SESSION_SYNC_TEXT[syncLabel]}

@@ -212,6 +212,8 @@ model SavedSession {
   description      String?   @db.VarChar(2000)
   isPinned         Boolean   @default(false) @map("is_pinned")
   isArchived       Boolean   @default(false) @map("is_archived")
+  /// Free-form labels, normalized on write (trimmed, no repeats ignoring case), at most 10.
+  tags             String[]  @default([])
   version          Int       @default(1)
   schemaVersion    Int       @default(1) @map("schema_version")
   /// Cached counts, maintained in the same transaction as child rows.

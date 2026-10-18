@@ -315,7 +315,7 @@ Desktop widths: 220–244 px navigation, fluid center minimum 420 px, right insp
 
 ## 9. Saved Sessions page — master/detail layout
 
-**Implemented 2026-10-17 (18n)** as a list rail and the open session, like the extension manager (18l); bulk selection, sort and versions aren't built yet.
+**Implemented 2026-10-17 (18n)** as a list rail and the open session, like the extension manager (18l); bulk selection, sort and versions aren't built yet on the website (the extension has bulk selection, sort, tags, pin and archive since 18p; the website lists pinned sessions first and shows tags and notes).
 
 ```text
 ┌────────────────┬────────────────────────────────────┬─────────────────────────────┐
@@ -737,6 +737,19 @@ The user asked for the landing and sign-in/sign-up pages to get the dashboard's 
   - Footer: "SessionHub is an early preview.", Privacy policy (the page's only link by that name) and Source code.
 - **Sign in, sign up, password pages** (`app/(auth)/layout.tsx`, `components/auth/account-panel.tsx`): from 1024 px the form (in `main`, headings 24 px) is on the left and an `aside` "About accounts" on the right: sync between computers, optional, you choose what uploads (checkpoints never do), disconnect any time. Narrower, the panel follows the form. Fields, errors and buttons are unchanged.
 - Verified at 1920, 1440 and 390 px, light and dark; no horizontal overflow at 375 px on any public page (`e2e/public-pages.spec.ts`).
+
+## 18p. Manager: organizing saved sessions (2026-10-18)
+
+The ROADMAP's "advanced session inspector, tags/filters/sort/bulk select". The user's choices: the extension first, synced (the website shows the new fields and lists pinned sessions first; its own sort, filters and bulk select come later); free-form tags; Delete, Move to workspace, Tag and Archive as bulk actions; Notes, Duplicate, Site summary and Pin in the inspector.
+
+- **List header** (`features/manager/sessions-view.tsx`, `list-controls.tsx`): search (now also notes and tags), the workspace switcher, then **Active N / Archived N** (pressed buttons), the sort (Recently changed, Oldest first, Name A to Z, Most tabs; remembered per browser, `sessionhub-session-sort`) and the tag filter ("All tags", each tag with its count in this view; shown once a tag exists). Sort and tag have screen-reader labels only: their values say what they are and the 360 px rail fits them on two rows. **Pinned sessions always come first**, whatever the sort. A link to an archived session opens the Archived list once.
+- **Rows** (`session-row.tsx`): a checkbox (`Select <name>`) before the row button; Shift ticks every row between the last ticked and this one, in the list's order (`hooks/use-selection.ts`). A pin mark (with "Pinned:" for screen readers) before the name, and up to three tags then "+N" under the facts.
+- **Bulk bar** (`bulk-bar.tsx`, inside the sticky header): "N sessions selected", Select all N, Clear, then **Archive** (Unarchive in the Archived list), **Tag…** (one tag, Add or Remove, suggestions from tags in use), **Move…** (only when workspaces are offered) and **Delete…** (lists up to five names and "and N more", says which go from the account and other browsers, can't be undone). Only ticked rows the list shows count: a search or filter never makes a bulk action reach hidden sessions. One transaction for all of them (`lib/session-organize.ts` `bulkEdit`); sessions an action can't apply to are counted, not refused: "1 session only in this browser stayed where it was", "1 session already has the most tags allowed". The outcome stays as a dismissable status line.
+- **Inspector** (`session-inspector.tsx`): the title, then its actions on their own row (**Pin/Unpin** with `aria-pressed`, **Archive/Unarchive**, **Duplicate** (opens the copy, "Name (copy)", with the same notes and tags, unpinned), **Export JSON**, **Delete**), the facts (plus an "Archived" badge), the workspace, **Tags** (chips with a ✕ each, an "Add tag" field with suggestions, Enter adds; at 10 it says so), **Notes** ("Add notes" or the notes and "Edit notes"; a textarea saved with Save notes, Esc cancels) and the **site summary** ("Most tabs from github.com (12), react.dev (4) and figma.com (2). 3 tabs are copies of another tab in this session.").
+- **Open picker:** **Untick duplicates (N)** beside Select all/none when ticked tabs repeat a page ticked earlier; it keeps the first copy of each page (the user had been offered "select the duplicates"; unticking is what helps when the picker's job is opening).
+- **Popup:** archived sessions aren't listed; pinned ones come first with the pin mark.
+- **Website** (read-only): the sessions list puts pinned sessions first with the pin mark and shows up to three tags; the session page shows its tags and notes. Editing them on the website is a follow-up.
+- Verified at 1440, 1180, 820 and 390 px and in dark mode at 1440: no horizontal overflow (screenshots during the session). Tests: `features/organize-ui.test.tsx` (5), `lib/session-organize.test.ts` (11), `packages/core/src/session-organize.test.ts` (15), web `session-detail.spec.ts`, and the two-profile sync E2E.
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

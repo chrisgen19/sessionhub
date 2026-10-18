@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { apiWorkspaceSchema } from "./api-workspaces";
-import { SESSION_LIMITS, savedWindowSchema, tabGroupColorSchema, windowBoundsSchema, windowStateSchema } from "./session";
+import { SESSION_LIMITS, savedWindowSchema, sessionTagsSchema, tabGroupColorSchema, windowBoundsSchema, windowStateSchema } from "./session";
 
 /**
  * /api/v1/sessions contracts (docs/SYNC_PROTOCOL.md section 4). Timestamps are ISO strings.
@@ -11,7 +11,7 @@ import { SESSION_LIMITS, savedWindowSchema, tabGroupColorSchema, windowBoundsSch
 export const API_LIMITS = {
   /** Total tabs across all windows of one session. */
   tabsPerSessionMax: 5000,
-  descriptionMax: 2000,
+  descriptionMax: SESSION_LIMITS.descriptionMax,
   pageSizeMax: 100,
   pageSizeDefault: 50,
   /** Request body cap enforced before JSON parsing. */
@@ -76,6 +76,9 @@ export const createSessionRequestSchema = z.strictObject({
   description: descriptionSchema.default(null),
   workspaceId: z.uuid().nullable().default(null),
   isPinned: z.boolean().default(false),
+  isArchived: z.boolean().default(false),
+  /** Normalized on write: trimmed, spaces collapsed, repeats (ignoring case) dropped. */
+  tags: sessionTagsSchema.default([]),
   windows: windowsInputSchema,
 });
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
@@ -89,6 +92,8 @@ export const updateSessionRequestSchema = z
     workspaceId: z.uuid().nullable().optional(),
     isPinned: z.boolean().optional(),
     isArchived: z.boolean().optional(),
+    /** Replaces the session's tags. */
+    tags: sessionTagsSchema.optional(),
     /** Replaces the whole window/group/tab structure. */
     windows: windowsInputSchema.optional(),
   })
@@ -111,6 +116,8 @@ export const apiSessionSummarySchema = z.object({
   sourceDeviceName: z.string(),
   isPinned: z.boolean(),
   isArchived: z.boolean(),
+  /** Absent from servers before 2026-10-18. */
+  tags: z.array(z.string()).default([]),
   version: z.int().positive(),
   tabCount: z.int().nonnegative(),
   windowCount: z.int().nonnegative(),

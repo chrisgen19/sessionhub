@@ -48,6 +48,7 @@ const theirs = (session: SavedSession): ApiSessionDetail => {
     sourceDeviceName: "Chrome on Windows",
     isPinned: false,
     isArchived: false,
+    tags: [],
     version: 5,
     tabCount: 4,
     windowCount: 2,

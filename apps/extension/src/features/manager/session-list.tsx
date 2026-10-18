@@ -1,9 +1,7 @@
 import type { SavedSession } from "@sessionhub/contracts/session";
-import { summarizeSession } from "@sessionhub/core/session-summary";
 import type { SessionsState } from "../../hooks/use-sessions";
-import { formatListDate, plural, sessionSourceLabel } from "../../lib/format";
-import { SESSION_SYNC_TEXT, type SessionSyncLabel } from "../../lib/sync-status";
-import { SessionFavicons } from "./session-favicons";
+import type { SessionSyncLabel } from "../../lib/sync-status";
+import { SessionRow } from "./session-row";
 
 interface SessionListProps {
   state: SessionsState;
@@ -14,26 +12,42 @@ interface SessionListProps {
   workspace?: string | null;
   /** A session's workspace name to show in its row (null: none, or the list is already filtered). */
   workspaceName?: (id: string) => string | null;
+  /** Ticked for bulk actions. */
+  checked: ReadonlySet<string>;
+  onCheck: (id: string, range: boolean) => void;
+  /** Archived view: its own empty state. */
+  archived?: boolean;
+  /** A tag filter is on: its own empty state. */
+  tag?: string | null;
   onSelect: (id: string) => void;
   onRetry: () => void;
 }
 
-const PROBLEM = new Set<SessionSyncLabel>(["conflict", "error"]);
-
-function EmptyList({ searching, workspace }: { searching: boolean; workspace: string | null }) {
-  const title = searching ? "No sessions match your search" : workspace ? `No sessions in ${workspace}` : "No saved sessions yet";
-  const hint = workspace
-    ? "Open a session and choose its workspace in the details."
-    : "Choose tabs to save in Open tabs or from the SessionHub toolbar icon, or import a SessionHub export.";
+function EmptyList({ searching, workspace, archived, tag }: { searching: boolean; workspace: string | null; archived: boolean; tag: string | null }) {
+  const title = searching
+    ? "No sessions match your search"
+    : tag
+      ? `No sessions tagged ${tag}`
+      : archived
+        ? "No archived sessions"
+        : workspace
+          ? `No sessions in ${workspace}`
+          : "No saved sessions yet";
+  const hint = archived
+    ? "Archive sessions you want to keep but not see every day. They stay here, ready to open."
+    : workspace
+      ? "Open a session and choose its workspace in the details."
+      : "Choose tabs to save in Open tabs or from the SessionHub toolbar icon, or import a SessionHub export.";
   return (
     <div className="m-4 rounded-xl border border-dashed border-line px-4 py-10 text-center">
       <p className="text-[13px] font-semibold">{title}</p>
-      {!searching && <p className="mt-1 text-xs text-fg-muted">{hint}</p>}
+      {!searching && !tag && <p className="mt-1 text-xs text-fg-muted">{hint}</p>}
     </div>
   );
 }
 
-export function SessionList({ state, sessions, selectedId, searching, workspace = null, workspaceName = () => null, onSelect, onRetry }: SessionListProps) {
+export function SessionList(props: SessionListProps) {
+  const { state, sessions, selectedId, searching, workspace = null, workspaceName = () => null, checked, onCheck, archived = false, tag = null, onSelect, onRetry } = props;
   const label = (id: string): SessionSyncLabel => (state.status === "ready" ? (state.syncLabels[id] ?? "local") : "local");
   if (state.status === "loading") {
     return (
@@ -54,45 +68,22 @@ export function SessionList({ state, sessions, selectedId, searching, workspace 
       </p>
     );
   }
-  if (sessions.length === 0) return <EmptyList searching={searching} workspace={workspace} />;
+  if (sessions.length === 0) return <EmptyList searching={searching} workspace={workspace} archived={archived} tag={tag} />;
 
   return (
     <ul aria-label="Saved sessions" className="divide-y divide-line">
-      {sessions.map((session) => {
-        const summary = summarizeSession(session);
-        const selected = session.id === selectedId;
-        const inWorkspace = workspaceName(session.id);
-        return (
-          <li key={session.id}>
-            <button
-              type="button"
-              aria-current={selected ? "true" : undefined}
-              onClick={() => onSelect(session.id)}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted lg:px-6 xl:px-4 ${
-                selected ? "bg-brand-soft shadow-[inset_3px_0_0_var(--sh-brand)]" : ""
-              }`}
-            >
-              <SessionFavicons session={session} />
-              {/* The date and sync status don't shrink, so the narrow list rail never truncates them away. */}
-              <span className="min-w-0 flex-1 space-y-0.5">
-                <span className="flex items-baseline gap-3">
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={session.name}>
-                    {session.name}
-                  </span>
-                  <span className="shrink-0 text-xs tabular-nums text-fg-muted">{formatListDate(session.updatedAt)}</span>
-                </span>
-                <span className="flex items-baseline gap-3">
-                  <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">
-                    {inWorkspace && <span className="font-semibold text-fg">{inWorkspace} · </span>}
-                    {plural(summary.tabCount, "tab")} · {plural(summary.windowCount, "window")} · {sessionSourceLabel(session)}
-                  </span>
-                  <span className={`shrink-0 text-[11px] font-semibold ${PROBLEM.has(label(session.id)) ? "text-warning" : "text-fg-muted"}`}>{SESSION_SYNC_TEXT[label(session.id)]}</span>
-                </span>
-              </span>
-            </button>
-          </li>
-        );
-      })}
+      {sessions.map((session) => (
+        <SessionRow
+          key={session.id}
+          session={session}
+          syncLabel={label(session.id)}
+          open={session.id === selectedId}
+          checked={checked.has(session.id)}
+          workspaceName={workspaceName(session.id)}
+          onOpen={() => onSelect(session.id)}
+          onCheck={(range) => onCheck(session.id, range)}
+        />
+      ))}
     </ul>
   );
 }

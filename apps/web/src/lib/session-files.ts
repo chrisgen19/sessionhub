@@ -13,6 +13,9 @@ const toSavedSession = (detail: ApiSessionDetail): SavedSession => ({
   sourceDeviceName: detail.sourceDeviceName,
   version: detail.version,
   windows: detail.windows,
+  // Notes and tags go in the file too (an import keeps them).
+  ...(detail.description && { description: detail.description }),
+  ...(detail.tags.length > 0 && { tags: detail.tags }),
 });
 
 /**

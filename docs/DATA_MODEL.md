@@ -78,6 +78,7 @@ Do not use IP address or user agent string as device identity. Avoid exposing un
 - `createdAt`, `updatedAt`, `deletedAt?`, `lastRestoredAt?`.
 - Derived counts (`tabCount`, `windowCount`) may be cached, but must be maintained transactionally.
 - `sourceDeviceId` is provenance, not a command target.
+- **Implemented 2026-10-18 (organizing):** `tags` (`text[]`, default empty): free-form labels, at most 10 of up to 32 characters, normalized on every write (trimmed, inner spaces collapsed, repeats dropped ignoring case, the first spelling kept; `normalizeTags` in `packages/core/src/session-organize.ts`). `description` is shown as **Notes** (up to 2,000 characters, trimmed, empty stored as null). The extension now stores `description`, `tags`, `isPinned` and `isArchived` on the local session too (optional in `savedSessionSchema`: absent means empty for this browser's sessions, and "not known yet" for an account's, whose uploads then leave the server's value). Exports carry them; an import keeps notes and tags but is neither pinned nor archived; a duplicate is "Name (copy)" with the same notes and tags, unpinned and not archived. Dexie v7 (no new index) rebuilds every account once so cached sessions learn values set on the website.
 
 ### SavedSessionWindow
 

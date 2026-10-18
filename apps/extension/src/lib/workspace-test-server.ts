@@ -47,6 +47,7 @@ export const createTestServer = () => {
       sourceDeviceName: "Chrome on Windows",
       isPinned: false,
       isArchived: false,
+      tags: [],
       version: session.version,
       tabCount: 4,
       windowCount: 2,

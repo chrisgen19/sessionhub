@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { API_LIMITS, type ApiSessionDetail, type CreateSessionRequest, type UpdateSessionRequest } from "@sessionhub/contracts/api-sessions";
 import type { SavedWindow } from "@sessionhub/contracts/session";
+import { normalizeTags } from "@sessionhub/core/session-organize";
 import { buildCanonicalStructure } from "@sessionhub/core/session-structure";
 import type { Prisma, PrismaClient } from "@sessionhub/database/client";
 import { RollbackWith, ServiceError } from "../service-errors";
@@ -87,10 +88,11 @@ const guarded = <T>(update: Promise<T>): Promise<T> =>
 export const createSessionInTx = async (tx: Tx, userId: string, sequence: bigint, input: CreateSessionRequest, source: WriteSource): Promise<WriteResult> => {
   const id = input.id ?? randomUUID();
   const structure = buildCanonicalStructure(input.windows, randomUUID);
+  const tags = normalizeTags(input.tags);
   const existing = await tx.savedSession.findUnique({ where: { id }, include: structureInclude });
   if (existing) {
     // Exact retry of our own create (same id and content): return it, write nothing.
-    const content = { ...input, isArchived: false, windows: structure.windows };
+    const content = { ...input, tags, windows: structure.windows };
     const first = existing.userId === userId && !existing.deletedAt && existing.version === 1
       ? await tx.sessionVersion.findUnique({ where: { sessionId_version: { sessionId: id, version: 1 } }, select: { checksum: true } })
       : null;
@@ -104,7 +106,7 @@ export const createSessionInTx = async (tx: Tx, userId: string, sequence: bigint
   await assertWorkspace(tx, userId, input.workspaceId);
   const row = await tx.savedSession.create({
     data: {
-      id, userId, name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned,
+      id, userId, name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned, isArchived: input.isArchived, tags,
       sourceDeviceId: source.deviceId, sourceDeviceName: source.deviceName, tabCount: structure.tabCount, windowCount: structure.windowCount,
     },
   });
@@ -133,6 +135,7 @@ export const updateSessionInTx = async (tx: Tx, userId: string, sequence: bigint
     where: { id, userId, version: input.expectedVersion, deletedAt: null },
     data: {
       name: input.name, description: input.description, workspaceId: input.workspaceId, isPinned: input.isPinned, isArchived: input.isArchived,
+      tags: input.tags === undefined ? undefined : normalizeTags(input.tags),
       version: { increment: 1 },
       ...(structure ? { tabCount: structure.tabCount, windowCount: structure.windowCount } : {}),
     },

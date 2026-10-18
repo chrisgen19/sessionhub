@@ -14,6 +14,7 @@ const detail: ApiSessionDetail = {
   sourceDeviceName: "Web",
   isPinned: false,
   isArchived: false,
+  tags: [],
   version: 3,
   tabCount: 4,
   windowCount: 1,

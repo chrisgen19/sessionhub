@@ -1,8 +1,9 @@
 import type { RestoreDestination } from "@sessionhub/core/restore-plan";
+import { SESSION_SORTS, type SessionSort } from "@sessionhub/core/session-organize";
 
 /**
- * The open picker's remembered choices, per browser in the extension's `localStorage` (shared by the
- * popup and the manager), like the theme (`@sessionhub/core/theme`). Storage can be unavailable, so
+ * The open picker's remembered choices (and the manager list's sort), per browser in the extension's
+ * `localStorage` (shared by the popup and the manager), like the theme (`@sessionhub/core/theme`). Storage can be unavailable, so
  * every read falls back to the default and every write is best effort.
  */
 const TARGET_KEY = "sessionhub-open-target";
@@ -54,3 +55,13 @@ export type PopupTab = "open" | "save";
 export const readPopupTab = (): PopupTab => (read(POPUP_TAB_KEY) === "save" ? "save" : "open");
 
 export const savePopupTab = (tab: PopupTab) => write(POPUP_TAB_KEY, tab);
+
+const SORT_KEY = "sessionhub-session-sort";
+
+/** The saved-session list's sort used last; recently changed first the first time. */
+export const readSessionSort = (): SessionSort => {
+  const value = read(SORT_KEY);
+  return SESSION_SORTS.find((sort) => sort === value) ?? "updated";
+};
+
+export const saveSessionSort = (sort: SessionSort) => write(SORT_KEY, sort);

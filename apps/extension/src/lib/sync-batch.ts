@@ -10,11 +10,16 @@ const bySortOrder = (a: { sortOrder: number }, b: { sortOrder: number }) => a.so
  * The upload shape of a local session: windows, groups and tabs in order, with no local ids
  * except the group references tabs use. Tabs that never had a URL can't be stored or restored,
  * so they are left out, and so is a window left without tabs. A window's state and bounds go along
- * when known. The workspace goes along once this browser knows it (absent keeps the server's).
+ * when known. The workspace, notes, tags, pinned and archived go along once this browser knows them
+ * (absent keeps the server's).
  */
 export const toSyncPayload = (session: SessionUpload): SyncSessionPayload => ({
   name: session.name,
   ...(session.workspaceId !== undefined && { workspaceId: session.workspaceId }),
+  ...(session.description !== undefined && { description: session.description }),
+  ...(session.tags !== undefined && { tags: session.tags }),
+  ...(session.isPinned !== undefined && { isPinned: session.isPinned }),
+  ...(session.isArchived !== undefined && { isArchived: session.isArchived }),
   windows: [...session.windows]
     .sort(bySortOrder)
     .map((window) => ({

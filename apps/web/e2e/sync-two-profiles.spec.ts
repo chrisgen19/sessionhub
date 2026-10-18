@@ -57,6 +57,18 @@ test("a session saved in one profile appears in another; edits and deletes follo
     await syncWithoutTabChanges(windows, onWindows);
     expect(await sessionOn(onWindows)).toMatchObject({ name: "Renamed on the Mac", sync: { serverVersion: 2, state: "synced" } });
 
+    // Notes, tags and pinned set on the Mac reach Windows; archiving several from Windows reaches the Mac.
+    const renamed = (await sessionOn(onMac))!;
+    const details = { description: "Read before Friday", tags: ["work", "q4"], isPinned: true };
+    expect(await sendCommand(onMac, { type: "session.edit", sessionId: session.id, expectedVersion: renamed.version, ...details })).toMatchObject({ ok: true });
+    await expect.poll(async () => (await prisma.savedSession.findUniqueOrThrow({ where: { id: session.id } })).tags, { timeout: 15_000 }).toEqual(["work", "q4"]);
+    await syncWithoutTabChanges(windows, onWindows);
+    expect(await sessionOn(onWindows)).toMatchObject({ ...details, isArchived: false, sync: { serverVersion: 3, state: "synced" } });
+    expect(await sendCommand(onWindows, { type: "session.bulk", sessionIds: [session.id], action: { kind: "archive", archived: true } })).toMatchObject({ ok: true, data: { changed: 1 } });
+    await expect.poll(async () => (await prisma.savedSession.findUniqueOrThrow({ where: { id: session.id } })).isArchived, { timeout: 15_000 }).toBe(true);
+    await syncWithoutTabChanges(mac, onMac);
+    expect(await sessionOn(onMac)).toMatchObject({ ...details, isArchived: true, sync: { serverVersion: 4 } });
+
     // Deleted on Windows: gone on the Mac after its next sync.
     expect(await sendCommand(onWindows, { type: "session.delete", sessionId: session.id })).toEqual({ ok: true, data: {} });
     await expect.poll(async () => (await prisma.savedSession.findUniqueOrThrow({ where: { id: session.id } })).deletedAt !== null, { timeout: 15_000 }).toBe(true);

@@ -7,14 +7,16 @@ export interface SessionContent {
   workspaceId: string | null;
   isPinned: boolean;
   isArchived: boolean;
+  /** Absent or empty counts as no tags. */
+  tags?: readonly string[];
   windows: readonly SavedWindow[];
 }
 
 /**
  * SHA-256 of the session's meaning, independent of all ids (child ids are reassigned on
  * every write). Group references become group positions. Used for SessionVersion
- * checksums and to recognise an exact retry of a create. A window's state and bounds count
- * only when present, so a window without them hashes as it did before they existed.
+ * checksums and to recognise an exact retry of a create. A window's state and bounds, and the
+ * session's tags, count only when present, so content without them hashes as it did before they existed.
  */
 export const contentChecksum = (content: SessionContent): string => {
   const windows = content.windows.map((window) => {
@@ -26,6 +28,7 @@ export const contentChecksum = (content: SessionContent): string => {
       ...(window.bounds && { bounds: [window.bounds.left, window.bounds.top, window.bounds.width, window.bounds.height] }),
     };
   });
-  const canonical = JSON.stringify([content.name, content.description, content.workspaceId, content.isPinned, content.isArchived, windows]);
+  const fields = [content.name, content.description, content.workspaceId, content.isPinned, content.isArchived, windows];
+  const canonical = JSON.stringify(content.tags?.length ? [...fields, content.tags] : fields);
   return createHash("sha256").update(canonical).digest("hex");
 };

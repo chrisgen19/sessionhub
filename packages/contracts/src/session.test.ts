@@ -129,3 +129,26 @@ describe("window state and bounds", () => {
     expect(savedSessionSchema.safeParse(withWindow(extra)).success).toBe(false);
   });
 });
+
+describe("organizing fields", () => {
+  it("are optional, so records and exports from before stay valid", () => {
+    expect(savedSessionSchema.parse(buildSession())).not.toHaveProperty("tags");
+  });
+
+  it("accept notes, tags, pinned and archived within the limits", () => {
+    const session = { ...buildSession(), description: "Read before Friday", tags: ["work", "Q4 planning"], isPinned: true, isArchived: false };
+    expect(savedSessionSchema.parse(session)).toMatchObject({ description: "Read before Friday", tags: ["work", "Q4 planning"], isPinned: true });
+    expect(savedSessionSchema.safeParse({ ...buildSession(), description: null }).success).toBe(true);
+  });
+
+  it("reject blank or overlong tags, more than the limit, and overlong notes", () => {
+    for (const extra of [
+      { tags: ["  "] },
+      { tags: ["x".repeat(SESSION_LIMITS.tagMax + 1)] },
+      { tags: Array.from({ length: SESSION_LIMITS.tagsMax + 1 }, (_, index) => `t${index}`) },
+      { description: "x".repeat(SESSION_LIMITS.descriptionMax + 1) },
+    ]) {
+      expect(savedSessionSchema.safeParse({ ...buildSession(), ...extra }).success, JSON.stringify(extra).slice(0, 60)).toBe(false);
+    }
+  });
+});

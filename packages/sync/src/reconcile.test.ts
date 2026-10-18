@@ -68,7 +68,7 @@ describe("reconcileHeldCopy", () => {
 });
 
 describe("toLocalSession", () => {
-  it("keeps the server's content and provenance and moves the local version forward", () => {
+  it("keeps the server's content, notes, tags, pinned, archived and provenance, and moves the local version forward", () => {
     const detail: ApiSessionDetail = {
       id: "64b7e32a-11f4-4caa-929f-0fab1139a7b0",
       name: "Research",
@@ -78,6 +78,7 @@ describe("toLocalSession", () => {
       sourceDeviceName: "Chrome on Windows",
       isPinned: true,
       isArchived: false,
+      tags: ["work"],
       version: 7,
       tabCount: 0,
       windowCount: 0,
@@ -95,6 +96,10 @@ describe("toLocalSession", () => {
       sourceDeviceName: "Chrome on Windows",
       version: 4,
       windows: [],
+      description: "Web only",
+      tags: ["work"],
+      isPinned: true,
+      isArchived: false,
     });
     expect(toLocalSession(detail, null).version).toBe(1);
   });

@@ -48,3 +48,22 @@ describe("pushResultSchema", () => {
     expect(pushResultSchema.safeParse(result).success).toBe(true);
   });
 });
+
+describe("session upload organizing fields", () => {
+  it("are optional, and accepted with notes, tags, pinned and archived", () => {
+    expect(pushOperationSchema.safeParse(base("savedSession", "upsert", 2, { name: "S", windows, description: "Notes", tags: ["work"], isPinned: true, isArchived: true })).success).toBe(true);
+    expect(pushOperationSchema.safeParse(base("savedSession", "upsert", 2, { name: "S", windows, description: null, tags: [] })).success).toBe(true);
+  });
+
+  it("reject bad values, and unknown fields stay rejected", () => {
+    for (const payload of [
+      { name: "S", windows, tags: [""] },
+      { name: "S", windows, tags: "work" },
+      { name: "S", windows, isPinned: "yes" },
+      { name: "S", windows, description: "x".repeat(2001) },
+      { name: "S", windows, color: "blue" },
+    ]) {
+      expect(pushOperationSchema.safeParse(base("savedSession", "upsert", 2, payload)).success, JSON.stringify(payload).slice(0, 60)).toBe(false);
+    }
+  });
+});

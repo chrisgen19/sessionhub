@@ -36,7 +36,7 @@ describe("database migration", () => {
 
     const db = createDb(name);
     expect(await getSession(db, session.id)).toEqual(session);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
     expect(await db.recoverySnapshots.count()).toBe(0);
     expect(await db.account.count()).toBe(0);
     expect(await db.outbox.count()).toBe(0);
@@ -57,13 +57,39 @@ describe("database migration", () => {
     v5.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
     // Consent and history stay; only the download position is cleared, so the next sync bootstraps.
     expect(await db.syncState.get(scope)).toMatchObject({ enabledAt: session.createdAt, lastSyncAt: session.createdAt, cursor: null, bootstrap: null });
     const record = await db.sessions.get(session.id);
     expect(record).toMatchObject({ scope, sync: { serverVersion: 3, state: "synced" } });
     expect(record?.workspaceId).toBeUndefined();
     expect(await db.workspaces.count()).toBe(0);
+  });
+
+  it("upgrades a version 6 database to version 7: sessions stay, and each account rebuilds once more", async () => {
+    const name = `migration-v6-${Date.now()}`;
+    const v6 = new Dexie(name);
+    v6.version(1).stores({ sessions: "id, [scope+updatedAt]", device: "key", restoreJobs: "id, sessionId, createdAt" });
+    v6.version(2).stores({ recoverySnapshots: "id, capturedAt, [capturedAt+tabCount]", recoveryState: "key" });
+    v6.version(3).stores({ account: "key" });
+    v6.version(4).stores({ outbox: "++seq, &id, [scope+seq], entityId", sessionTombstones: "id, scope", syncState: "scope" });
+    v6.version(5).stores({ serverCopies: "id, scope" });
+    v6.version(6).stores({ workspaces: "id, scope" });
+    const session = sampleSession();
+    const scope = "account:Alice";
+    await v6.table("sessions").put({ ...session, scope, sync: { serverVersion: 3, state: "synced" }, workspaceId: null });
+    await v6.table("sessions").put({ ...sampleSession({}, 2), scope: "local" });
+    await v6.table("syncState").put({ scope, enabledAt: session.createdAt, cursor: "c1.9.AAAAAAAAAAAAAAAAAAAAAA", bootstrap: null, lastSyncAt: session.createdAt, lastError: null, failures: 0, nextAttemptAt: null });
+    v6.close();
+
+    const db = createDb(name);
+    expect(db.verno).toBe(7);
+    expect(await db.syncState.get(scope)).toMatchObject({ enabledAt: session.createdAt, cursor: null, bootstrap: null });
+    expect(await db.sessions.count()).toBe(2);
+    const record = await db.sessions.get(session.id);
+    expect(record).toMatchObject({ workspaceId: null, sync: { serverVersion: 3 } });
+    // Not known until the rebuild brings the server's values.
+    expect(record?.isArchived).toBeUndefined();
   });
 
   it("upgrades a version 4 database (queued uploads, sync state) without losing them", async () => {
@@ -81,7 +107,7 @@ describe("database migration", () => {
     v4.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
     expect(await db.outbox.toArray()).toMatchObject([{ entityId: session.id, status: "sending", attempts: 1, seq: 1 }]);
     expect(await db.syncState.get(scope)).toMatchObject({ enabledAt: session.createdAt, cursor: null });
     expect(await db.serverCopies.count()).toBe(0);
@@ -100,7 +126,7 @@ describe("database migration", () => {
     v3.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
     expect(await db.account.get("connection")).toEqual(connection);
     // No account id yet, so only this browser's sessions are visible (the next account check adds it).
     expect(await listSessions(db)).toEqual([session]);
@@ -120,7 +146,7 @@ describe("database migration", () => {
     v2.close();
 
     const db = createDb(name);
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
     expect(await getSession(db, session.id)).toEqual(session);
     expect(await db.recoveryState.get("state")).toMatchObject({ dirty: true });
     expect(await db.account.count()).toBe(0);

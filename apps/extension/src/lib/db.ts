@@ -1,4 +1,4 @@
-import { Dexie, type EntityTable, type Table } from "dexie";
+import { Dexie, type EntityTable, type Table, type Transaction } from "dexie";
 import type { ApiSessionDetail } from "@sessionhub/contracts/api-sessions";
 import type { SyncWorkspacePayload } from "@sessionhub/contracts/api-sync";
 import type { SavedSession, TabGroupColor } from "@sessionhub/contracts/session";
@@ -263,6 +263,16 @@ export type SessionHubDb = Dexie & {
 
 export const DB_NAME = "sessionhub";
 
+/** Makes every account download a full copy (bootstrap) on its next sync. */
+const rebuildAccounts = (tx: Transaction) =>
+  tx
+    .table<SyncStateRecord, AccountScope>("syncState")
+    .toCollection()
+    .modify((state) => {
+      state.cursor = null;
+      state.bootstrap = null;
+    });
+
 /** Opens the local database. Schema changes must add a new version, never edit an old one. */
 export const createDb = (name: string = DB_NAME): SessionHubDb => {
   const db = new Dexie(name) as SessionHubDb;
@@ -288,17 +298,10 @@ export const createDb = (name: string = DB_NAME): SessionHubDb => {
   db.version(5).stores({ serverCopies: "id, scope" });
   // v6: account workspaces. Every account rebuilds once from a full copy (bootstrap), because
   // earlier downloads skipped workspaces and sessions' workspace assignments.
-  db.version(6)
-    .stores({ workspaces: "id, scope" })
-    .upgrade((tx) =>
-      tx
-        .table<SyncStateRecord, AccountScope>("syncState")
-        .toCollection()
-        .modify((state) => {
-          state.cursor = null;
-          state.bootstrap = null;
-        }),
-    );
+  db.version(6).stores({ workspaces: "id, scope" }).upgrade(rebuildAccounts);
+  // v7: notes, tags, pinned and archived on sessions (no new index). Every account rebuilds once more,
+  // so cached sessions learn what was set on the website before this browser stored these fields.
+  db.version(7).stores({}).upgrade(rebuildAccounts);
   return db;
 };
 

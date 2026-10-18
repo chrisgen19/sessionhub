@@ -201,3 +201,34 @@ describe("sync push: workspaces and assignments", () => {
     expect(await one(pusher, workspace(theirs, 1, { name: "Not mine" }))).toMatchObject({ status: "rejected", code: "NOT_FOUND" });
   });
 });
+
+describe("organizing fields in uploads", () => {
+  const withFields = (entityId: string, expectedVersion: number, fields: Record<string, unknown>) => ({ ...upsert(entityId, expectedVersion), payload: { ...payload("Research"), ...fields } });
+
+  it("a create stores notes, tags, pinned and archived (tags normalized); without them it uses the defaults", async () => {
+    const pusher = await newPusher();
+    const id = randomUUID();
+    expect(await one(pusher, withFields(id, 0, { description: "Read first", tags: [" work ", "Work", "Q4  plan"], isPinned: true, isArchived: true }))).toMatchObject({ status: "accepted" });
+    expect(await prisma.savedSession.findUniqueOrThrow({ where: { id } })).toMatchObject({ description: "Read first", tags: ["work", "Q4 plan"], isPinned: true, isArchived: true });
+    const plain = randomUUID();
+    await one(pusher, upsert(plain, 0));
+    expect(await prisma.savedSession.findUniqueOrThrow({ where: { id: plain } })).toMatchObject({ description: null, tags: [], isPinned: false, isArchived: false });
+  });
+
+  it("an update without them keeps the server's (older extensions), and with them replaces them", async () => {
+    const pusher = await newPusher();
+    const id = randomUUID();
+    await one(pusher, withFields(id, 0, { description: "Notes", tags: ["work"], isPinned: true }));
+    expect(await one(pusher, upsert(id, 1, "Renamed"))).toMatchObject({ status: "accepted", serverVersion: 2 });
+    expect(await prisma.savedSession.findUniqueOrThrow({ where: { id } })).toMatchObject({ name: "Renamed", description: "Notes", tags: ["work"], isPinned: true, isArchived: false });
+    await one(pusher, withFields(id, 2, { description: null, tags: [], isPinned: false, isArchived: true }));
+    expect(await prisma.savedSession.findUniqueOrThrow({ where: { id } })).toMatchObject({ description: null, tags: [], isPinned: false, isArchived: true });
+  });
+
+  it("rejects bad values as a validation error and writes nothing", async () => {
+    const pusher = await newPusher();
+    const id = randomUUID();
+    expect(await one(pusher, withFields(id, 0, { tags: ["x".repeat(33)] }))).toMatchObject({ status: "validation_error" });
+    expect(await prisma.savedSession.findUnique({ where: { id } })).toBeNull();
+  });
+});

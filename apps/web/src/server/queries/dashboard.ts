@@ -24,6 +24,8 @@ export interface SessionListItem {
   windowCount: number;
   updatedAt: Date;
   workspaceId: string | null;
+  isPinned: boolean;
+  tags: string[];
 }
 
 export interface WorkspaceChoice {
@@ -50,7 +52,7 @@ export interface DeviceListItem {
 
 const liveSessions = (userId: string, archived = false) => ({ userId, deletedAt: null, isArchived: archived });
 
-const sessionFields = { id: true, name: true, sourceDeviceName: true, tabCount: true, windowCount: true, updatedAt: true, workspaceId: true } as const;
+const sessionFields = { id: true, name: true, sourceDeviceName: true, tabCount: true, windowCount: true, updatedAt: true, workspaceId: true, isPinned: true, tags: true } as const;
 
 /** `workspace`: an id (the caller checked it is the user's), NO_WORKSPACE, or null/absent for all. */
 const inWorkspace = (workspace: string | null | undefined) =>
@@ -67,11 +69,14 @@ export const getOverviewStats = async (prisma: PrismaClient, userId: string): Pr
 
 export const SESSION_LIST_LIMIT = 100;
 
-/** Newest first; optional case-insensitive name search and workspace filter. Active sessions unless `archived`. */
+/**
+ * Newest first; optional case-insensitive name search and workspace filter. Active sessions unless
+ * `archived`. `pinnedFirst`: pinned sessions above the rest, as in the extension (the sessions list).
+ */
 export const listSessions = (
   prisma: PrismaClient,
   userId: string,
-  options: { query?: string; take?: number; archived?: boolean; workspace?: string | null } = {},
+  options: { query?: string; take?: number; archived?: boolean; workspace?: string | null; pinnedFirst?: boolean } = {},
 ): Promise<SessionListItem[]> => {
   const query = options.query?.trim();
   return prisma.savedSession.findMany({
@@ -80,7 +85,7 @@ export const listSessions = (
       ...inWorkspace(options.workspace),
       ...(query ? { name: { contains: query, mode: "insensitive" as const } } : {}),
     },
-    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+    orderBy: [...(options.pinnedFirst ? [{ isPinned: "desc" as const }] : []), { updatedAt: "desc" }, { id: "asc" }],
     take: Math.min(options.take ?? SESSION_LIST_LIMIT, SESSION_LIST_LIMIT),
     select: sessionFields,
   });

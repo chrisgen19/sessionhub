@@ -15,6 +15,10 @@ export const SESSION_LIMITS = {
   groupsPerWindowMax: 500,
   /** Screen coordinates and sizes in pixels; generous for multi-monitor setups. */
   windowCoordinateMax: 100_000,
+  /** A session's notes (the server's `description`). */
+  descriptionMax: 2000,
+  tagsMax: 10,
+  tagMax: 32,
 } as const;
 
 /**
@@ -104,6 +108,13 @@ export const savedWindowSchema = z
   });
 export type SavedWindow = z.infer<typeof savedWindowSchema>;
 
+/**
+ * A free-form label. Stored as typed after trimming and collapsing spaces; a session never holds the
+ * same tag twice, compared without case (`normalizeTags` in `@sessionhub/core/session-organize`).
+ */
+export const sessionTagSchema = z.string().trim().min(1).max(SESSION_LIMITS.tagMax);
+export const sessionTagsSchema = z.array(sessionTagSchema).max(SESSION_LIMITS.tagsMax);
+
 export const savedSessionSchema = z
   .object({
     id: z.uuid(),
@@ -117,6 +128,15 @@ export const savedSessionSchema = z
     /** Optimistic-concurrency version; starts at 1 and increments on each edit. */
     version: z.int().positive(),
     windows: z.array(savedWindowSchema).max(SESSION_LIMITS.windowsMax),
+    /**
+     * Organizing fields (2026-10-18), all optional: records and exports from before have none. For a
+     * session of this browser absent means empty (no notes or tags, not pinned, not archived); for an
+     * account's session it means not known yet, and uploads leave the server's value as it is.
+     */
+    description: z.string().max(SESSION_LIMITS.descriptionMax).nullable().optional(),
+    tags: sessionTagsSchema.optional(),
+    isPinned: z.boolean().optional(),
+    isArchived: z.boolean().optional(),
   })
   .superRefine((session, ctx) => {
     const seen = new Set<string>();

@@ -26,6 +26,7 @@ export const toSummary = (row: SessionRow): ApiSessionSummary => ({
   sourceDeviceName: row.sourceDeviceName,
   isPinned: row.isPinned,
   isArchived: row.isArchived,
+  tags: row.tags,
   version: row.version,
   tabCount: row.tabCount,
   windowCount: row.windowCount,
