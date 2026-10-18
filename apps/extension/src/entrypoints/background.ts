@@ -47,6 +47,7 @@ const SYNC_PERIODIC_MINUTES = 10;
 const SYNC_AFTER = new Set([
   "session.capture",
   "session.import",
+  "recovery.saveAsSession",
   "session.rename",
   "session.delete",
   "session.assign",

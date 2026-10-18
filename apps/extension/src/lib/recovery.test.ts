@@ -243,4 +243,34 @@ describe("recovery commands", () => {
       await handleCommand({ type: "recovery.restore", snapshotId: "00000000-0000-4000-8000-0000000000cc" }, deps),
     ).toMatchObject({ ok: false, error: { code: "not-found" } });
   });
+
+  it("saves a checkpoint as a new local session under fresh ids, and keeps the checkpoint", async () => {
+    const deps = makeDeps();
+    const created = await handleCommand({ type: "recovery.checkpointNow" }, deps);
+    const snapshotId = created.ok ? (created.data as { snapshotId: string }).snapshotId : "";
+    const saves = [
+      await handleCommand({ type: "recovery.saveAsSession", snapshotId }, deps),
+      await handleCommand({ type: "recovery.saveAsSession", snapshotId }, deps),
+    ];
+    expect(saves).toMatchObject([{ ok: true, data: { syncing: false } }, { ok: true, data: { syncing: false } }]);
+    const sessionIds = saves.map((response) => (response.ok ? (response.data as { sessionId: string }).sessionId : ""));
+    expect(new Set([snapshotId, ...sessionIds]).size).toBe(3);
+
+    const [snapshot] = await listSnapshots(deps.db);
+    const saved = await getSession(deps.db, sessionIds[0]!);
+    const shape = (session: { windows: { tabs: { url: string; pinned: boolean }[] }[] }) =>
+      session.windows.map((window) => window.tabs.map((tab) => [tab.url, tab.pinned]));
+    expect(saved).toMatchObject({ name: snapshot!.session.name, version: 1, sourceDeviceId: snapshot!.session.sourceDeviceId });
+    expect(shape(saved!)).toEqual(shape(snapshot!.session));
+    expect(await listSessions(deps.db)).toHaveLength(2);
+    expect((await listSnapshots(deps.db)).map((record) => record.id)).toEqual([snapshotId]);
+  });
+
+  it("returns not-found when saving a checkpoint removed by retention", async () => {
+    const deps = makeDeps();
+    expect(
+      await handleCommand({ type: "recovery.saveAsSession", snapshotId: "00000000-0000-4000-8000-0000000000cc" }, deps),
+    ).toMatchObject({ ok: false, error: { code: "not-found" } });
+    expect(await listSessions(deps.db)).toEqual([]);
+  });
 });

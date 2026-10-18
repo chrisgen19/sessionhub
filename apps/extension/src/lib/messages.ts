@@ -63,6 +63,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     lazy: z.boolean().optional(),
   }),
   z.object({ type: z.literal("recovery.checkpointNow") }),
+  // Keep a checkpoint as a new saved session (fresh ids); the checkpoint itself is left as it is.
+  z.object({ type: z.literal("recovery.saveAsSession"), snapshotId: z.uuid() }),
   // Account connection (pairing). None of these send saved sessions anywhere.
   z.object({ type: z.literal("account.status") }),
   z.object({ type: z.literal("account.connect") }),
@@ -108,6 +110,8 @@ export interface CommandResults {
     /** Older checkpoints removed because storage was full. */
     freedForSpace: number;
   };
+  /** `syncing`: saved into the account (sync is on), so it uploads in the background. */
+  "recovery.saveAsSession": { sessionId: string; syncing: boolean };
   "account.status": AccountStatus;
   "account.connect": AccountStatus;
   "account.poll": { outcome: PairingOutcome; status: AccountStatus };

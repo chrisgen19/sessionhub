@@ -2,9 +2,12 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CaptureWindowInput } from "@sessionhub/core/capture";
+import { accountScope } from "../lib/account-scope";
 import { getDb, type RestoreTabOutcome } from "../lib/db";
+import { listOutbox } from "../lib/outbox-repository";
 import { runCheckpoint } from "../lib/recovery-checkpoint";
-import { sampleWindows } from "../lib/test-fixtures";
+import { listSessions } from "../lib/session-repository";
+import { connectAs, sampleWindows } from "../lib/test-fixtures";
 import { ManagerApp } from "./manager/manager-app";
 
 let windows: CaptureWindowInput[] = sampleWindows();
@@ -84,5 +87,40 @@ describe("Recovery view", () => {
     await userEvent.click(within(inspector).getByRole("button", { name: /^Open 3 tabs in \d new windows?$/ }));
     expect(await within(inspector).findByText(/opened 3 of 3 tabs/i)).toBeTruthy();
     expect(restoredUrls).toEqual(["https://github.com/acme/pull/42", "https://react.dev/learn", "https://example.com/"]);
+  });
+
+  it("saves a checkpoint as a session once and links to it", async () => {
+    const result = await checkpoint();
+    const snapshotId = "snapshotId" in result ? result.snapshotId : null;
+    window.history.replaceState(null, "", `/manager.html#view=recovery&snapshot=${snapshotId}`);
+    render(<ManagerApp />);
+
+    const inspector = await screen.findByRole("article", { name: /checkpoint details/i });
+    expect(await within(inspector).findByText(/to keep this one, save it as a session\. Saves in this browser only\./i)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: "Save as session" }));
+
+    expect(await within(inspector).findByText(/saved locally as a session/i)).toBeTruthy();
+    expect(within(inspector).getByRole("button", { name: "Saved as session" }).hasAttribute("disabled")).toBe(true);
+    const [saved] = await listSessions(getDb());
+    expect(saved?.id).not.toBe(snapshotId);
+    expect(within(inspector).getByRole("link", { name: "View session" }).getAttribute("href")).toBe(`#session=${saved!.id}`);
+    expect(await listSessions(getDb())).toHaveLength(1);
+  });
+
+  it("says before saving that the copy goes to the account when sync is on, then queues only the copy", async () => {
+    const alice = "AliceAccount00000000000000000000";
+    await connectAs(getDb(), alice);
+    await getDb().syncState.put({ scope: accountScope(alice), enabledAt: "2026-10-17T08:00:00.000Z", cursor: null, lastSyncAt: null, lastError: null, failures: 0, nextAttemptAt: null });
+    const result = await checkpoint();
+    const snapshotId = "snapshotId" in result ? result.snapshotId : null;
+    window.history.replaceState(null, "", `/manager.html#view=recovery&snapshot=${snapshotId}`);
+    render(<ManagerApp />);
+
+    const inspector = await screen.findByRole("article", { name: /checkpoint details/i });
+    expect(await within(inspector).findByText(/Saves to your account: it uploads at the next sync\./)).toBeTruthy();
+    await userEvent.click(within(inspector).getByRole("button", { name: "Save as session" }));
+    expect(await within(inspector).findByText(/Saved as a session\. It will sync to your account\./)).toBeTruthy();
+    const [saved] = await listSessions(getDb());
+    expect((await listOutbox(getDb(), accountScope(alice))).map((operation) => operation.entityId)).toEqual([saved!.id]);
   });
 });

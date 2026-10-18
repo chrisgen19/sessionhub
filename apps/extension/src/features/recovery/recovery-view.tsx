@@ -78,7 +78,7 @@ export function RecoveryView({ snapshotId, onSelect }: { snapshotId: string | nu
       label="Recovery checkpoints"
       list={list}
       emptyDetail="Select a checkpoint to see what was open."
-      detail={selected ? <CheckpointInspector snapshot={selected} onBack={() => onSelect(null)} /> : null}
+      detail={selected ? <CheckpointInspector key={selected.id} snapshot={selected} onBack={() => onSelect(null)} /> : null}
     />
   );
 }
