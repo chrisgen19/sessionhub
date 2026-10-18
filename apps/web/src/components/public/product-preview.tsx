@@ -38,7 +38,8 @@ function TabLine({ title, url, pinned }: { title: string; url: string; pinned?: 
 /**
  * The landing page's hero: SessionHub's Saved sessions as they look, built from the dashboard's
  * pieces (site marks, workspace dots, the list rail) with sample data. A picture, not a control:
- * one image to assistive technology, and nothing in it can be focused or clicked.
+ * one image to assistive technology, and nothing in it can be focused or clicked. `inert` is on
+ * its content only: on the image itself it would hide the image and its description (PR #49 review).
  */
 export function ProductPreview() {
   return (
@@ -46,10 +47,9 @@ export function ProductPreview() {
       <div
         role="img"
         aria-label="SessionHub's Saved sessions: a list of saved sessions beside one session's windows, tab group and tabs."
-        inert
         className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm select-none"
       >
-        <div className="grid @xl:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
+        <div inert className="grid @xl:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
           <div className="hidden border-r border-line @xl:block">
             <p className="border-b border-line px-3.5 py-3 text-[13px] font-bold">Saved sessions</p>
             <ul className="divide-y divide-line">

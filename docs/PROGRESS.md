@@ -40,6 +40,8 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Not changed, worth a look:** the privacy page still says "There is no public cloud deployment yet", but the app is deployed at `https://sessionhub.cgdev.site`. Policy text is the operator's to word, so it was left as it is.
 
+**PR #49 review (Codex P2), valid and fixed:** `inert` was on the element with `role="img"`, which removes the element itself from the accessibility tree, so screen readers got no preview at all. The test missed it because Playwright's role query ignores `inert`. Now `inert` is on the preview's content only, and `e2e/public-pages.spec.ts` reads Chrome's accessibility tree (CDP `Accessibility.getFullAXTree`): it **failed** on the old markup (no image node) and passes now.
+
 **Next step:** review and merge this PR (it deploys the web app).
 
 ### 2026-10-18 (web dashboard redesign) / Claude Code (Opus 5.5) / `feature/web-redesign` (macOS laptop, worktree `../sessionhub-web-redesign`, branched from `main` at `335cb44`, then merged `main` at `e7d7398` (#46, #47))
