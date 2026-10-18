@@ -1,9 +1,9 @@
 import type { SavedGroup, SavedTab, SavedWindow } from "@sessionhub/contracts/session";
 import { classifyUrl, displayUrl } from "@sessionhub/core/url-classification";
-import { Globe, Pin } from "lucide-react";
+import { Pin } from "lucide-react";
 import { plural } from "@/lib/format";
 import { GROUP_COLORS } from "@/lib/group-colors";
-import { hostMark } from "@/lib/host-mark";
+import { SiteMark } from "./site-mark";
 
 /** Consecutive tabs sharing a group, in saved order. */
 const segments = (window: SavedWindow) => {
@@ -17,21 +17,6 @@ const segments = (window: SavedWindow) => {
   }
   return result;
 };
-
-/** The site's letter mark (lib/host-mark.ts); a generic icon for anything that isn't a web page. */
-function SiteMark({ url }: { url: string }) {
-  const mark = hostMark(url);
-  if (!mark) return <Globe aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />;
-  return (
-    <span
-      aria-hidden="true"
-      className="grid size-4 shrink-0 place-items-center rounded-[4px] text-[10px] leading-none font-bold text-white"
-      style={{ backgroundColor: GROUP_COLORS[mark.color] }}
-    >
-      {mark.letter}
-    </span>
-  );
-}
 
 /**
  * Only URLs the classifier calls restorable (http/https) become links, re-checked at render

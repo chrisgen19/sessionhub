@@ -1,123 +1,116 @@
-import { CheckCircle2, Clock3, HardDrive, Info, Layers, RotateCcw, ShieldCheck } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { ProductPreview } from "@/components/public/product-preview";
+import { PublicHeader } from "@/components/public/public-header";
+import { INSTALL_URL, SOURCE_URL } from "@/lib/links";
 
-const FEATURES = [
-  {
-    icon: Layers,
-    title: "Save in one click",
-    body: "Capture the current window or every window, including pinned tabs and tab groups. No account needed.",
-  },
-  {
-    icon: RotateCcw,
-    title: "Restore safely",
-    body: "Preview first, then reopen in new windows. Your open tabs are never closed or replaced, and skipped tabs are listed.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Private by default",
-    body: "Sessions stay in your browser. SessionHub never reads cookies, passwords or page content.",
-  },
+/** A sequence, so the steps are numbered. */
+const STEPS = [
+  { title: "Save", body: "Tick the windows and tabs to keep and give them a name. They're saved in your browser; no account needed." },
+  { title: "Find", body: "Search every saved session by its name, a tab's title or its address." },
+  { title: "Reopen", body: "Open a whole session or only the tabs you tick, in new windows or the one you're in. Tabs you have open are never closed." },
 ] as const;
 
-const WORKS_TODAY = [
-  "Chrome extension: save current or all windows to local storage",
-  "Search saved sessions by name, tab title or URL",
-  "Restore into new windows with a preview, a per-tab result summary and retry for tabs that failed",
-  "Rename, delete with confirmation, and export or import sessions as JSON",
-  "Automatic local recovery checkpoints you can inspect and restore",
-  "Account sign-in, device pairing and opt-in saved-session sync between computers",
-  "Workspaces that group sessions, synced between browsers and filterable on the web",
-];
+/** The last one is a limit, not a promise, and is marked differently. */
+const PRIVACY = [
+  "Saved sessions stay in your browser. Sync is off until you turn it on.",
+  "Turning sync on shows exactly which sessions will upload before anything is sent.",
+  "Automatic recovery checkpoints keep a copy of what's open, and never leave your computer.",
+  "SessionHub never reads cookies, passwords or page content.",
+] as const;
 
-const COMING_NEXT = [
-  "Side panel for navigating open tabs",
-  "Richer session filters, tags and bulk actions",
-];
-
-function StatusList({ title, icon, items }: { title: string; icon: ReactNode; items: string[] }) {
-  return (
-    <div className="rounded-xl border border-line bg-surface p-5">
-      <h3 className="flex items-center gap-2 text-sm font-semibold">
-        {icon}
-        {title}
-      </h3>
-      <ul className="mt-3 space-y-2 text-[13px] text-fg-muted">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
+/**
+ * The public landing page (docs/UI_UX_DESIGN.md 18o): the product as it looks, how it works and
+ * where data lives. Getting the extension comes first; an account is optional, for sync.
+ */
 export default function HomePage() {
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 sm:px-8">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 py-6">
-        <div className="flex items-center gap-2.5">
-          <span aria-hidden="true" className="grid size-8 place-items-center rounded-[9px] bg-brand font-extrabold text-on-brand">
-            S
-          </span>
-          <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
-        </div>
-        <nav aria-label="Account" className="flex items-center gap-2">
-          <span className="hidden items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-fg-muted sm:inline-flex">
-            <HardDrive aria-hidden="true" className="size-3.5" />
-            Early preview
-          </span>
-          <ThemeToggle />
-          <Link href="/login" className="rounded-lg px-3 py-2 text-[13px] font-semibold whitespace-nowrap hover:bg-surface-muted">
-            Sign in
-          </Link>
-          <Link href="/signup" className="rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold whitespace-nowrap text-on-brand hover:bg-brand-hover">
-            Create account
-          </Link>
-        </nav>
-      </header>
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 pt-6 sm:px-8">
+      <PublicHeader signIn />
 
-      <main className="flex-1 py-10 sm:py-16">
-        <section aria-labelledby="hero-heading" className="max-w-2xl">
-          <h1 id="hero-heading" className="text-3xl font-bold tracking-tight sm:text-[40px] sm:leading-tight">
-            Keep your browser context safe, searchable, and ready to reopen.
-          </h1>
-          <p className="mt-4 text-[15px] leading-relaxed text-fg-muted">
-            SessionHub saves your Chrome windows and tabs on your computer, lets you find them again, and restores them into new
-            windows when you need them. Optional account sync makes saved sessions available on your other computers.
-          </p>
-          <p className="mt-6 inline-flex items-start gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-[13px]">
-            <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand" />
-            The extension isn&apos;t on the Chrome Web Store yet. Developers can load it unpacked from this repository.
-          </p>
-        </section>
-
-        <section aria-label="Features" className="mt-12 grid gap-4 sm:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, body }) => (
-            <article key={title} className="rounded-xl border border-line bg-surface p-5">
-              <span className="grid size-9 place-items-center rounded-lg bg-brand-soft text-brand">
-                <Icon aria-hidden="true" className="size-[18px]" />
-              </span>
-              <h2 className="mt-4 text-sm font-semibold">{title}</h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{body}</p>
-            </article>
-          ))}
-        </section>
-
-        <section aria-labelledby="status-heading" className="mt-12">
-          <h2 id="status-heading" className="text-lg font-semibold tracking-tight">
-            Project status
-          </h2>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <StatusList title="Works today" icon={<CheckCircle2 aria-hidden="true" className="size-4 text-brand" />} items={WORKS_TODAY} />
-            <StatusList title="Coming next" icon={<Clock3 aria-hidden="true" className="size-4 text-warning" />} items={COMING_NEXT} />
+      <main className="flex-1">
+        <section aria-labelledby="hero-heading" className="grid items-center gap-10 py-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14 lg:py-20">
+          <div>
+            <h1 id="hero-heading" className="text-[40px] leading-[1.05] font-bold tracking-tight sm:text-5xl">
+              <span className="block">Save your windows.</span>
+              <span className="block">Find them again.</span>
+              <span className="block">Reopen them later.</span>
+            </h1>
+            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-fg-muted">
+              SessionHub keeps your Chrome windows and tabs on your computer, so a research rabbit hole, a client project or this
+              afternoon&apos;s reading is one click from coming back. Turn on sync to see them on your other computers too.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <a href={INSTALL_URL} className="inline-flex h-11 items-center rounded-lg bg-brand px-5 text-sm font-semibold text-on-brand hover:bg-brand-hover">
+                Get the extension
+              </a>
+              <Link href="/signup" className="inline-flex h-11 items-center rounded-lg border border-line bg-surface px-5 text-sm font-semibold hover:bg-surface-muted">
+                Create account
+              </Link>
+            </div>
+            <p className="mt-3 max-w-md text-xs leading-relaxed text-fg-muted">
+              Free and open source. It isn&apos;t on the Chrome Web Store yet, so for now it&apos;s built from the source. An account is
+              optional: you only need one for sync.
+            </p>
           </div>
+          <ProductPreview />
+        </section>
+
+        <section aria-labelledby="how-heading" className="border-t border-line py-14">
+          <h2 id="how-heading" className="text-2xl font-bold tracking-tight">
+            How it works
+          </h2>
+          <ol className="mt-8 grid gap-8 md:grid-cols-3">
+            {STEPS.map((step, index) => (
+              <li key={step.title} className="flex gap-4">
+                <span aria-hidden="true" className="text-3xl leading-none font-bold tabular-nums text-brand">
+                  {index + 1}
+                </span>
+                <span className="min-w-0">
+                  <h3 className="text-base font-semibold">{step.title}</h3>
+                  <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">{step.body}</p>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section aria-labelledby="privacy-heading" className="grid gap-8 border-t border-line py-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14">
+          <div>
+            <h2 id="privacy-heading" className="text-2xl font-bold tracking-tight">
+              Where your sessions live
+            </h2>
+            <p className="mt-3 max-w-md text-[13px] leading-relaxed text-fg-muted">
+              Plain answers about what SessionHub keeps and what it sends. The privacy policy at the bottom of this page has the details.
+            </p>
+          </div>
+          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface text-[13px]">
+            {PRIVACY.map((point) => (
+              <li key={point} className="flex items-start gap-3 px-4 py-3">
+                <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand" />
+                {point}
+              </li>
+            ))}
+            <li className="flex items-start gap-3 bg-warning-soft px-4 py-3">
+              <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+              <span>
+                <span className="font-semibold">No end-to-end encryption.</span> Whoever runs the server can read the sessions you sync.
+              </span>
+            </li>
+          </ul>
         </section>
       </main>
 
-      <footer className="border-t border-line py-6 text-xs text-fg-muted">
-        SessionHub does not offer end-to-end encryption. Sync shows what will upload before you turn it on.{" "}
-        <Link href="/privacy" className="underline">Privacy policy</Link>
+      <footer className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line py-6 text-xs text-fg-muted">
+        <p>SessionHub is an early preview.</p>
+        <nav aria-label="Site" className="flex gap-4">
+          <Link href="/privacy" className="hover:text-fg hover:underline">
+            Privacy policy
+          </Link>
+          <a href={SOURCE_URL} className="hover:text-fg hover:underline">
+            Source code
+          </a>
+        </nav>
       </footer>
     </div>
   );

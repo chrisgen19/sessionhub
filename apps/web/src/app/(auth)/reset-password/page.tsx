@@ -12,7 +12,7 @@ export default async function ResetPasswordPage(props: PageProps<"/reset-passwor
   if (!valid) {
     return (
       <>
-        <h1 className="text-xl font-bold tracking-tight">This link doesn&apos;t work anymore</h1>
+        <h1 className="text-2xl font-bold tracking-tight">This link doesn&apos;t work anymore</h1>
         <p className="mt-2 mb-5 text-[13px] text-fg-muted">
           Reset links work for 1 hour and only once. Your password hasn&apos;t changed. Ask for a new link to try again.
         </p>
@@ -27,7 +27,7 @@ export default async function ResetPasswordPage(props: PageProps<"/reset-passwor
   }
   return (
     <>
-      <h1 className="text-xl font-bold tracking-tight">Choose a new password</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Choose a new password</h1>
       <p className="mt-1 mb-6 text-[13px] text-fg-muted">Use one you don&apos;t use anywhere else.</p>
       <ResetPasswordForm token={token} />
     </>

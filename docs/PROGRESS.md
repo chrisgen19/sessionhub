@@ -24,6 +24,24 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-18 (website landing and sign-in pages) / Claude Code (Opus 5.5) / `feature/web-public-redesign` (macOS laptop, worktree `../sessionhub-public-redesign`, branched from `main` at `5ac96a5`)
+
+**PR #48 merged first** (the user's request, after its review fixes): as `5ac96a5`. `main`'s CI passed every job including `deploy`; production then answered `/api/health` 200 ok, `/` and `/login` 200, and a signed-out `/app` 307 to `/login?next=%2Fapp`.
+
+**Why:** the user asked for the landing and sign-in/sign-up pages to get the dashboard's treatment. Their choices: a live product preview, "Get the extension" first, the form beside what an account is for, "How it works" and privacy instead of the status lists. Spec: `docs/UI_UX_DESIGN.md` 18o (18b superseded).
+
+**Changed (apps/web only):**
+- New `components/brand.tsx` (the three copies of the mark: dashboard shell, landing, auth), `components/public/public-header.tsx`, `components/public/product-preview.tsx`, `components/auth/account-panel.tsx`, `lib/links.ts`.
+- `app/page.tsx` (landing), `app/(auth)/layout.tsx` (form + panel), auth page headings 24 px, `app/privacy/page.tsx` (shared header; text unchanged).
+- `components/sessions/site-mark.tsx` split out of `window-tree.tsx` so the preview uses the real mark; `components/dashboard/app-shell.tsx` uses `Brand`.
+- New `e2e/public-pages.spec.ts`: the hero's install link, Create account and Sign in; the preview is one inert image with nothing focusable; the encryption limit is listed; one Privacy policy link; the account panel beside the form, after it at 375 px, no overflow.
+
+**Verified:** `pnpm --filter @sessionhub/web lint`, `typecheck`: pass. `test`: 14 files, 82 tests. `pnpm build --filter=@sessionhub/web` then `test:e2e`: **60 passed**. Screenshots at 1920, 1440 and 390 px, light and dark; `scrollWidth` 375 at 375 px on `/`, `/login`, `/signup`, `/forgot-password`, `/privacy`.
+
+**Not changed, worth a look:** the privacy page still says "There is no public cloud deployment yet", but the app is deployed at `https://sessionhub.cgdev.site`. Policy text is the operator's to word, so it was left as it is.
+
+**Next step:** review and merge this PR (it deploys the web app).
+
 ### 2026-10-18 (web dashboard redesign) / Claude Code (Opus 5.5) / `feature/web-redesign` (macOS laptop, worktree `../sessionhub-web-redesign`, branched from `main` at `335cb44`, then merged `main` at `e7d7398` (#46, #47))
 
 **Why:** the user asked for the website app to get the extension manager's structure and UX (#43 to #45). Their choices: the dashboard first (landing and sign-in pages next), list rail + detail for Saved sessions, an Overview of things to act on, no top bar; colors and type kept. Spec: `docs/UI_UX_DESIGN.md` 18n (section 8 superseded, section 9 implemented).
