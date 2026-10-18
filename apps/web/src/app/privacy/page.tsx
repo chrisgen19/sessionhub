@@ -9,7 +9,7 @@ export default function PrivacyPage() {
       <PublicHeader />
       <main className="mt-10 text-sm leading-7">
         <h1 className="text-3xl font-bold">Privacy policy</h1>
-        <p className="mt-2 text-fg-muted">Updated October 17, 2026. Applies to the SessionHub Chrome extension and web app.</p>
+        <p className="mt-2 text-fg-muted">Updated October 18, 2026. Applies to the SessionHub Chrome extension and web app.</p>
         <p className="mt-4 rounded-lg border border-line p-4">
           SessionHub is a development preview. There is no public cloud deployment yet. Before opening a hosted service,
           its operator must publish a private support/deletion contact, hosting providers and backup retention here.
@@ -29,7 +29,8 @@ export default function PrivacyPage() {
           stored in the extension, hashed on the server and excluded from session exports.</p>
         <p>Connecting a browser does not enable sync. Enabling it requires an upload preview and confirmation. Selected saved
           sessions move into the account; while sync is on, newly saved and imported sessions upload too. Uploaded data includes
-          session names, tab titles, complete URLs, groups, order, pinned state, timestamps and device provenance. Account data
+          session names, tab titles, complete URLs, groups, order, pinned state, window size, position and state, timestamps and
+          device provenance. Account data
           and previous versions are stored on the server. Automatic recovery checkpoints never upload.</p>
         <p>URLs can contain private paths, search terms and access tokens. Site exclusions and query-parameter stripping are
           not implemented. The upload preview selects whole sessions, not individual URLs. Inspect and remove sensitive tabs

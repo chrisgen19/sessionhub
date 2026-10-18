@@ -81,6 +81,29 @@ describe("restoreBrowserWindow placement", () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(outcomes).toEqual([{ sourceTabId: "t0", status: "failed", error: "Browser is shutting down" }]);
   });
+
+  it("switches a window Chrome opened normal to full screen (macOS), and only then", async () => {
+    let opened: "normal" | "fullscreen" = "normal";
+    vi.spyOn(browser.windows, "create").mockImplementation(async () => ({ id: 1, state: opened, tabs: [{ id: 10 }] }) as Browser.windows.Window);
+    const update = vi.spyOn(browser.windows, "update").mockImplementation(async () => ({ id: 1, state: "fullscreen" }) as Browser.windows.Window);
+    await restoreBrowserWindow(planned({ state: "fullscreen" }), record);
+    expect(update.mock.calls).toEqual([[1, { state: "fullscreen" }]]);
+
+    update.mockClear();
+    opened = "fullscreen";
+    await restoreBrowserWindow(planned({ state: "fullscreen" }), record);
+    opened = "normal";
+    await restoreBrowserWindow(planned({ state: "maximized" }), record);
+    await restoreBrowserWindow(planned({ state: "normal", bounds }), record);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("still opens the tabs when Chrome won't switch the window to full screen", async () => {
+    vi.spyOn(browser.windows, "create").mockImplementation(async () => ({ id: 1, state: "normal", tabs: [{ id: 10 }] }) as Browser.windows.Window);
+    vi.spyOn(browser.windows, "update").mockRejectedValue(new Error("Fullscreen is not supported"));
+    const outcomes = await restoreBrowserWindow(planned({ state: "fullscreen" }), record);
+    expect(outcomes).toEqual([{ sourceTabId: "t0", status: "opened" }]);
+  });
 });
 
 describe("savedOnThisBrowser", () => {

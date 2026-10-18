@@ -53,12 +53,12 @@ test("windows reopen at their saved size and position, maximized stays maximized
     const tabIds = await worker.evaluate(async (site) => {
       const normal = await chrome.windows.create({ url: `${site}/placed`, left: 40, top: 30, width: 600, height: 420, focused: true });
       const maximized = await chrome.windows.create({ url: `${site}/maximized`, state: "maximized", focused: true });
-      await new Promise((resolve) => setTimeout(resolve, 500));
       return [normal!.tabs![0]!.id!, maximized!.tabs![0]!.id!];
     }, SITE);
+    // Window managers settle new windows asynchronously, so wait for both before saving.
+    await expect.poll(() => windowWith(worker, `${SITE}/placed`)).toMatchObject({ state: "normal", width: 600, height: 420 });
+    await expect.poll(async () => (await windowWith(worker, `${SITE}/maximized`))?.state).toBe("maximized");
     const savedNormal = await windowWith(worker, `${SITE}/placed`);
-    expect(savedNormal).toMatchObject({ state: "normal", width: 600, height: 420 });
-    expect((await windowWith(worker, `${SITE}/maximized`))?.state).toBe("maximized");
 
     const saved = await send(manager, { type: "session.capture", scope: { kind: "tabs", tabIds }, name: "Placed windows" });
     expect(saved.ok).toBe(true);
@@ -90,6 +90,36 @@ test("windows reopen at their saved size and position, maximized stays maximized
     expect(reopened).toMatchObject({ ok: true, data: { job: { status: "completed" } } });
     await expect.poll(() => windowWith(worker, `${SITE}/placed`)).not.toBeNull();
     expect((await windowWith(worker, `${SITE}/placed`))!.left).toBeLessThan(800);
+  } finally {
+    await context.close();
+    await rm(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("a full-screen window reopens full screen", async () => {
+  const userDataDir = await mkdtemp(path.join(tmpdir(), "sessionhub-fullscreen-"));
+  const context = await launchWithExtension(userDataDir, [], { realWindows: true });
+  try {
+    const worker = await getServiceWorker(context);
+    const manager = await context.newPage();
+    await manager.goto(`chrome-extension://${new URL(worker.url()).host}/manager.html`);
+
+    // Opened, then switched: macOS ignores a full-screen state given when a window is created.
+    const tabId = await worker.evaluate(async (site) => {
+      const created = await chrome.windows.create({ url: `${site}/fullscreen`, focused: true });
+      await chrome.windows.update(created!.id!, { state: "fullscreen" });
+      return created!.tabs![0]!.id!;
+    }, SITE);
+    await expect.poll(async () => (await windowWith(worker, `${SITE}/fullscreen`))?.state).toBe("fullscreen");
+
+    const saved = await send(manager, { type: "session.capture", scope: { kind: "tabs", tabIds: [tabId] }, name: "Full screen" });
+    expect(saved.ok).toBe(true);
+    const windowId = (await windowWith(worker, `${SITE}/fullscreen`))!.id!;
+    await worker.evaluate((id) => chrome.windows.remove(id), windowId);
+    await expect.poll(() => windowWith(worker, `${SITE}/fullscreen`)).toBeNull();
+
+    expect(await send(manager, { type: "restore.start", sessionId: saved.data!.sessionId })).toMatchObject({ ok: true });
+    await expect.poll(async () => (await windowWith(worker, `${SITE}/fullscreen`))?.state).toBe("fullscreen");
   } finally {
     await context.close();
     await rm(userDataDir, { recursive: true, force: true });
