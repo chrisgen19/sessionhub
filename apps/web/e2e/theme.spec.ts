@@ -58,11 +58,17 @@ test("light by default on a dark system; the choice applies before the first pai
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test("the dashboard's top bar has the toggle", async ({ browser }) => {
+test("the dashboard has the toggle: in the sidebar, and in the top bar on a phone", async ({ browser }) => {
   const context = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-for": randomIp() } });
   const { page } = await signUp(context, { confirm: false });
-  const theme = page.getByRole("banner").getByRole("group", { name: "Theme" });
-  await expect(theme.getByRole("radio", { name: "Light" })).toBeChecked();
-  await choose(page, theme, "Dark", "dark");
+  const sidebar = page.getByRole("complementary").getByRole("group", { name: "Theme" });
+  await expect(sidebar.getByRole("radio", { name: "Light" })).toBeChecked();
+  await choose(page, sidebar, "Dark", "dark");
+
+  // A phone has no sidebar; its top bar's toggle shows the same choice and changes it.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const topBar = page.getByRole("banner").getByRole("group", { name: "Theme" });
+  await expect(topBar.getByRole("radio", { name: "Dark" })).toBeChecked();
+  await choose(page, topBar, "Light", "light");
   await context.close();
 });

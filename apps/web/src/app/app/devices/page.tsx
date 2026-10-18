@@ -1,9 +1,9 @@
 import { MonitorSmartphone } from "lucide-react";
 import type { Metadata } from "next";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-parts";
+import { EmptyState, PageBody, PageHeader } from "@/components/dashboard/page-parts";
 import { RevokeDeviceButton } from "@/components/devices/revoke-device-button";
 import { getPrisma } from "@sessionhub/database/client";
-import { formatRelative } from "@/lib/format";
+import { formatRelativeInline } from "@/lib/format";
 import { listDevices } from "@/server/queries/dashboard";
 import { requireSession } from "@/server/session";
 
@@ -15,7 +15,7 @@ export default async function DevicesPage() {
   const now = new Date();
 
   return (
-    <>
+    <PageBody>
       <PageHeader title="Devices" description="Your devices are browser installations connected to this account." />
       {devices.length === 0 ? (
         <EmptyState icon={MonitorSmartphone} title="No devices connected yet">
@@ -31,7 +31,7 @@ export default async function DevicesPage() {
                 <p className="text-xs text-fg-muted">
                   {[device.browser, device.platform].filter(Boolean).join(" · ") || "Browser"} ·{" "}
                   {/* "Last seen", never "online": there is no heartbeat (UI_UX_DESIGN.md section 8). */}
-                  {device.lastSeenAt ? `last seen ${formatRelative(device.lastSeenAt, now).toLowerCase()}` : "not seen yet"}
+                  {device.lastSeenAt ? `last seen ${formatRelativeInline(device.lastSeenAt, now)}` : "not seen yet"}
                 </p>
               </div>
               {device.revokedAt ? (
@@ -46,6 +46,6 @@ export default async function DevicesPage() {
       <p className="mt-4 text-xs leading-relaxed text-fg-muted">
         Disconnecting a device blocks its access to this account right away. It never erases sessions already saved on that computer.
       </p>
-    </>
+    </PageBody>
   );
 }

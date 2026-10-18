@@ -6,7 +6,7 @@ import { formatRelative, initials, plural } from "@/lib/format";
 import type { ConnectionStatus } from "@/server/queries/dashboard";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BottomNav, SidebarNav } from "./nav-links";
-import { TopSearch } from "./top-search";
+import { SearchShortcut } from "./search-shortcut";
 import { VerifyEmailBanner } from "./verify-email-banner";
 
 interface AppShellProps {
@@ -25,6 +25,14 @@ function Brand() {
       </span>
       <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
     </Link>
+  );
+}
+
+function Avatar({ name }: { name: string }) {
+  return (
+    <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-on-brand">
+      {initials(name)}
+    </span>
   );
 }
 
@@ -50,51 +58,60 @@ function ConnectionNote({ connection }: { connection: ConnectionStatus }) {
   );
 }
 
-/** Signed-in dashboard frame (docs/UI_UX_DESIGN.md section 8 and 14). */
+/**
+ * Signed-in dashboard frame, laid out like the extension manager (docs/UI_UX_DESIGN.md 18n): a
+ * sidebar with navigation, connection, theme and account; no top bar, so pages get the full
+ * height. Narrower than 1024px: a slim header and a bottom tab bar instead.
+ */
 export function AppShell({ user, askToVerify, connection, children }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-canvas text-fg lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="min-h-screen bg-canvas text-fg lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
       <aside className="hidden border-r border-line bg-surface px-3.5 py-6 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:gap-7">
         <div className="px-2">
           <Brand />
         </div>
         <SidebarNav />
-        <div className="mt-auto space-y-3 border-t border-line px-2 pt-4">
+        <div className="mt-auto space-y-4 border-t border-line px-2 pt-4">
           <ConnectionNote connection={connection} />
-          <form action={signOutAction}>
-            <button type="submit" className="flex items-center gap-2 text-xs font-semibold text-fg-muted hover:text-fg">
-              <LogOut aria-hidden="true" className="size-3.5" />
-              Sign out
-            </button>
-          </form>
-        </div>
-      </aside>
-
-      <div className="min-w-0 pb-16 lg:pb-0">
-        <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-3 lg:flex-nowrap lg:px-8">
-          <div className="lg:hidden">
-            <Brand />
-          </div>
-          <div className="order-last w-full lg:order-none lg:w-auto lg:flex-1">
-            <TopSearch />
-          </div>
-          <div className="ml-auto">
-            <ThemeToggle />
-          </div>
           <Link
             href="/app/settings"
             title={`${user.name} (${user.email})`}
             aria-label={`Account settings for ${user.name}`}
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-on-brand"
+            className="flex min-w-0 items-center gap-2.5 rounded-lg hover:opacity-80"
           >
-            {initials(user.name)}
+            <Avatar name={user.name} />
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-semibold">{user.name}</span>
+              <span className="block truncate text-[11px] text-fg-muted">{user.email}</span>
+            </span>
           </Link>
+          <div className="flex items-center justify-between gap-2">
+            <ThemeToggle />
+            <form action={signOutAction}>
+              <button type="submit" className="flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-semibold text-fg-muted hover:bg-surface-muted hover:text-fg">
+                <LogOut aria-hidden="true" className="size-3.5" />
+                Sign out
+              </button>
+            </form>
+          </div>
+        </div>
+      </aside>
+
+      <div className="flex min-h-screen min-w-0 flex-col pb-16 lg:h-screen lg:pb-0">
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 lg:hidden">
+          <Brand />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Link href="/app/settings" title={`${user.name} (${user.email})`} aria-label={`Account settings for ${user.name}`}>
+              <Avatar name={user.name} />
+            </Link>
+          </div>
         </header>
-        <main className="mx-auto max-w-[1160px] px-4 py-6 sm:px-6 lg:px-9 lg:py-9">
-          {askToVerify && <VerifyEmailBanner email={user.email} />}
-          {children}
-        </main>
+        {askToVerify && <VerifyEmailBanner email={user.email} />}
+        {/* The scroll area from 1024px; `relative` keeps absolutely positioned sr-only text inside it. */}
+        <main className="relative min-h-0 flex-1 lg:overflow-y-auto">{children}</main>
       </div>
+      <SearchShortcut />
       <BottomNav />
     </div>
   );

@@ -16,6 +16,12 @@ export const formatRelative = (date: Date, now: Date = new Date(), locale = "en-
   });
 };
 
+/** formatRelative for mid-sentence use ("last seen just now", "updated Oct 14"): only the words lose their capital. */
+export const formatRelativeInline = (date: Date, now: Date = new Date(), locale = "en-US"): string => {
+  const text = formatRelative(date, now, locale);
+  return text === "Just now" || text === "Yesterday" ? text.toLowerCase() : text;
+};
+
 export const plural = (count: number, singular: string, pluralForm = `${singular}s`): string =>
   `${count.toLocaleString("en-US")} ${count === 1 ? singular : pluralForm}`;
 

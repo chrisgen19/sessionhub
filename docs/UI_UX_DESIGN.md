@@ -303,6 +303,8 @@ Desktop widths: 220–244 px navigation, fluid center minimum 420 px, right insp
 
 `*` Do **not** label a device active based solely on registration; only show `Online` with a defined heartbeat. Otherwise use `Last seen`.
 
+**Superseded 2026-10-17 (18n):** no top bar (search lives in the Saved sessions list, Ctrl/Cmd+K still reaches it); the Overview has no number tiles.
+
 ### Overview layout rules
 
 - Main content max 1440 px, responsive padding 24–32 px.
@@ -312,6 +314,8 @@ Desktop widths: 220–244 px navigation, fluid center minimum 420 px, right insp
 - Dashboard should not hide Restore/Export behind excessive menus.
 
 ## 9. Saved Sessions page — master/detail layout
+
+**Implemented 2026-10-17 (18n)** as a list rail and the open session, like the extension manager (18l); bulk selection, sort and versions aren't built yet.
 
 ```text
 ┌────────────────┬────────────────────────────────────┬─────────────────────────────┐
@@ -700,6 +704,23 @@ The user's request: fix the view's layout and structure and add relevant feature
   - **Save and close** saves the ticked tabs under the panel's name, then closes them; if the save fails, nothing closes and the save bar shows the error. It is disabled while a save is running, so one tick can't be saved twice. Afterwards: "Closed N tabs."
   - Tabs close one by one, so one already gone doesn't stop the rest. SessionHub's own pages are never listed, so the manager can't close itself.
 - Verified at 1920, 1440, 1180 and 390 px, light and dark, with a search, a hovered row and the confirmation; the popup's Save tab compared before and after.
+
+## 18n. Web dashboard redesign (2026-10-17)
+
+The user asked for the website's signed-in app to get the extension manager's structure (18l, 18m). Their choices: the dashboard first (landing and sign-in pages in a later PR), a list rail with the open session beside it, an Overview of things to act on, no top bar. Colors and type unchanged.
+
+- **Shell** (`components/dashboard/app-shell.tsx`): 232 px sidebar with navigation, then the connection note, the account (avatar, name, email; links to Settings; the email in its tooltip) and the theme toggle beside Sign out. No top bar. The email banner (region "Confirm your email") is a strip above the content. From 1024 px the content scrolls inside a `relative` `main` (sr-only text can't stretch the page, 18m); below that a slim header (brand, theme, account) and the bottom tab bar.
+- **Search:** in the Saved sessions list (`components/sessions/session-search.tsx`, `searchbox` "Search saved sessions", by name). Ctrl/Cmd+K from any page focuses it, or goes to Saved sessions first and focuses it there (`#search`; `components/dashboard/search-shortcut.tsx`).
+- **Saved sessions** (`/app/sessions`, `/app/sessions/<id>`; `sessions-split.tsx`, `sessions-rail.tsx`, `session-detail.tsx`):
+  - >=1280 px: list rail 360 px (400 px from 1536 px) | the open session, each scrolling on its own and `relative`. Narrower: the open session replaces the list, with "All sessions" back to it.
+  - Both pages render the list themselves (layouts can't read `searchParams`). Its search, view and workspace stay in the URL, and links into a session carry them (`/app/sessions/<id>?q=…`), so opening one keeps the list as it was; Delete returns to that list.
+  - The rail: "Saved sessions" (h1 with nothing open, h2 beside a session, whose title is then the h1), count, a line saying what is shown ("Sessions in “Alpha”."), search, Active/Archived, the workspace filter (`combobox` "Filter by workspace", so it never clashes with the session's own "Workspace" picker), rows with name and date, then workspace, tabs and source. The open row is `aria-current="page"`.
+  - Nothing open: "Select a session to see its windows and tabs."
+- **Open session:** title (h1, Pinned/Archived badges) with a rename pencil ("Rename"), and Export JSON, Open N links, Archive and Delete on the same row, wrapping on a phone. While renaming the title stays and the form opens under it, so a conflict shows the latest name next to the user's edit. Then the facts line, the workspace picker, a one-line note on reopening tabs through the extension, and the tree.
+- **Tab tree** (`window-tree.tsx`): one line per tab once the tree is >= 672 px (address in a `30cqw` column, as in 18l). Each web page has a **site mark**: the host's first letter on a tab-group color picked from the host (`lib/host-mark.ts`; grey and yellow left out for legibility; browser pages keep a globe). The website can't read Chrome's favicon cache, and a third-party icon service would learn which sites were saved.
+- **Overview:** "Welcome, Name", then one line "6 saved sessions · 80 tabs · 2 connected browsers" instead of number tiles. While no browser is connected, three numbered setup steps (Add the extension, Connect this account, Turn on sync; they are a sequence). Then "Recently updated" (six sessions, each opening beside the list) and, beside it, "Browsers" (last seen, never "online") and "Workspaces" (sessions per workspace, each linking to the filtered list).
+- **Devices, Settings, pair:** unchanged content inside the shared page padding (`PageBody`). Dates mid-sentence keep their capital ("last seen Oct 16"; `formatRelativeInline`).
+- Verified at 1920, 1440 and 390 px, light and dark; Saved sessions skeleton while loading (`app/app/sessions/loading.tsx`).
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

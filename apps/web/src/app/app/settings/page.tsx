@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { signOutAction } from "@/app/(auth)/actions";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { ResendVerificationButton } from "@/components/auth/resend-verification-button";
-import { PageHeader } from "@/components/dashboard/page-parts";
+import { PageBody, PageHeader } from "@/components/dashboard/page-parts";
 import { getPrisma } from "@sessionhub/database/client";
 import { plural } from "@/lib/format";
 import { isMailEnabled } from "@/server/mail/deliver";
@@ -29,7 +29,7 @@ export default async function SettingsPage() {
   const memberSince = user.createdAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
   return (
-    <>
+    <PageBody>
       <PageHeader title="Settings" description="Your account, sync and privacy." />
       <div className="grid gap-4 lg:grid-cols-2">
         <Section title="Account">
@@ -78,6 +78,6 @@ export default async function SettingsPage() {
           </form>
         </Section>
       </div>
-    </>
+    </PageBody>
   );
 }

@@ -1,7 +1,12 @@
-import { CloudOff, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-export function PageHeader({ title, description, aside }: { title: string; description: string; aside?: ReactNode }) {
+/** Padding and a readable width for pages that aren't full-height (everything but Saved sessions). */
+export function PageBody({ children }: { children: ReactNode }) {
+  return <div className="mx-auto max-w-[1160px] px-4 py-6 sm:px-6 lg:px-9 lg:py-9">{children}</div>;
+}
+
+export function PageHeader({ title, description, aside }: { title: string; description: ReactNode; aside?: ReactNode }) {
   return (
     <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
       <div>
@@ -23,26 +28,36 @@ export function EmptyState({ icon: Icon, title, children }: { icon: LucideIcon; 
   );
 }
 
-/** Shown while no browser is connected, so an empty account isn't mistaken for lost sessions. */
+const SETUP_STEPS = [
+  { title: "Add the extension", body: "Install SessionHub in Chrome. It isn't on the Chrome Web Store yet; developers can load it unpacked." },
+  { title: "Connect this account", body: "In the extension's manager, open Account and choose Connect account, then approve the request here." },
+  { title: "Turn on sync", body: "Still in Account, turn on Sync. You see exactly which sessions upload before anything is sent." },
+] as const;
+
+/**
+ * Shown while no browser is connected, so an empty account isn't mistaken for lost sessions. The
+ * steps are numbered because they happen in that order.
+ */
 export function SyncNotice() {
   return (
-    <div className="mb-7 flex items-start gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
-      <CloudOff aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-      <p className="leading-relaxed text-fg-muted">
-        <span className="font-semibold text-fg">No browser is connected yet.</span> Sessions you save stay in the SessionHub extension
-        on that computer until you connect it to this account and turn on sync there (Account, then Sync). You see exactly what
-        uploads before anything is sent, and can turn sync off at any time.
+    <section aria-label="Get started" className="mb-8 rounded-xl border border-line bg-surface p-5">
+      <p className="text-[13px] leading-relaxed text-fg-muted">
+        <span className="font-semibold text-fg">No browser is connected yet.</span> Sessions you save stay in the extension on that computer
+        until you connect it and turn on sync. You can turn sync off at any time.
       </p>
-    </div>
-  );
-}
-
-export function StatTile({ label, value, foot }: { label: string; value: number; foot: string }) {
-  return (
-    <div className="rounded-xl border border-line bg-surface px-4 py-4">
-      <p className="text-xs text-fg-muted">{label}</p>
-      <p className="mt-2 text-[26px] leading-none font-bold tabular-nums">{value.toLocaleString("en-US")}</p>
-      <p className="mt-2 text-[11px] text-fg-muted">{foot}</p>
-    </div>
+      <ol className="mt-4 grid gap-4 sm:grid-cols-3">
+        {SETUP_STEPS.map((step, index) => (
+          <li key={step.title} className="flex gap-3">
+            <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full bg-brand-soft text-xs font-bold text-brand">
+              {index + 1}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-semibold">{step.title}</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-fg-muted">{step.body}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

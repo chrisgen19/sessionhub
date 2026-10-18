@@ -38,7 +38,7 @@ test("the sessions list filters by workspace, keeps the filter across views, and
   await api.session("Alpha research", alpha.id);
 
   await page.goto("/app/sessions");
-  const filter = page.getByRole("combobox", { name: "Workspace" });
+  const filter = page.getByRole("combobox", { name: "Filter by workspace" });
   await expect(filter.getByRole("option")).toHaveText(["All sessions", "Alpha (1)", "Beta (1)", "No workspace (1)"]);
   await expect(rows(page).filter({ hasText: "Alpha research" })).toContainText("Alpha");
 
@@ -66,7 +66,7 @@ test("a session moves between workspaces from its page; a change made elsewhere 
   const session = await api.session("Research");
 
   await page.goto(`/app/sessions/${session.id}`);
-  const select = page.getByRole("combobox", { name: "Workspace" });
+  const select = page.getByRole("combobox", { name: "Workspace", exact: true });
   await expect(select).toHaveValue("");
   await select.selectOption(alpha.id);
   await expect(page.getByText(/version 2$/)).toBeVisible();
@@ -80,13 +80,13 @@ test("a session moves between workspaces from its page; a change made elsewhere 
   await expect(select).toHaveValue(alpha.id);
   await page.getByRole("button", { name: "Load latest version" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Renamed elsewhere");
-  await page.getByRole("combobox", { name: "Workspace" }).selectOption(beta.id);
+  await page.getByRole("combobox", { name: "Workspace", exact: true }).selectOption(beta.id);
   await expect(page.getByText("Moved to “Beta”.")).toBeVisible();
 
   await page.goto(`/app/sessions?workspace=${beta.id}`);
   await expect(rows(page)).toHaveText([/Renamed elsewhere/]);
   await page.goto(`/app/sessions/${session.id}`);
-  await page.getByRole("combobox", { name: "Workspace" }).selectOption("");
+  await page.getByRole("combobox", { name: "Workspace", exact: true }).selectOption("");
   await expect(page.getByText("Moved out of its workspace.")).toBeVisible();
 });
 
@@ -95,7 +95,7 @@ test("without workspaces there is no filter, and the session page says where to 
   const session = await api.session("Solo");
   await page.goto("/app/sessions");
   await expect(rows(page)).toHaveCount(1);
-  await expect(page.getByRole("combobox", { name: "Workspace" })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Filter by workspace" })).toHaveCount(0);
   await page.goto(`/app/sessions/${session.id}`);
   await expect(page.getByText(/No workspaces yet\. Create them in the SessionHub extension/)).toBeVisible();
 });
@@ -105,9 +105,10 @@ test("filter and assignment fit a 390px screen", async ({ page }) => {
   const workspace = await api.workspace("A workspace with a rather long name for a phone screen", "green");
   const session = await api.session("A session with a long name that needs to wrap on a small screen", workspace.id);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of ["/app/sessions", `/app/sessions?workspace=${workspace.id}`, `/app/sessions/${session.id}`]) {
+  // The list's filter, then the session's own picker (a phone shows one or the other).
+  for (const [path, name] of [["/app/sessions", "Filter by workspace"], [`/app/sessions?workspace=${workspace.id}`, "Filter by workspace"], [`/app/sessions/${session.id}`, "Workspace"]] as const) {
     await page.goto(path);
-    await expect(page.getByRole("combobox", { name: "Workspace" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });

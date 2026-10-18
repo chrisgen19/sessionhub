@@ -10,12 +10,29 @@ export const parseWorkspaceFilter = (value: string | string[] | undefined, ownId
   return value === NO_WORKSPACE || ownIds.has(value) ? value : null;
 };
 
-/** The sessions list URL for a view, search and workspace filter (defaults left out). */
-export const sessionsHref = ({ archived, query, workspace }: { archived: boolean; query: string; workspace: string | null }): string => {
+export interface SessionsQuery {
+  query: string;
+  archived: boolean;
+  /** As requested: still to be checked against the user's workspaces (parseWorkspaceFilter). */
+  workspace: string | null;
+}
+
+/** The list's search, view and workspace from a page's `searchParams`, bounded but not yet checked. */
+export const readSessionsQuery = (params: Record<string, string | string[] | undefined>): SessionsQuery => ({
+  query: typeof params.q === "string" ? params.q.trim().slice(0, 200) : "",
+  archived: params.view === "archived",
+  workspace: typeof params.workspace === "string" ? params.workspace : null,
+});
+
+/**
+ * The sessions URL for a view, search and workspace filter (defaults left out). With `id`, that
+ * session open beside the same list, so opening one keeps the list as it was.
+ */
+export const sessionsHref = ({ archived, query, workspace, id }: { archived: boolean; query: string; workspace: string | null; id?: string }): string => {
   const params = new URLSearchParams({
     ...(archived ? { view: "archived" } : {}),
     ...(workspace ? { workspace } : {}),
     ...(query ? { q: query } : {}),
   });
-  return `/app/sessions${params.size ? `?${params}` : ""}`;
+  return `/app/sessions${id ? `/${encodeURIComponent(id)}` : ""}${params.size ? `?${params}` : ""}`;
 };

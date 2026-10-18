@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRelative, initials, plural } from "./format";
+import { formatRelative, formatRelativeInline, initials, plural } from "./format";
 
 describe("formatRelative", () => {
   const now = new Date("2026-10-16T12:00:00Z");
@@ -12,6 +12,13 @@ describe("formatRelative", () => {
     [new Date("2025-10-01T09:00:00Z"), "Oct 1, 2025"],
   ])("%s -> %s", (date, expected) => {
     expect(formatRelative(date, now)).toBe(expected);
+  });
+
+  it("mid-sentence, lowercases only the words, never a month", () => {
+    expect(formatRelativeInline(new Date("2026-10-16T11:59:30Z"), now)).toBe("just now");
+    expect(formatRelativeInline(new Date("2026-10-15T09:00:00Z"), now)).toBe("yesterday");
+    expect(formatRelativeInline(new Date("2026-10-16T11:55:00Z"), now)).toBe("5m ago");
+    expect(formatRelativeInline(new Date("2026-10-01T09:00:00Z"), now)).toBe("Oct 1");
   });
 });
 
