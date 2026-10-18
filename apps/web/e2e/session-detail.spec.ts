@@ -98,6 +98,11 @@ test("archive moves a session between the active and archived lists", async ({ p
   await expect(page.getByText("Archived. It's hidden from your active sessions.")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Archived");
 
+  // A plain URL (a bookmark from before the list rail) opens it beside the archived list, selected.
+  await page.goto(`/app/sessions/${session.id}`);
+  await expect(page.getByRole("navigation", { name: "Session views" }).getByRole("link", { name: "Archived" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("list", { name: "Saved sessions" }).getByRole("link", { name: /Old project/ })).toHaveAttribute("aria-current", "page");
+
   await page.goto("/app/sessions");
   await expect(page.getByRole("link", { name: /Old project/ })).toHaveCount(0);
   await page.getByRole("navigation", { name: "Session views" }).getByRole("link", { name: "Archived" }).click();

@@ -21,11 +21,14 @@ export default async function SessionDetailPage(props: PageProps<"/app/sessions/
   const detail = z.uuid().safeParse(id).success ? await getSessionDetail(getPrisma(), user.id, id) : null;
   if (!detail) notFound();
   const workspaces = await listWorkspaceChoices(getPrisma(), user.id);
+  // With no view in the URL (a bookmark from before the list rail, or a session archived here), show
+  // the list the session is in, so it stays selected and "All sessions" goes back to that list.
+  const list = params.view === undefined ? { ...request, archived: detail.isArchived } : request;
 
   return (
     <SessionsSplit
-      rail={<SessionsRail userId={user.id} request={request} selectedId={detail.id} />}
-      detail={<SessionDetail detail={detail} workspaces={workspaces} listHref={sessionsHref(request)} />}
+      rail={<SessionsRail userId={user.id} request={list} selectedId={detail.id} />}
+      detail={<SessionDetail detail={detail} workspaces={workspaces} listHref={sessionsHref(list)} />}
     />
   );
 }

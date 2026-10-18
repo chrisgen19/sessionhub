@@ -38,7 +38,16 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Found by the tests and fixed:** keeping the title visible while renaming (a conflict must show the latest name next to the user's edit); the sidebar account link's tooltip (the email truncates); action buttons overflowing a 390 px screen.
 
-**Verified:** `pnpm --filter @sessionhub/web lint`, `typecheck`: pass. `test`: 14 files, 82 tests. `pnpm build --filter=@sessionhub/web` then `test:e2e`: **58 passed** (sync specs with the real extension included). Screenshots on the dev server with a seeded account (6 sessions, 2 workspaces, 2 devices) at 1920, 1440 and 390 px, light and dark.
+**Verified** (in order, relative to merging `main` at `e7d7398`):
+- Before the merge, at `d40050d`: `pnpm --filter @sessionhub/web lint`, `typecheck`: pass. `test`: 14 files, 82 tests. `pnpm build --filter=@sessionhub/web` then `test:e2e`: **58 passed** (sync specs with the real extension included). Screenshots on the dev server with a seeded account (6 sessions, 2 workspaces, 2 devices) at 1920, 1440 and 390 px, light and dark.
+- After the merge, at `fcf6f94`: web `lint`, `typecheck` and `test` (82) re-run locally and passed; the full E2E suite was not re-run locally. PR #48's CI on `fcf6f94` passed `check`, `docker`, `e2e-extension`, `e2e-web` and `extension-zip`.
+- After the review fix below: web `lint`, `typecheck`, `test` (82), a production build, then `dashboard`, `session-detail` and `session-workspaces` E2E (16 passed, including the new archived-URL check).
+
+**PR #48 review, both valid and fixed:**
+- Codex (P2): an archived session opened by a plain URL (bookmarks from before the rail, whose archived list used such links) showed the Active rail without it, and "All sessions" went to the wrong list. With no `view` in the URL, `/app/sessions/<id>` now shows the list the session is in (`app/app/sessions/[id]/page.tsx`); `session-detail.spec.ts` checks it.
+- CodeRabbit (minor): this entry didn't say the E2E run predated the merge. Now it does.
+
+**Pending after merge:** the CI deploy of the merge commit, `/api/health` and the home page on production, then the by-hand checks in the PR's test plan.
 
 **Not done:** the landing and sign-in pages (next PR, as agreed). Bulk selection and sort in the list (spec section 9). The local `apps/web/AGENTS.md` that `next dev` generates is not committed.
 
