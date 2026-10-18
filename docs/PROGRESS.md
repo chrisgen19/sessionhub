@@ -24,6 +24,35 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-18 (web dashboard redesign) / Claude Code (Opus 5.5) / `feature/web-redesign` (macOS laptop, worktree `../sessionhub-web-redesign`, branched from `main` at `335cb44`, then merged `main` at `e7d7398` (#46, #47))
+
+**Why:** the user asked for the website app to get the extension manager's structure and UX (#43 to #45). Their choices: the dashboard first (landing and sign-in pages next), list rail + detail for Saved sessions, an Overview of things to act on, no top bar; colors and type kept. Spec: `docs/UI_UX_DESIGN.md` 18n (section 8 superseded, section 9 implemented).
+
+**Changed (apps/web only, no server or database changes):**
+- Shell: `components/dashboard/app-shell.tsx` (no top bar; account, theme and sign out in the sidebar; slim header below 1024 px; `relative` scroll area), `verify-email-banner.tsx` (strip), new `search-shortcut.tsx`; `top-search.tsx` removed.
+- Saved sessions: new `components/sessions/sessions-split.tsx`, `sessions-rail.tsx`, `session-search.tsx`, `session-detail.tsx`, `session-header.tsx` (replaces `session-actions.tsx`); `dashboard/session-list.tsx` removed; `app/app/sessions/page.tsx`, `[id]/page.tsx`, new `sessions/loading.tsx`; `workspace-filter.tsx` labelled "Filter by workspace".
+- Tab tree: `window-tree.tsx` (one-line rows, site marks), new `lib/host-mark.ts` (+ test).
+- Overview: `app/app/page.tsx`, new `components/dashboard/overview-parts.tsx`; `page-parts.tsx` (`PageBody`, numbered setup steps, stat tiles removed).
+- Devices, Settings, pair, not-found, loading, error: `PageBody`. `lib/format.ts` `formatRelativeInline`; `lib/workspace-filter.ts` `readSessionsQuery` and `sessionsHref({ id })` (+ tests).
+- E2E updated for the new structure: Overview summary and recent list, Ctrl+K from Overview, "Filter by workspace" (and exact "Workspace" on the detail page), the theme toggle in the sidebar and the phone's top bar. New: a session opens beside the list, which keeps its search; the page itself never scrolls at 1440 px.
+
+**Found by the tests and fixed:** keeping the title visible while renaming (a conflict must show the latest name next to the user's edit); the sidebar account link's tooltip (the email truncates); action buttons overflowing a 390 px screen.
+
+**Verified** (in order, relative to merging `main` at `e7d7398`):
+- Before the merge, at `d40050d`: `pnpm --filter @sessionhub/web lint`, `typecheck`: pass. `test`: 14 files, 82 tests. `pnpm build --filter=@sessionhub/web` then `test:e2e`: **58 passed** (sync specs with the real extension included). Screenshots on the dev server with a seeded account (6 sessions, 2 workspaces, 2 devices) at 1920, 1440 and 390 px, light and dark.
+- After the merge, at `fcf6f94`: web `lint`, `typecheck` and `test` (82) re-run locally and passed; the full E2E suite was not re-run locally. PR #48's CI on `fcf6f94` passed `check`, `docker`, `e2e-extension`, `e2e-web` and `extension-zip`.
+- After the review fix below: web `lint`, `typecheck`, `test` (82), a production build, then `dashboard`, `session-detail` and `session-workspaces` E2E (16 passed, including the new archived-URL check).
+
+**PR #48 review, both valid and fixed:**
+- Codex (P2): an archived session opened by a plain URL (bookmarks from before the rail, whose archived list used such links) showed the Active rail without it, and "All sessions" went to the wrong list. With no `view` in the URL, `/app/sessions/<id>` now shows the list the session is in (`app/app/sessions/[id]/page.tsx`); `session-detail.spec.ts` checks it.
+- CodeRabbit (minor): this entry didn't say the E2E run predated the merge. Now it does.
+
+**Pending after merge:** the CI deploy of the merge commit, `/api/health` and the home page on production, then the by-hand checks in the PR's test plan.
+
+**Not done:** the landing and sign-in pages (next PR, as agreed). Bulk selection and sort in the list (spec section 9). The local `apps/web/AGENTS.md` that `next dev` generates is not committed.
+
+**Next step:** review and merge this PR (it deploys the web app), then redesign the landing and sign-in pages.
+
 ### 2026-10-18 (Save a checkpoint as a session) / Claude Code (Opus 5.5) / `feature/save-checkpoint-as-session` (macOS laptop, branched from `main` at `335cb44`)
 
 **Goal (user request):** keep a recovery checkpoint permanently without the Export JSON + Import round trip.

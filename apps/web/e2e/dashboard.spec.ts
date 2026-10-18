@@ -66,7 +66,7 @@ test("shell navigation and honest empty states for a new account", async ({ page
   await expect(page.getByRole("main").getByText("No browser is connected yet.")).toBeVisible();
   await expect(page.getByRole("complementary")).toContainText("No browser connected");
   await expect(page.getByText(/isn't available yet/)).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Summary" }).getByText("0")).toHaveCount(3);
+  await expect(page.getByText("0 saved sessions · 0 tabs · 0 connected browsers")).toBeVisible();
   await expect(page.getByText("No synced sessions yet")).toBeVisible();
 
   await nav.getByRole("link", { name: "Saved sessions" }).click();
@@ -88,13 +88,12 @@ test("lists and search show only the signed-in user's sessions", async ({ page }
   await seedSessions(other.id, ["Other person's private research"]);
 
   await page.goto("/app");
-  const summary = page.getByRole("region", { name: "Summary" });
-  await expect(summary).toContainText("3");
-  await expect(summary).toContainText("33");
-  const recent = page.getByRole("list", { name: "Saved sessions" });
+  await expect(page.getByText("3 saved sessions · 33 tabs · 0 connected browsers")).toBeVisible();
+  const recent = page.getByRole("list", { name: "Recently updated sessions" });
   await expect(recent.getByRole("listitem")).toHaveCount(3);
   await expect(page.getByText("Other person's private research")).toHaveCount(0);
 
+  // Overview has no search: the shortcut goes to Saved sessions and focuses its search there.
   await page.keyboard.press("Control+k");
   const search = page.getByRole("searchbox", { name: "Search saved sessions" });
   await expect(search).toBeFocused();
@@ -150,4 +149,30 @@ test("mobile: bottom navigation, no sidebar, no horizontal overflow", async ({ p
   await bottom.getByRole("link", { name: "Sessions" }).click();
   await expect(page).toHaveURL(/\/app\/sessions$/);
   await expect(page.getByRole("complementary")).toBeHidden();
+});
+
+test("a session opens beside the list, which keeps its search; the page itself never scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  const { userId } = await signUp(page);
+  await seedSessions(userId, ["Frontend research", "Client Alpha review", "Research notes"]);
+
+  await page.goto("/app/sessions?q=research");
+  const list = page.getByRole("list", { name: "Saved sessions" });
+  await expect(list.getByRole("link")).toHaveCount(2);
+  await expect(page.getByText("Select a session to see its windows and tabs.")).toBeVisible();
+
+  await list.getByRole("link", { name: /Research notes/ }).click();
+  await expect(page).toHaveURL(/\/app\/sessions\/[0-9a-f-]+\?q=research$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Research notes");
+  // The list is still there, filtered as before, with the open session marked.
+  await expect(list.getByRole("link")).toHaveCount(2);
+  await expect(list.getByRole("link", { name: /Research notes/ })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("searchbox", { name: "Search saved sessions" })).toHaveValue("research");
+  // Only the panes scroll at this width (sr-only text once stretched the extension's page: PR #45).
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight)).toBe(0);
+
+  // The shortcut focuses the list's search right here.
+  await page.getByRole("heading", { level: 1 }).click();
+  await page.keyboard.press("Control+k");
+  await expect(page.getByRole("searchbox", { name: "Search saved sessions" })).toBeFocused();
 });
