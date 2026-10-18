@@ -11,7 +11,7 @@ export default async function ForgotPasswordPage() {
   await connection();
   return (
     <>
-      <h1 className="text-xl font-bold tracking-tight">Reset your password</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Reset your password</h1>
       {isMailEnabled() ? (
         <>
           <p className="mt-1 mb-6 text-[13px] text-fg-muted">Enter your account&apos;s email and we&apos;ll send you a link to choose a new password.</p>

@@ -13,7 +13,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
   if (await getCurrentSession()) redirect(next);
   return (
     <>
-      <h1 className="text-xl font-bold tracking-tight">Sign in</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Sign in</h1>
       <p className="mt-1 mb-6 text-[13px] text-fg-muted">Welcome back.</p>
       {searchParams.reset === "1" && (
         <div className="mb-4">

@@ -1,23 +1,21 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AccountPanel } from "@/components/auth/account-panel";
+import { PublicHeader } from "@/components/public/public-header";
 
+/**
+ * Sign in, sign up and password pages (docs/UI_UX_DESIGN.md 18o): the form on the left and, beside
+ * it, what an account is for. Narrower than 1024px the note follows the form.
+ */
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
-      <div className="absolute top-4 right-4">
-        <ThemeToggle />
+    <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-2">
+      <div className="flex flex-col px-4 pt-6 sm:px-8">
+        <PublicHeader />
+        <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10 lg:py-16">{children}</main>
       </div>
-      <Link href="/" className="mb-8 flex items-center gap-2.5" aria-label="SessionHub home">
-        <span aria-hidden="true" className="grid size-8 place-items-center rounded-[9px] bg-brand font-extrabold text-on-brand">
-          S
-        </span>
-        <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
-      </Link>
-      <main className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 shadow-sm sm:p-8">{children}</main>
-      <p className="mt-6 max-w-sm text-center text-xs leading-relaxed text-fg-muted">
-        An account is optional. The extension works fully without one; an account lets you sync saved sessions between your browsers.
-      </p>
+      <aside aria-label="About accounts" className="border-t border-line bg-surface px-4 py-10 sm:px-8 lg:flex lg:items-center lg:justify-center lg:border-t-0 lg:border-l">
+        <AccountPanel />
+      </aside>
     </div>
   );
 }

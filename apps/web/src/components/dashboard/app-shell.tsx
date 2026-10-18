@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { signOutAction } from "@/app/(auth)/actions";
 import { formatRelative, initials, plural } from "@/lib/format";
 import type { ConnectionStatus } from "@/server/queries/dashboard";
+import { Brand } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BottomNav, SidebarNav } from "./nav-links";
 import { SearchShortcut } from "./search-shortcut";
@@ -15,17 +16,6 @@ interface AppShellProps {
   askToVerify: boolean;
   connection: ConnectionStatus;
   children: ReactNode;
-}
-
-function Brand() {
-  return (
-    <Link href="/app" className="flex items-center gap-2.5" aria-label="SessionHub overview">
-      <span aria-hidden="true" className="grid size-8 place-items-center rounded-[9px] bg-brand font-extrabold text-on-brand">
-        S
-      </span>
-      <span className="text-[17px] font-bold tracking-tight">SessionHub</span>
-    </Link>
-  );
 }
 
 function Avatar({ name }: { name: string }) {
@@ -68,7 +58,7 @@ export function AppShell({ user, askToVerify, connection, children }: AppShellPr
     <div className="min-h-screen bg-canvas text-fg lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
       <aside className="hidden border-r border-line bg-surface px-3.5 py-6 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:gap-7">
         <div className="px-2">
-          <Brand />
+          <Brand href="/app" label="SessionHub overview" />
         </div>
         <SidebarNav />
         <div className="mt-auto space-y-4 border-t border-line px-2 pt-4">
@@ -99,7 +89,7 @@ export function AppShell({ user, askToVerify, connection, children }: AppShellPr
 
       <div className="flex min-h-screen min-w-0 flex-col pb-16 lg:h-screen lg:pb-0">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 lg:hidden">
-          <Brand />
+          <Brand href="/app" label="SessionHub overview" />
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Link href="/app/settings" title={`${user.name} (${user.email})`} aria-label={`Account settings for ${user.name}`}>

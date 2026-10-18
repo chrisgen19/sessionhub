@@ -537,6 +537,8 @@ Built so far: popup (search, Save window, Save all (N), recent sessions, Open ma
 
 `/signup` and `/login` use a centered card (brand mark, title, one-line purpose, fields with labels, inline per-field errors linked with `aria-describedby`, a form-level `role="alert"` message, `autocomplete` hints) and a note that an account is optional for the extension. Signed-in visitors are redirected to `/app` (a minimal "Signed in" page with sign-out until the dashboard shell exists). The landing header has Sign in and Create account. Verified at 1280 and 375 px and in dark mode.
 
+**Superseded 2026-10-18 (18o):** the card is now a form beside "What an account is for"; the landing header has Sign in only (its hero offers Create account).
+
 ## 18c. Web dashboard shell (2026-10-16)
 
 Built under `/app` with a shared signed-in layout: 240 px sidebar (Overview, Saved sessions, Devices, Settings; "Sync off" with "Cloud sync isn't available yet. Nothing has been uploaded."; Sign out), top bar with search (Ctrl+K, or Cmd+K on Apple platforms, focuses it; ignored while typing in another field) and an initials avatar linking to Settings. Below 1024 px the sidebar is replaced by a fixed bottom tab bar and the search moves under the brand row. Deliberate deviations:
@@ -721,6 +723,20 @@ The user asked for the website's signed-in app to get the extension manager's st
 - **Overview:** "Welcome, Name", then one line "6 saved sessions · 80 tabs · 2 connected browsers" instead of number tiles. While no browser is connected, three numbered setup steps (Add the extension, Connect this account, Turn on sync; they are a sequence). Then "Recently updated" (six sessions, each opening beside the list) and, beside it, "Browsers" (last seen, never "online") and "Workspaces" (sessions per workspace, each linking to the filtered list).
 - **Devices, Settings, pair:** unchanged content inside the shared page padding (`PageBody`). Dates mid-sentence keep their capital ("last seen Oct 16"; `formatRelativeInline`).
 - Verified at 1920, 1440 and 390 px, light and dark; Saved sessions skeleton while loading (`app/app/sessions/loading.tsx`).
+
+## 18o. Website landing and sign-in pages (2026-10-18)
+
+The user asked for the landing and sign-in/sign-up pages to get the dashboard's treatment (18n). Their choices: a live product preview in the hero, "Get the extension" as the main button, the form beside what an account is for, and "How it works" plus privacy instead of the project-status lists. Colors and type unchanged.
+
+- **Shared:** `components/brand.tsx` (the mark, used by the dashboard, landing, auth and privacy pages) and `components/public/public-header.tsx` (brand and theme; "Sign in" on the landing page). The privacy page uses that header; its text is unchanged.
+- **Landing** (`app/page.tsx`):
+  - Hero: "Save your windows. / Find them again. / Reopen them later." (three lines, the type is the visual), one paragraph, **Get the extension** (primary, to the README's build and load steps, `lib/links.ts`) and **Create account**, and a line saying it's free, open source, not on the Chrome Web Store yet, and that an account is only for sync.
+  - Beside it, `components/public/product-preview.tsx`: Saved sessions as they look (the list rail beside a session's window with a tab group, site marks and workspace dots) with sample data. `role="img"` with a description, its content `inert`, so it is one image to assistive technology and nothing in it can be focused. `inert` on the image itself would hide it and its description (PR #49 review, checked in Chrome's accessibility tree). Below a 576 px container, only the session's tabs.
+  - "How it works": Save, Find, Reopen, numbered because they are a sequence.
+  - "Where your sessions live": four facts with checks, then the limit marked differently: "No end-to-end encryption. Whoever runs the server can read the sessions you sync."
+  - Footer: "SessionHub is an early preview.", Privacy policy (the page's only link by that name) and Source code.
+- **Sign in, sign up, password pages** (`app/(auth)/layout.tsx`, `components/auth/account-panel.tsx`): from 1024 px the form (in `main`, headings 24 px) is on the left and an `aside` "About accounts" on the right: sync between computers, optional, you choose what uploads (checkpoints never do), disconnect any time. Narrower, the panel follows the form. Fields, errors and buttons are unchanged.
+- Verified at 1920, 1440 and 390 px, light and dark; no horizontal overflow at 375 px on any public page (`e2e/public-pages.spec.ts`).
 
 ## 18h. Web workspaces on Saved sessions (2026-10-17)
 

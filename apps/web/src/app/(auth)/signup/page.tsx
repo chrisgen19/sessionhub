@@ -11,7 +11,7 @@ export default async function SignUpPage(props: PageProps<"/signup">) {
   if (await getCurrentSession()) redirect(next);
   return (
     <>
-      <h1 className="text-xl font-bold tracking-tight">Create your account</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Create your account</h1>
       <p className="mt-1 mb-6 text-[13px] text-fg-muted">Use it later to sync saved sessions between your computers.</p>
       <SignUpForm next={next} />
     </>
