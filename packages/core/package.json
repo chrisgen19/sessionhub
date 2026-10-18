@@ -13,6 +13,7 @@
     "./session-edit": "./src/session-edit.ts",
     "./session-export": "./src/session-export.ts",
     "./session-import": "./src/session-import.ts",
+    "./session-organize": "./src/session-organize.ts",
     "./session-structure": "./src/session-structure.ts",
     "./session-summary": "./src/session-summary.ts",
     "./theme": "./src/theme.ts",

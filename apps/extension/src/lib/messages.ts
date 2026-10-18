@@ -6,6 +6,7 @@ import { IMPORT_MAX_BYTES, type ImportReport } from "@sessionhub/core/session-im
 import type { AccountStatus, PairingOutcome } from "./account-service";
 import type { SyncSummary } from "./sync-runner";
 import type { RestoreJobRecord } from "./db";
+import type { BulkResult } from "./session-organize";
 
 /**
  * Where a restore opens its tabs. Absent means `new-windows` (the behaviour before targets existed).
@@ -18,6 +19,14 @@ const restoreTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("this-window"), windowId: z.int(), skipOpen: z.boolean() }),
 ]);
 export type RestoreTarget = z.infer<typeof restoreTargetSchema>;
+
+/** One change applied to every selected session (the manager's bulk bar). */
+const bulkActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("delete") }),
+  z.object({ kind: z.literal("archive"), archived: z.boolean() }),
+  z.object({ kind: z.literal("tag"), tag: z.string().max(SESSION_LIMITS.tagMax * 2), add: z.boolean() }),
+  z.object({ kind: z.literal("assign"), workspaceId: z.uuid().nullable() }),
+]);
 
 /**
  * Commands from extension pages to the background worker. The worker is the single
@@ -89,6 +98,18 @@ export const commandSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("workspace.delete"), workspaceId: z.uuid() }),
   z.object({ type: z.literal("session.assign"), sessionId: z.uuid(), workspaceId: z.uuid().nullable() }),
+  // Organizing (docs/UI_UX_DESIGN.md 18p). Notes and tags are re-validated by the worker.
+  z.object({
+    type: z.literal("session.edit"),
+    sessionId: z.uuid(),
+    expectedVersion: z.int().positive(),
+    description: z.string().max(SESSION_LIMITS.descriptionMax * 2).nullable().optional(),
+    tags: z.array(z.string().max(SESSION_LIMITS.tagMax * 2)).max(SESSION_LIMITS.tagsMax * 2).optional(),
+    isPinned: z.boolean().optional(),
+    isArchived: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("session.duplicate"), sessionId: z.uuid() }),
+  z.object({ type: z.literal("session.bulk"), sessionIds: z.array(z.uuid()).min(1).max(10_000), action: bulkActionSchema }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
@@ -128,6 +149,10 @@ export interface CommandResults {
   /** Sessions that were in it, now in no workspace. */
   "workspace.delete": { moved: number };
   "session.assign": Record<string, never>;
+  "session.edit": { version: number };
+  /** The copy's id; `syncing` as for a capture. */
+  "session.duplicate": { sessionId: string; syncing: boolean };
+  "session.bulk": BulkResult;
 }
 
 export type ErrorCode =

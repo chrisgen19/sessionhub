@@ -23,6 +23,7 @@ const detail = (session: SavedSession, version: number, name: string): ApiSessio
   sourceDeviceName: "Chrome on Windows",
   isPinned: false,
   isArchived: false,
+  tags: [],
   version,
   tabCount: 4,
   windowCount: 2,

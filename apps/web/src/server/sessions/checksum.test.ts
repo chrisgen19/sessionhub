@@ -27,3 +27,11 @@ describe("contentChecksum", () => {
     expect(contentChecksum({ ...content, windows: [{ ...window!, state: "maximized" }] })).not.toBe(contentChecksum({ ...content, windows: [{ ...window!, state: "fullscreen" }] }));
   });
 });
+
+describe("contentChecksum and tags", () => {
+  it("counts tags only when there are some", () => {
+    expect(contentChecksum({ ...content, tags: [] })).toBe(contentChecksum(content));
+    expect(contentChecksum({ ...content, tags: ["work"] })).not.toBe(contentChecksum(content));
+    expect(contentChecksum({ ...content, tags: ["work"] })).not.toBe(contentChecksum({ ...content, tags: ["home"] }));
+  });
+});

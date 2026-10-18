@@ -12,15 +12,21 @@ export const SYNC_LIMITS = {
 } as const;
 
 /**
- * What a saved-session upsert carries: name, structure and optionally its workspace. An absent
- * `workspaceId` keeps the server's assignment (extensions without workspaces never send it), null
- * removes it, and an id must be a live workspace of the account (else `INVALID_WORKSPACE`). The
- * other web-only fields (description, pinned, archived) stay as they are.
+ * What a saved-session upsert carries: name, structure and optionally its workspace and organizing
+ * fields. An absent `workspaceId` keeps the server's assignment (extensions without workspaces never
+ * send it), null removes it, and an id must be a live workspace of the account (else
+ * `INVALID_WORKSPACE`). Likewise an absent `description`, `tags`, `isPinned` or `isArchived` keeps the
+ * server's value (extensions before 2026-10-18 never send them). This is a strict object, so the server
+ * must be deployed before an extension that sends them.
  */
 export const syncSessionPayloadSchema = z.strictObject({
   name: createSessionRequestSchema.shape.name,
   windows: createSessionRequestSchema.shape.windows,
   workspaceId: z.uuid().nullable().optional(),
+  description: createSessionRequestSchema.shape.description.unwrap().optional(),
+  tags: createSessionRequestSchema.shape.tags.unwrap().optional(),
+  isPinned: z.boolean().optional(),
+  isArchived: z.boolean().optional(),
 });
 export type SyncSessionPayload = z.infer<typeof syncSessionPayloadSchema>;
 

@@ -169,3 +169,22 @@ test("detail page fits a 375px screen", async ({ page }) => {
   await page.goto(`/app/sessions/${session.id}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
+
+test("a session's tags and notes show on its page and in the list, and pinned sessions come first", async ({ page }) => {
+  const session = await setup(page, "Tagged research");
+  const later = await page.request.post("/api/v1/sessions", { data: body("Newer, not pinned") });
+  expect(later.status()).toBe(201);
+  const updated = await page.request.patch(`/api/v1/sessions/${session.id}`, {
+    data: { expectedVersion: session.version, tags: ["work", "q4"], description: "Read before Friday", isPinned: true },
+  });
+  expect(updated.ok()).toBe(true);
+
+  await page.goto("/app/sessions");
+  const rows = page.getByRole("list", { name: "Saved sessions" }).getByRole("link");
+  await expect(rows.first()).toContainText("Pinned: Tagged research");
+  await expect(rows.first()).toContainText("work");
+  await rows.first().click();
+  const details = page.getByRole("article", { name: "Session details" });
+  await expect(details.getByText("Read before Friday")).toBeVisible();
+  await expect(details.getByText("q4", { exact: true })).toBeVisible();
+});

@@ -81,16 +81,23 @@ const acceptedOrRepeat = async (operation: PushOperation, write: () => Promise<W
   }
 };
 
-/** A session upload through the shared session mutations. An absent workspaceId keeps the server's. */
+/**
+ * A session upload through the shared session mutations. An absent workspaceId, description, tags,
+ * isPinned or isArchived keeps the server's (a create uses the defaults).
+ */
 const applySession = (tx: Tx, pusher: Pusher, sequence: bigint, operation: SessionOperation) =>
   acceptedOrRepeat(operation, async () => {
     if (operation.action === "delete") return deleteSessionInTx(tx, pusher.userId, sequence, operation.entityId, operation.expectedVersion);
     const source = { deviceId: pusher.deviceId, deviceName: pusher.deviceName };
-    const { name, windows, workspaceId } = operation.payload;
+    const { name, windows, workspaceId, description, tags, isPinned, isArchived } = operation.payload;
+    const create = {
+      id: operation.entityId, name, windows, workspaceId: workspaceId ?? null,
+      description: description ?? null, tags: tags ?? [], isPinned: isPinned ?? false, isArchived: isArchived ?? false,
+    };
     const { detail, sequence: written } =
       operation.expectedVersion === 0
-        ? await createSessionInTx(tx, pusher.userId, sequence, { id: operation.entityId, name, description: null, workspaceId: workspaceId ?? null, isPinned: false, windows }, source)
-        : await updateSessionInTx(tx, pusher.userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, windows, workspaceId }, source);
+        ? await createSessionInTx(tx, pusher.userId, sequence, create, source)
+        : await updateSessionInTx(tx, pusher.userId, sequence, operation.entityId, { expectedVersion: operation.expectedVersion, name, windows, workspaceId, description, tags, isPinned, isArchived }, source);
     return { version: detail.version, sequence: written };
   });
 

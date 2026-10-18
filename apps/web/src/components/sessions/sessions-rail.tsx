@@ -1,4 +1,4 @@
-import { Archive, FolderOpen, Layers, SearchX } from "lucide-react";
+import { Archive, FolderOpen, Layers, Pin, SearchX } from "lucide-react";
 import Link from "next/link";
 import { getPrisma } from "@sessionhub/database/client";
 import { ColorDot } from "@/components/dashboard/color-dot";
@@ -8,6 +8,7 @@ import { formatRelative, plural } from "@/lib/format";
 import { NO_WORKSPACE, parseWorkspaceFilter, sessionsHref, type SessionsQuery } from "@/lib/workspace-filter";
 import { listSessions, listWorkspaceFilters, SESSION_LIST_LIMIT, type SessionListItem, type WorkspaceChoice } from "@/server/queries/dashboard";
 import { SessionSearch } from "./session-search";
+import { SessionTags } from "./session-tags";
 
 interface SessionsRailProps {
   /** From the validated server session, never from the URL. */
@@ -64,8 +65,16 @@ function SessionRows({ sessions, selectedId, linkFor, workspaces }: ListProps) {
               className={`block space-y-0.5 px-4 py-3 hover:bg-surface-muted lg:px-6 xl:px-4 ${selected ? "bg-brand-soft shadow-[inset_3px_0_0_var(--sh-brand)]" : ""}`}
             >
               <span className="flex items-baseline gap-3">
-                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={session.name}>
-                  {session.name}
+                <span className="flex min-w-0 flex-1 items-center gap-1 text-[13px] font-semibold">
+                  {session.isPinned && (
+                    <>
+                      <Pin aria-hidden="true" className="size-3 shrink-0 text-brand" />
+                      <span className="sr-only">Pinned: </span>
+                    </>
+                  )}
+                  <span className="truncate" title={session.name}>
+                    {session.name}
+                  </span>
                 </span>
                 <span className="shrink-0 text-xs tabular-nums text-fg-muted">{formatRelative(session.updatedAt, now)}</span>
               </span>
@@ -81,6 +90,7 @@ function SessionRows({ sessions, selectedId, linkFor, workspaces }: ListProps) {
                   {plural(session.tabCount, "tab")} · {session.sourceDeviceName || "Unknown device"}
                 </span>
               </span>
+              {session.tags.length > 0 && <SessionTags tags={session.tags} limit={3} />}
             </Link>
           </li>
         );
@@ -102,7 +112,7 @@ export async function SessionsRail({ userId, request, selectedId }: SessionsRail
   const workspace = parseWorkspaceFilter(request.workspace ?? undefined, new Set(byId.keys()));
   const name = workspace && workspace !== NO_WORKSPACE ? byId.get(workspace)?.name : null;
   const scope = workspace === NO_WORKSPACE ? "in no workspace" : name ? `in “${name}”` : null;
-  const sessions = await listSessions(prisma, userId, { query, archived, workspace });
+  const sessions = await listSessions(prisma, userId, { query, archived, workspace, pinnedFirst: true });
   const Heading = selectedId ? "h2" : "h1";
 
   return (

@@ -479,6 +479,15 @@ Extension only, on the server side of 13f/13g. Code: `apps/extension/src/lib/wor
 
 Tested: `workspaces.test.ts` (16, against an in-memory stand-in for the sync endpoints), `workspaces-ui.test.tsx` (4), the v5 to v6 migration, and `apps/web/e2e/sync-workspaces.spec.ts` (two real extension profiles and the web).
 
+## 13k. Implemented: notes, tags, pinned and archived (2026-10-18)
+
+- **REST** (13a): create takes `tags` (default `[]`) and `isArchived` (default `false`); update takes `tags` (replaces them). Summaries and details return `tags` (clients default it to `[]` for older servers). Tags are normalized on write, so an exact create retry compares normalized content; the content checksum counts tags only when there are some, so existing checksums still match.
+- **Sync push** (13f): a session upsert may carry `description`, `tags`, `isPinned` and `isArchived`. **Absent keeps the server's value** (like `workspaceId`), so extensions from before 2026-10-18 never clear what the website set; a create uses the defaults. The payload is a strict object, so the **server must be deployed before an extension that sends these fields** (an older server answers `validation_error`).
+- **Pull and bootstrap** (13g): the extension stores the four fields from each detail (`toLocalSession`). A session cached before v7 learns any of them it doesn't have from the same version during the v7 rebuild, without overwriting what it knows (`sync-apply.ts`), as v6 did for the workspace.
+- **Extension:** a local edit uploads every field it knows; `session.edit`, `session.duplicate` and `session.bulk` start a sync like the other session commands (`SYNC_AFTER` in `entrypoints/background.ts`). Conflicts work as before (13i): the uploads are whole-session, so "keep mine" also re-sends this browser's notes, tags, pinned and archived.
+
+Tested: `apps/web/src/server/sync/push.db.test.ts` (3: create with and without the fields, absent keeps, bad values rejected), `sessions.db.test.ts` (2), `checksum.test.ts`, `apps/extension/src/lib/session-organize.test.ts` (downloads and the rebuild), and the two-profile E2E (set on one profile, read on the other, archived back).
+
 ## 14. References
 
 - [Chrome MV3 service-worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)

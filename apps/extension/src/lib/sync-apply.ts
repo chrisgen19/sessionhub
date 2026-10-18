@@ -37,6 +37,15 @@ export const writeServerSession = async (db: SessionHubDb, scope: AccountScope, 
 
 export type ApplyOutcome = "applied" | "held" | "skipped";
 
+/** The server's values for the fields this record doesn't know yet (stored before they existed). */
+const missingFields = (record: LocalSessionRecord, detail: ApiSessionDetail): Partial<LocalSessionRecord> => ({
+  ...(record.workspaceId === undefined && { workspaceId: detail.workspaceId }),
+  ...(record.description === undefined && { description: detail.description }),
+  ...(record.tags === undefined && { tags: detail.tags }),
+  ...(record.isPinned === undefined && { isPinned: detail.isPinned }),
+  ...(record.isArchived === undefined && { isArchived: detail.isArchived }),
+});
+
 /**
  * Applies one pulled change or bootstrap item. Anything it can't read (another entity type, a
  * payload that doesn't validate) is skipped, so one bad change can never block a page forever.
@@ -50,10 +59,11 @@ export const applyRemoteChange = async (db: SessionHubDb, scope: AccountScope, c
     detail = parsed.data;
   }
   const { entity, record } = await readLocalEntity(db, scope, change.entityId);
-  // A session cached before workspaces were stored learns its workspace from the same version
-  // (the v6 rebuild), even though the version itself is not new.
-  if (detail && record?.scope === scope && record.workspaceId === undefined && record.sync?.serverVersion === change.version) {
-    await db.sessions.update(record.id, { workspaceId: detail.workspaceId });
+  // A session cached before workspaces (v6) or the organizing fields (v7) were stored learns them
+  // from the same version (the rebuild), even though the version itself is not new.
+  if (detail && record?.scope === scope && record.sync?.serverVersion === change.version) {
+    const missing = missingFields(record, detail);
+    if (Object.keys(missing).length > 0) await db.sessions.update(record.id, missing);
   }
   const decision = reconcileRemoteChange(scope, entity, change);
   switch (decision.kind) {

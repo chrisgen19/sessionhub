@@ -13,7 +13,7 @@
 | Workspaces | **Working (M5, 2026-10-17, PR #18 and PR #19 merged).** Synced both ways between the web and the extension (account only, per-field merge, deletes win, deleting moves sessions out). Manager: switcher filter, Workspaces dialog (create, rename, recolor, delete), inspector assignment. Verified across two real extension profiles. Web: filter and assignment on Saved sessions. Not in the popup or side panel yet; no workspace management on the web |
 | Side panel, settings | Not implemented |
 | Web app | Landing page, **Better Auth email/password** (`/signup`, `/login`, `/api/auth/*`) on PostgreSQL with **password reset, email confirmation and change password** (Resend or Mailpit); **dashboard shell** at `/app` (Overview, Saved sessions with search, Devices, Settings) reading account-scoped data; **`/api/v1/sessions`** and **`/api/v1/workspaces`** CRUD with versions, tombstones and change log; **`/api/v1/devices`** list/rename/revoke; **session detail page** (tree, rename/archive/delete with conflict handling, export, open links); `GET /api/health` |
-| Database | **Schema, 4 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`, `window_placement`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
+| Database | **Schema, 5 migrations (`init`, `device_pairing_and_credentials`, `rate_limit_buckets`, `window_placement`, `session_tags`) + integration tests** (`packages/database`, Prisma 7.10.0, PostgreSQL 18 via Docker), used by the web app for auth, sessions, workspaces, devices and pairing |
 | Pairing | **Working.** Extension Account view -> `/app/pair` approval (signed in, confirmed email) -> rotating, hashed device credentials; revoke from the web Devices page or the extension; audit events |
 | Sync | **Complete for saved sessions** (two-profile E2E, incl. a real conflict): opt-in with upload preview (move, all ticked), status chip and per-session labels, `sync.now`, push with receipts, pull with HMAC cursors and bootstrap, `packages/sync` rules, conflict review (keep mine / keep the other version / keep both, plus the deleted, id-in-use and rejected cases). Workspaces and session assignments sync too (SYNC_PROTOCOL.md 13j) |
 | Deployment | **Production image + compose stack, database readiness and encrypted backup/restore drill.** `infra/docker/web.Dockerfile` (`runner`: Next.js standalone on `node:24-alpine`, non-root, `HEALTHCHECK` on `/api/health`; `migrate`: one-shot `prisma migrate deploy`), `infra/docker/compose.yaml` (postgres -> migrate -> web). Tested by `pnpm test:docker`. **Deployed** on Coolify at `https://sessionhub.cgdev.site` (DEPLOYMENT.md section 8); since 2026-10-17 13:28 UTC the CI `deploy` job deploys `main` itself, production at `9f442b3` |
@@ -23,6 +23,32 @@
 Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
+
+### 2026-10-18 (organizing saved sessions) / Claude Code (Opus 5.5) / `feature/session-organize` (macOS laptop, worktree `../sessionhub-session-organize`, branched from `main` at `5ac90fc`)
+
+**PR #51 merged first** (the user's go-ahead) as `5ac90fc`: production served it about 270 s after merge, `/api/health` 200 ok. The unpacked extension was rebuilt from `main`.
+
+**Why:** the next ROADMAP item, "advanced session inspector, tags/filters/sort/bulk select". The user's choices: the extension first, synced; free-form tags; Delete, Move to workspace, Tag and Archive in bulk; Notes, Duplicate, Site summary and Pin in the inspector.
+
+**Changed:**
+- Contracts: optional `description`, `tags`, `isPinned`, `isArchived` on `savedSessionSchema` (`SESSION_LIMITS` `descriptionMax` 2000, `tagsMax` 10, `tagMax` 32); create takes `tags` and `isArchived`, update takes `tags`, summaries return `tags` (default `[]`); the sync session payload may carry all four (absent keeps the server's).
+- Core: new `session-organize.ts` (normalize tags and notes, `editSessionDetails`, add/remove tag, `duplicateSession`, `sortSessions` with pinned first, `tagCounts`); `session-summary.ts` `topSites`, `duplicateTabIds`; search matches notes and tags; imports keep notes and tags.
+- Server: migration `20261018080000_session_tags` (`saved_sessions.tags text[]` default empty, additive); mutations write `tags` (normalized) and `isArchived` on create; checksum counts tags only when present; push passes the four fields through; the sessions list can put pinned first.
+- Extension: Dexie v7 (rebuild once, learn missing fields at the same version); uploads and downloads carry the fields; new `lib/session-organize.ts` (`editDetails`, `duplicate`, `bulkEdit` in one transaction) behind `session.edit`, `session.duplicate`, `session.bulk`, which start a sync like the other session commands; manager list controls, rows with checkboxes and Shift ranges, bulk bar and dialogs, inspector actions, tags, notes and site summary; open picker "Untick duplicates"; popup hides archived and puts pinned first.
+- Website: pin mark and tags in the list (pinned first there), tags and notes on the session page, exports include notes and tags.
+- Privacy page and the sync consent text name notes, tags, pinned and archived. Docs: UI_UX_DESIGN 18p, DATA_MODEL, SYNC_PROTOCOL 13k, SECURITY_PRIVACY, SYSTEM_DESIGN decisions log, ROADMAP.
+
+**Found by the tests and fixed:** Shift range selection read its anchor inside a React state updater, which can run after the anchor moved, so ranges ticked one row (UI test); the new commands didn't start a sync, so edits waited for the 10-minute alarm (two-profile E2E).
+
+**Verified:** `pnpm check --force`: 17/17 (contracts 57, core 122, sync 17, web 85, extension 338). `pnpm test:db --force`: database 12, web 75. Migration applied to `sessionhub_test` only, `migrate diff --exit-code`: no difference. Extension build + `test:e2e`: **23 passed**. Web clean build + `test:e2e`: **61 passed** (incl. two-profile sync of the new fields and the website's tags, notes and pinned order). Screenshots of the manager at 1440, 1180, 820 and 390 px and dark at 1440: `scrollWidth` equals the viewport at every width.
+
+**Not done:** the website's own sort, filters, bulk select and editing of tags, notes and pin (next PR, as agreed). A duplicate goes to no workspace. No extension E2E drives the new manager UI in real Chrome (UI tests run it against the real worker handler in jsdom; the two-profile E2E runs the commands in real Chrome).
+
+**PR #52 review (CodeRabbit), both valid and fixed:**
+- Notes draft (minor): the editor saved with the session's version at save time, and it stays open while the session updates live, so a draft could overwrite notes saved in another manager window without a conflict. It now records the notes editing started from; if they changed, Save shows the new notes and keeps the draft, and a second Save replaces them. A pin or tag change meanwhile doesn't block saving (UI test; fails with the check disabled).
+- Tag counting (major): `tagCounts` was quadratic in distinct tags, and every comparison used `localeCompare` with options (also in `hasTag` and `normalizeTags`). Tags now compare by a lowercased key and are counted in a Map; a test counts 50,000 distinct tags (the account limit) under 2 s.
+
+**Next step:** merge (runs the `session_tags` migration on production, additive), check the Coolify deployment, then rebuild the unpacked extension: the strict sync payload makes an older server refuse uploads with the new fields.
 
 ### 2026-10-18 (window placement review fixes) / Claude Code (Opus 5.5) / `bugfix/window-bounds-review` (macOS laptop, worktree `../sessionhub-window-bounds-review`, branched from `main` at `23e5306`)
 

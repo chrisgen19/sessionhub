@@ -1,4 +1,5 @@
 import { filterSessions } from "@sessionhub/core/search";
+import { sortSessions } from "@sessionhub/core/session-organize";
 import { ArrowLeft, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { SessionsState } from "../../hooks/use-sessions";
@@ -31,7 +32,9 @@ export function OpenTab({ state, onRetry, onOpenManager }: OpenTabProps) {
 
   const visible = useMemo(() => {
     if (state.status !== "ready") return [];
-    return (searching ? filterSessions(state.sessions, query) : state.sessions).slice(0, LIST_LIMIT);
+    // Archived sessions stay in the manager's Archived list; pinned ones come first.
+    const active = sortSessions(state.sessions.filter((session) => session.isArchived !== true), "updated");
+    return (searching ? filterSessions(active, query) : active).slice(0, LIST_LIMIT);
   }, [state, query, searching]);
   const shown = state.status === "ready" ? state.sessions.find((session) => session.id === shownId) : undefined;
 

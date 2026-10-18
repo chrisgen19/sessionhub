@@ -72,3 +72,16 @@ describe("query schemas", () => {
     expect(deleteSessionQuerySchema.safeParse({}).success).toBe(false);
   });
 });
+
+describe("tags and archive in writes", () => {
+  it("default to no tags and not archived on create, and are optional on update", () => {
+    expect(createSessionRequestSchema.parse(valid)).toMatchObject({ tags: [], isArchived: false });
+    expect(createSessionRequestSchema.parse({ ...valid, tags: [" work "], isArchived: true })).toMatchObject({ tags: ["work"], isArchived: true });
+    expect(updateSessionRequestSchema.parse({ expectedVersion: 2, tags: ["a", "b"] })).toEqual({ expectedVersion: 2, tags: ["a", "b"] });
+  });
+
+  it("reject blank tags and more than the limit", () => {
+    expect(createSessionRequestSchema.safeParse({ ...valid, tags: [""] }).success).toBe(false);
+    expect(updateSessionRequestSchema.safeParse({ expectedVersion: 2, tags: Array.from({ length: 11 }, (_, index) => `t${index}`) }).success).toBe(false);
+  });
+});

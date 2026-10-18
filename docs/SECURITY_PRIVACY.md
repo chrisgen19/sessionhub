@@ -20,7 +20,7 @@ A session can include private document URLs, unguessable share links, access tok
 
 ### Suggested onboarding disclosure copy
 
-> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, titles, URLs, each window's size, position and state, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync. Site exclusions and query stripping are not available in this preview; inspect selected sessions for sensitive URLs before uploading.
+> SessionHub saves the titles and links of tabs you choose to capture so you can restore them later. Your sessions are saved on this browser by default. If you enable cloud sync, saved session names, your notes and tags, titles, URLs, each window's size, position and state, and workspace information will be uploaded to your account so you can access them on other devices. You can disable sync. Site exclusions and query stripping are not available in this preview; inspect selected sessions for sensitive URLs before uploading.
 
 Do not make the privacy disclosure conditional on reading a lengthy policy. Users must understand the substance in the UI.
 

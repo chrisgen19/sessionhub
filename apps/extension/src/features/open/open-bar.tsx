@@ -39,9 +39,12 @@ interface OpenBarProps {
   onLazy: (lazy: boolean) => void;
   /** Tabs matching the search; null without a search. */
   matches: number | null;
+  /** Ticked tabs that are extra copies of an earlier tab's page. */
+  duplicates: number;
   onSelectAll: () => void;
   onSelectNone: () => void;
   onSelectMatches: () => void;
+  onUntickDuplicates: () => void;
   phase: "idle" | "confirm" | "running";
   onOpen: () => void;
   onConfirm: () => void;
@@ -49,7 +52,7 @@ interface OpenBarProps {
 }
 
 /** What is ticked, where it opens (remembered), and the Open action, with a confirm step for large opens. */
-export function OpenBar({ ticked, total, planned, destination, onDestination, skipOpen, onSkipOpen, lazy, onLazy, matches, phase, ...actions }: OpenBarProps) {
+export function OpenBar({ ticked, total, planned, destination, onDestination, skipOpen, onSkipOpen, lazy, onLazy, matches, duplicates, phase, ...actions }: OpenBarProps) {
   const busy = phase === "running";
   const where = destinationText(destination, planned.windows);
   // Wide containers (the manager's inspector) put the selection and the open controls in one row;
@@ -71,6 +74,11 @@ export function OpenBar({ ticked, total, planned, destination, onDestination, sk
             {matches !== null && matches > 0 && (
               <button type="button" className={linkClass} disabled={busy} onClick={actions.onSelectMatches}>
                 Select matches ({matches})
+              </button>
+            )}
+            {duplicates > 0 && (
+              <button type="button" className={linkClass} disabled={busy} onClick={actions.onUntickDuplicates}>
+                Untick duplicates ({duplicates})
               </button>
             )}
           </div>

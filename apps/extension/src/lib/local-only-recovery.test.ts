@@ -34,7 +34,7 @@ const setup = async ({ serverVersion = 3, code = "TOO_LARGE", copy = "absent" }:
   const remote: ApiSessionDetail = { id: session.id, name: "Account version", description: null, workspaceId: null,
     sourceDeviceId: session.sourceDeviceId, sourceDeviceName: session.sourceDeviceName, windows: session.windows,
     createdAt: session.createdAt, updatedAt: session.updatedAt,
-    isPinned: false, isArchived: false, version: serverVersion ?? 1, tabCount: 4, windowCount: 2 };
+    isPinned: false, isArchived: false, tags: [], version: serverVersion ?? 1, tabCount: 4, windowCount: 2 };
   if (copy !== "absent") await db.serverCopies.put({ id: session.id, scope: SCOPE, action: copy, version: remote.version,
     payload: copy === "upsert" ? remote : null, receivedAt: NOW.toISOString() });
   const fetch = vi.fn(async (input: URL | RequestInfo) => {

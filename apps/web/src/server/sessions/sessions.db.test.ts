@@ -209,3 +209,24 @@ describe("window state and bounds", () => {
     expect(updated.detail.windows[0]).not.toHaveProperty("bounds");
   });
 });
+
+describe("tags and archive", () => {
+  it("a create stores normalized tags and archived; the detail returns them; an exact retry still matches", async () => {
+    const user = await newUser();
+    const id = randomUUID();
+    const first = await createSession(prisma, user.id, body({ id, tags: ["Work", " work", "reading  list"], isArchived: true }));
+    expect(first.detail).toMatchObject({ tags: ["Work", "reading list"], isArchived: true });
+    expect(await getSessionDetail(prisma, user.id, id)).toEqual(first.detail);
+    expect(await createSession(prisma, user.id, body({ id, tags: ["Work", "reading list"], isArchived: true }))).toEqual({ detail: first.detail, sequence: null });
+    expect(await failure(createSession(prisma, user.id, body({ id, tags: ["Other"], isArchived: true })))).toBe("ID_IN_USE");
+  });
+
+  it("an update replaces tags only when given", async () => {
+    const user = await newUser();
+    const { detail } = await createSession(prisma, user.id, body({ tags: ["a"] }));
+    const renamed = await updateSession(prisma, user.id, detail.id, { expectedVersion: 1, name: "New" });
+    expect(renamed.detail.tags).toEqual(["a"]);
+    const retagged = await updateSession(prisma, user.id, detail.id, { expectedVersion: 2, tags: ["b", "B"] });
+    expect(retagged.detail.tags).toEqual(["b"]);
+  });
+});

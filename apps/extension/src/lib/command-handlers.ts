@@ -2,6 +2,7 @@ import { buildSavedSession, CaptureLimitError, type CaptureWindowInput } from "@
 import { defaultSessionName, selectionSessionName } from "@sessionhub/core/naming";
 import { planRestore, planRetry, withoutOpenTabs, type RestorePlan } from "@sessionhub/core/restore-plan";
 import { InvalidSessionNameError, normalizeSessionName, renameSession } from "@sessionhub/core/session-edit";
+import { InvalidSessionDetailsError } from "@sessionhub/core/session-organize";
 import { copyAsNewSession, parseSessionExport, prepareImportedSession, SessionImportError } from "@sessionhub/core/session-import";
 import type { SavedSession } from "@sessionhub/contracts/session";
 import { AccountApiError } from "./account-api";
@@ -17,6 +18,7 @@ import {
 import type { RestoreTabOutcome, SessionHubDb } from "./db";
 import { getOrCreateDevice, savedOnThisBrowser } from "./device-repository";
 import { runCheckpoint } from "./recovery-checkpoint";
+import { bulkEdit, duplicate, editDetails } from "./session-organize";
 import type { SyncDeps } from "./sync-gate";
 import { resolveReview, ReviewGoneError } from "./review-repository";
 import { disableSync, enableSync, SyncUnavailableError } from "./sync-consent";
@@ -108,6 +110,9 @@ const NOT_DONE: Record<Command["type"], string> = {
   "workspace.update": "the workspace wasn't changed",
   "workspace.delete": "the workspace wasn't deleted",
   "session.assign": "the session wasn't moved",
+  "session.edit": "the change wasn't saved",
+  "session.duplicate": "no copy was made",
+  "session.bulk": "nothing was changed",
 };
 
 const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse => {
@@ -116,7 +121,13 @@ const toErrorResponse = (error: unknown, type: Command["type"]): CommandResponse
   if (error instanceof VersionConflictError || error instanceof SessionExistsError) return fail("conflict", error.message);
   if (error instanceof SessionNotFoundError || error instanceof RestoreJobNotFoundError || error instanceof WorkspaceNotFoundError) return fail("not-found", error.message);
   if (error instanceof RestoreJobNotRetryableError || error instanceof ReviewGoneError) return fail("conflict", error.message);
-  if (error instanceof InvalidSessionNameError || error instanceof CaptureLimitError || error instanceof SessionImportError || error instanceof InvalidWorkspaceError) {
+  if (
+    error instanceof InvalidSessionNameError ||
+    error instanceof InvalidSessionDetailsError ||
+    error instanceof CaptureLimitError ||
+    error instanceof SessionImportError ||
+    error instanceof InvalidWorkspaceError
+  ) {
     return fail("invalid-input", error.message);
   }
   if (error instanceof BrowserError) return fail("browser-error", error.message);
@@ -349,6 +360,15 @@ export const handleCommand = async (message: unknown, deps: HandlerDeps): Promis
       case "session.assign":
         await assignSession(deps.db, command.sessionId, command.workspaceId, { now: deps.now(), createId: deps.createId });
         return { ok: true, data: {} };
+      case "session.edit": {
+        const { sessionId, expectedVersion, type: _type, ...patch } = command;
+        const updated = await editDetails(deps.db, sessionId, expectedVersion, patch, { now: deps.now(), createId: deps.createId });
+        return { ok: true, data: { version: updated.version } };
+      }
+      case "session.duplicate":
+        return { ok: true, data: await duplicate(deps.db, command.sessionId, { now: deps.now(), createId: deps.createId }) };
+      case "session.bulk":
+        return { ok: true, data: await bulkEdit(deps.db, command.sessionIds, command.action, { now: deps.now(), createId: deps.createId }) };
       default:
         return await runAccountCommand(command, deps);
     }

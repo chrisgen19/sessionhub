@@ -7,5 +7,5 @@ test("privacy policy is public, linked from home, and describes the shipped limi
   await expect(page.getByText("Site exclusions and query-parameter stripping are", { exact: false })).toBeVisible();
   await expect(page.getByText("including its Limited Use requirements.", { exact: false })).toBeVisible();
   await expect(page.getByText("there is no self-service account deletion", { exact: false })).toBeVisible();
-  await expect(page.getByText("pinned state, window size, position and state, timestamps", { exact: false })).toBeVisible();
+  await expect(page.getByText("window size, position and state, your notes and", { exact: false })).toBeVisible();
 });

@@ -16,7 +16,8 @@ export default function PrivacyPage() {
         </p>
         <h2 className="mt-8 text-lg font-semibold">What stays in your browser</h2>
         <p>SessionHub stores saved session names, tab titles and complete URLs, window/tab order, pinned state, tab groups,
-          timestamps and device labels in the extension&apos;s IndexedDB. Automatic recovery checkpoints also capture normal
+          timestamps and device labels in the extension&apos;s IndexedDB, plus the notes and tags you add to a session and
+          whether it is pinned or archived. Automatic recovery checkpoints also capture normal
           browser windows as tabs change. They stay local, with a rolling limit of 50 checkpoints within seven days;
           safety rules retain the newest and largest recent checkpoint. Private/incognito windows and SessionHub&apos;s own pages are excluded.</p>
         <p>Each window&apos;s size, position on screen and state (normal, maximized or full screen) are saved with the session, and
@@ -29,8 +30,8 @@ export default function PrivacyPage() {
           stored in the extension, hashed on the server and excluded from session exports.</p>
         <p>Connecting a browser does not enable sync. Enabling it requires an upload preview and confirmation. Selected saved
           sessions move into the account; while sync is on, newly saved and imported sessions upload too. Uploaded data includes
-          session names, tab titles, complete URLs, groups, order, pinned state, window size, position and state, timestamps and
-          device provenance. Account data
+          session names, tab titles, complete URLs, groups, order, pinned state, window size, position and state, your notes and
+          tags, whether a session is pinned or archived, timestamps and device provenance. Account data
           and previous versions are stored on the server. Automatic recovery checkpoints never upload.</p>
         <p>URLs can contain private paths, search terms and access tokens. Site exclusions and query-parameter stripping are
           not implemented. The upload preview selects whole sessions, not individual URLs. Inspect and remove sensitive tabs

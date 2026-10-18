@@ -3,6 +3,7 @@ import { Info } from "lucide-react";
 import { formatRelativeInline, plural } from "@/lib/format";
 import type { WorkspaceChoice } from "@/server/queries/dashboard";
 import { SessionHeader } from "./session-header";
+import { SessionTags } from "./session-tags";
 import { WindowTree } from "./window-tree";
 import { WorkspaceSelect } from "./workspace-select";
 
@@ -13,7 +14,7 @@ interface SessionDetailProps {
   listHref: string;
 }
 
-/** An open session beside the list: title and actions, facts, workspace, then its windows and tabs. */
+/** An open session beside the list: title and actions, facts, workspace, tags and notes, then its windows and tabs. */
 export function SessionDetail({ detail, workspaces, listHref }: SessionDetailProps) {
   return (
     <article aria-label="Session details">
@@ -23,6 +24,8 @@ export function SessionDetail({ detail, workspaces, listHref }: SessionDetailPro
           {formatRelativeInline(new Date(detail.updatedAt))} · version {detail.version}
         </p>
         <WorkspaceSelect detail={detail} workspaces={workspaces} />
+        {detail.tags.length > 0 && <SessionTags tags={detail.tags} />}
+        {detail.description && <p className="text-[13px] break-words whitespace-pre-wrap">{detail.description}</p>}
       </SessionHeader>
       <div className="space-y-4 px-5 py-5 lg:px-8">
         <p className="flex items-start gap-2 text-xs text-fg-muted">

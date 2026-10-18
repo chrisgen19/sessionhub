@@ -10,6 +10,8 @@ const searchableText = (session: SavedSession): string =>
   [
     session.name,
     session.sourceDeviceName,
+    session.description ?? "",
+    ...(session.tags ?? []),
     ...session.windows.flatMap((window) => [
       ...window.groups.map((group) => group.title),
       ...window.tabs.flatMap((tab) => [tab.title, tab.url]),
@@ -18,7 +20,7 @@ const searchableText = (session: SavedSession): string =>
     .join("\n")
     .toLowerCase();
 
-/** True when every whitespace-separated term appears in the session name, device, group, tab title or URL. */
+/** True when every whitespace-separated term appears in the session name, device, notes, tags, group, tab title or URL. */
 export const matchesSessionQuery = (session: SavedSession, query: string): boolean => {
   const terms = tokenize(query);
   if (terms.length === 0) return true;

@@ -57,6 +57,9 @@ const getVisibleRecord = (db: SessionHubDb, id: string) =>
     db.sessions.get(id).then((record) => (record && visibleScopes(connection).includes(record.scope) ? record : undefined)),
   );
 
+/** Where a visible session is kept (this browser or the connected account); undefined when missing or hidden. */
+export const getSessionScope = (db: SessionHubDb, id: string): Promise<LocalScope | undefined> => getVisibleRecord(db, id).then((record) => record?.scope);
+
 export const getSession = async (db: SessionHubDb, id: string): Promise<SavedSession | undefined> => {
   const record = await getVisibleRecord(db, id);
   return record && stripLocalFields(record);

@@ -61,6 +61,7 @@ const detail = (session: SavedSession, version: number, name = session.name): Ap
   sourceDeviceName: "Chrome on Windows",
   isPinned: false,
   isArchived: false,
+  tags: [],
   version,
   tabCount: 4,
   windowCount: 2,

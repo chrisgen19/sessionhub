@@ -138,6 +138,9 @@ export const prepareImportedSession = (
     sourceDeviceName: file.session.sourceDeviceName,
     version: 1,
     windows,
+    // Notes and tags come along; an import is a new session in the list, so neither pinned nor archived.
+    ...(file.session.description && { description: file.session.description }),
+    ...(file.session.tags?.length && { tags: file.session.tags }),
   };
   return { session, report };
 };
