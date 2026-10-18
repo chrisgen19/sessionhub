@@ -44,7 +44,11 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 **Not done:** the website's own sort, filters, bulk select and editing of tags, notes and pin (next PR, as agreed). A duplicate goes to no workspace. No extension E2E drives the new manager UI in real Chrome (UI tests run it against the real worker handler in jsdom; the two-profile E2E runs the commands in real Chrome).
 
-**Next step:** commit, open the PR, review; merging runs the `session_tags` migration on production (additive). Deploy the server before rebuilding the extension: the strict sync payload makes an older server refuse uploads with the new fields.
+**PR #52 review (CodeRabbit), both valid and fixed:**
+- Notes draft (minor): the editor saved with the session's version at save time, and it stays open while the session updates live, so a draft could overwrite notes saved in another manager window without a conflict. It now records the notes editing started from; if they changed, Save shows the new notes and keeps the draft, and a second Save replaces them. A pin or tag change meanwhile doesn't block saving (UI test; fails with the check disabled).
+- Tag counting (major): `tagCounts` was quadratic in distinct tags, and every comparison used `localeCompare` with options (also in `hasTag` and `normalizeTags`). Tags now compare by a lowercased key and are counted in a Map; a test counts 50,000 distinct tags (the account limit) under 2 s.
+
+**Next step:** merge (runs the `session_tags` migration on production, additive), check the Coolify deployment, then rebuild the unpacked extension: the strict sync payload makes an older server refuse uploads with the new fields.
 
 ### 2026-10-18 (window placement review fixes) / Claude Code (Opus 5.5) / `bugfix/window-bounds-review` (macOS laptop, worktree `../sessionhub-window-bounds-review`, branched from `main` at `23e5306`)
 

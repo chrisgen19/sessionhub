@@ -100,6 +100,14 @@ describe("sortSessions and tagCounts", () => {
     const tagged = [session("1", undefined, { tags: ["work", "Reading"] }), session("2", undefined, { tags: ["Work"] }), session("3")];
     expect(tagCounts(tagged)).toEqual([{ tag: "Reading", count: 1 }, { tag: "work", count: 2 }]);
   });
+
+  it("counts the most tags an account can hold quickly (5,000 sessions of 10 different tags)", () => {
+    const many = Array.from({ length: 5000 }, (_, index) => ({ tags: Array.from({ length: 10 }, (_, n) => `tag ${index}-${n}`) }) as SavedSession);
+    const started = performance.now();
+    expect(tagCounts(many)).toHaveLength(50_000);
+    // Was quadratic (1.25 billion comparisons); a keyed count takes milliseconds.
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
 });
 
 describe("site summary", () => {

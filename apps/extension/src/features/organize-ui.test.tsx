@@ -137,6 +137,31 @@ describe("the inspector", () => {
     expect(await screen.findByText("Archived", { selector: "span" })).toBeTruthy();
   });
 
+  it("never overwrites notes changed elsewhere while editing, but a pin meanwhile doesn't block saving", async () => {
+    const { alpha } = await seed();
+    window.history.replaceState(null, "", `/manager.html#session=${alpha.id}`);
+    render(<ManagerApp />);
+    const inspector = await screen.findByRole("article", { name: "Session details" });
+    const { handleCommand } = await import("../lib/command-handlers");
+    const elsewhere = async (command: Record<string, unknown>) => {
+      const current = await getSession(getDb(), alpha.id);
+      await handleCommand({ ...command, sessionId: alpha.id, expectedVersion: current!.version }, { db: getDb(), readWindows: async () => [], restoreWindow: async () => [], now: () => new Date(T0), createId: () => crypto.randomUUID() });
+    };
+
+    await userEvent.click(within(inspector).getByRole("button", { name: "Add notes" }));
+    await userEvent.type(within(inspector).getByRole("textbox", { name: "Notes" }), "Mine");
+    // Another manager tab saves notes first.
+    await elsewhere({ type: "session.edit", description: "Theirs" });
+    await userEvent.click(within(inspector).getByRole("button", { name: "Save notes" }));
+    expect(await within(inspector).findByText(/changed in another window/)).toBeTruthy();
+    expect(within(inspector).getByText("Theirs")).toBeTruthy();
+    expect((await getSession(getDb(), alpha.id))?.description).toBe("Theirs");
+    // Saving again, knowingly, replaces them; a pin from elsewhere in between doesn't get in the way.
+    await elsewhere({ type: "session.edit", isPinned: true });
+    await userEvent.click(within(inspector).getByRole("button", { name: "Save notes" }));
+    await waitFor(async () => expect(await getSession(getDb(), alpha.id)).toMatchObject({ description: "Mine", isPinned: true }));
+  });
+
   it("unticks extra copies of the same page in the open picker", async () => {
     const urls = ["https://a.test/", "https://b.test/", "https://a.test/"];
     const session = buildSavedSession([{ tabs: urls.map((url, index) => ({ url, title: `Tab ${index}`, pinned: false, index, groupKey: null })), groups: [] }], {

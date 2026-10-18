@@ -18,12 +18,19 @@ export const normalizeTag = (tag: string): string => {
   return clean;
 };
 
-const sameTag = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
+/** Tags compare without case: "Work" and "work" are the same tag. A plain key keeps lists of thousands cheap. */
+const tagKey = (tag: string) => tag.toLowerCase();
+const sameTag = (a: string, b: string) => tagKey(a) === tagKey(b);
 
 /** Normalized tags without repeats (ignoring case; the first spelling stays); throws past the limit. */
 export const normalizeTags = (tags: readonly string[]): string[] => {
+  const seen = new Set<string>();
   const result: string[] = [];
-  for (const tag of tags.map(normalizeTag)) if (!result.some((kept) => sameTag(kept, tag))) result.push(tag);
+  for (const tag of tags.map(normalizeTag)) {
+    if (seen.has(tagKey(tag))) continue;
+    seen.add(tagKey(tag));
+    result.push(tag);
+  }
   if (result.length > SESSION_LIMITS.tagsMax) throw new InvalidSessionDetailsError(`A session can have up to ${SESSION_LIMITS.tagsMax} tags`);
   return result;
 };
@@ -116,11 +123,13 @@ export const sortSessions = <T extends SavedSession>(sessions: readonly T[], sor
 
 /** Every tag in use with how many of the sessions have it, by name; the first spelling seen names it. */
 export const tagCounts = (sessions: readonly SavedSession[]): { tag: string; count: number }[] => {
-  const counts: { tag: string; count: number }[] = [];
-  for (const tag of sessions.flatMap((session) => session.tags ?? [])) {
-    const entry = counts.find((known) => sameTag(known.tag, tag));
-    if (entry) entry.count += 1;
-    else counts.push({ tag, count: 1 });
+  const counts = new Map<string, { tag: string; count: number }>();
+  for (const session of sessions) {
+    for (const tag of session.tags ?? []) {
+      const entry = counts.get(tagKey(tag));
+      if (entry) entry.count += 1;
+      else counts.set(tagKey(tag), { tag, count: 1 });
+    }
   }
-  return counts.sort((a, b) => a.tag.localeCompare(b.tag, undefined, { sensitivity: "base", numeric: true }));
+  return [...counts.values()].sort((a, b) => a.tag.localeCompare(b.tag, undefined, { sensitivity: "base", numeric: true }));
 };
