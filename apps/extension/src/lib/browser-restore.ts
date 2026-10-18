@@ -1,4 +1,4 @@
-import { browser } from "wxt/browser";
+import { browser, type Browser } from "wxt/browser";
 import type { PlannedTab, PlannedWindow } from "@sessionhub/core/restore-plan";
 import type { RestoreTabOutcome } from "./db";
 import { BrowserError, type HandlerDeps } from "./command-handlers";
@@ -11,12 +11,19 @@ import { createPlacement, isOffScreenError } from "./window-placement";
  */
 const createWindow = async (url: string, window: PlannedWindow) => {
   const placement = createPlacement(window);
+  let created: Browser.windows.Window | undefined;
   try {
-    return await browser.windows.create({ url, focused: true, ...placement });
+    created = await browser.windows.create({ url, focused: true, ...placement });
   } catch (error) {
     if (placement.left === undefined || !isOffScreenError(error)) throw error;
     return browser.windows.create({ url, focused: true });
   }
+  // macOS opens a window created full screen as a normal one; switching it once open works.
+  // Best effort: the window and its first tab exist either way.
+  if (placement.state === "fullscreen" && created?.id !== undefined && created.state !== "fullscreen") {
+    await browser.windows.update(created.id, { state: "fullscreen" }).catch(() => undefined);
+  }
+  return created;
 };
 
 /** User-readable failure reason; Chrome's raw messages include runtime ids. */

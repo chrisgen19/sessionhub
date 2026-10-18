@@ -24,6 +24,25 @@ Dependency versions and their rationale: `docs/SYSTEM_DESIGN.md` section 14.
 
 ## Session log
 
+### 2026-10-18 (window placement review fixes) / Claude Code (Opus 5.5) / `bugfix/window-bounds-review` (macOS laptop, worktree `../sessionhub-window-bounds-review`, branched from `main` at `23e5306`)
+
+**PR #50 merged first** (the user's go-ahead) as `23e5306`. `main`'s CI passed every job; the Coolify deployment `x8llhsm6hazdb2tmuefexjfq` finished at 05:14:56 UTC; production served the new privacy line about 105 s after the deploy started and `/api/health` answered 200 ok. `web` starts only after `migrate` succeeds (`compose.coolify.yaml`), so the `window_placement` migration is applied. The unpacked extension in `~/SessionHub/extension` was rebuilt from `main`.
+
+**Why:** CodeRabbit's three minor findings on PR #50, each checked before fixing:
+1. **Privacy page, valid:** it still said "Updated October 17, 2026" (it promises that changes update the date), and its uploaded-data list left out window placement. Date now October 18; the list names window size, position and state; `privacy.spec.ts` checks the list.
+2. **Older extensions clear placement, valid (docs only):** every extension upload sends the whole `windows` list (`sync-batch.ts`) and the server replaces all window rows (`updateSessionInTx`), so an edit from an extension older than 2026-10-18 (which strips the fields on pull) clears them. Web edits never send `windows`. Keeping the server's values would need matching windows across writes, which ids reassigned on every write don't allow. Documented in SYNC_PROTOCOL 13a.
+3. **Full screen on macOS, valid:** a spike (Chromium 156, macOS, headed and headless) showed `windows.create` with `state: "fullscreen"` opens a normal window, and `windows.update` to full screen right after works. `browser-restore.ts` now switches it, best effort (the window and its first tab exist either way). SYSTEM_DESIGN decisions log updated; the earlier spike's "came back maximized" was not reproduced.
+
+**Also:** the window bounds E2E failed once locally, right after the full-screen spike, at the check of the freshly created window (then passed 3 of 3 runs). It now polls until the window settles instead of waiting a fixed 500 ms.
+
+**Changed:** `apps/extension/src/lib/browser-restore.ts`, `window-placement.test.ts` (2 tests), `e2e/window-bounds.spec.ts` (new full-screen test, polling); `apps/web/src/app/privacy/page.tsx`, `e2e/privacy.spec.ts`; `docs/SYNC_PROTOCOL.md`, `docs/SYSTEM_DESIGN.md`.
+
+**Verified:** `pnpm check`: 17/17 (extension 321 tests). Extension build + `test:e2e`: **23 passed**, including the new full-screen test, which fails with the fix disabled ("Received: normal"; checked, then restored). Web clean build + `test:e2e`: **60 passed**.
+
+**Not done:** the full-screen test runs on Linux in CI; whether Linux honours full screen at creation was not checked locally (the fix only acts when it doesn't).
+
+**Next step:** review and merge this PR (it deploys the web app: privacy page text only, no migration), then rebuild the unpacked extension.
+
 ### 2026-10-18 (restore window size and position) / Claude Code (Opus 5.5) / `feature/window-bounds` (macOS laptop, worktree `../sessionhub-window-bounds`, branched from `main` at `f1223f6`)
 
 **Why:** the next ROADMAP item. The user's choices: saved size and position only on the computer that saved the session (other computers use Chrome's default placement); normal, maximized and full screen (minimized reopens as normal); one line on the privacy page. This settles the ROADMAP ("clamped on screen") vs DATA_MODEL ("prefer default bounds on another device") conflict; the decision is in DATA_MODEL.md SavedSessionWindow and the SYSTEM_DESIGN decisions log.
